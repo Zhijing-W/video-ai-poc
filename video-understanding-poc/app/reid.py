@@ -4,12 +4,12 @@
 查库认人。**与向量库解耦**——本模块只回答"这张 crop 的指纹是什么"，不关心库怎么存。
 
 可插拔后端（`REID_BACKEND`，默认 auto，按可用性自动择优 osnet → resnet50 → coarse）：
-  - **osnet**   ：torchreid 的 OSNet（真·行人重识别预训练模型，512 维）。最准，但依赖
-                  torchreid（与 numpy2/torch2 兼容性需自测）；装了才会被选中。
+  - **osnet**   ：经 **boxmot** 加载的 OSNet 预训练（默认 `osnet_ain_x1_0_msmt17`，域泛化版 + 最难
+                  训练集，512 维）。真·行人重识别、对跨摄像头/新场景鲁棒，**本机默认主力**。
+                  （早期用 torchreid 直装在 Py3.12/numpy2 不可行，已改走 boxmot：pip 干净、权重自动管理。）
   - **resnet50**：torchvision ResNet50（ImageNet 预训练，取 avgpool 2048 维通用外观特征）。
-                  权重走 download.pytorch.org，可靠；本机默认主力。属"重"档（真预训练深度模型）。
-  - **coarse**  ：零新依赖（PIL+numpy）的 HSV 颜色直方图 + 梯度方向直方图（48 维）。
-                  对应设计文档"L1 颜色直方图档"，离线兜底，最便宜。
+                  通用骨干、非专用 ReID，仅作 osnet 不可用时的兜底。
+  - **coarse**  ：零新依赖（PIL+numpy）的 HSV 颜色直方图（72 维），离线最末兜底。
 
 设计文档对应：3.4「三档指纹（由粗到细）」。这里把"档位"做成可切换 backend，便于以后
 按"先 coarse 粗筛、灰区再上 osnet"的成本梯度组合（留给 Step 15/三时钟编排去调度）。
@@ -84,18 +84,27 @@ def _embed_resnet50(crop) -> np.ndarray:
     return feat / n if n > 0 else feat
 
 
-# ---------------- 后端：torchreid OSNet ----------------
+# ---------------- 后端：OSNet（经 boxmot，预训练域泛化 ReID）----------------
 def _load_osnet():
-    from torchreid.utils import FeatureExtractor
+    """用 boxmot 的 ReID 运行时加载 OSNet 预训练权重（首次自动下载到 boxmot WEIGHTS 缓存）。
 
-    extractor = FeatureExtractor(model_name="osnet_x1_0", device="cpu")
-    return {"extractor": extractor}
+    选型 `osnet_ain_x1_0_msmt17`：OSNet 域泛化版（AIN 自适应实例归一化）+ MSMT17（最难最大
+    ReID 训练集）→ 对"跨摄像头 / 没见过的新场景"鲁棒，契合"自找数据泛化到客户现场"。
+    （早期用 torchreid 直装在 Py3.12/numpy2 上不可行，改走 boxmot——pip 干净、权重自动管理。）
+    """
+    from boxmot.reid import ReID
+    from boxmot.utils import WEIGHTS
+
+    reid = ReID(weights=WEIGHTS / settings.reid_osnet_weights, device="cpu", half=False)
+    return {"reid": reid}
 
 
 def _embed_osnet(crop) -> np.ndarray:
-    extractor = _state["model"]["extractor"]
-    img = np.asarray(crop.convert("RGB"))
-    feat = extractor(img).cpu().numpy().reshape(-1).astype(np.float32)
+    """对一张人像 crop 提 OSNet 512 维 ReID 指纹（boxmot 已做 L2 归一化）。"""
+    reid = _state["model"]["reid"]
+    bgr = np.asarray(crop.convert("RGB"))[:, :, ::-1]  # PIL RGB → BGR（boxmot/cv2 约定）
+    feats = reid([bgr])  # 返回 (N, dim) 已归一化
+    feat = np.asarray(feats[0], dtype=np.float32).reshape(-1)
     n = float(np.linalg.norm(feat))
     return feat / n if n > 0 else feat
 

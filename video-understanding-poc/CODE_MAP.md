@@ -61,6 +61,12 @@
 | 修改 `/compile-target` / `/cruise-frame` | `app/routers/compare.py` + `app/services/cruise_service.py` |
 | 修改 `/track` 多目标跟踪（Phase 3 · Step 11） | `app/routers/track.py` + `app/tracker.py` + `app/services/tracker_service.py` |
 | 修改 `/identify` 主体记忆/ReID 认人（Phase 3 · Step 14） | `app/routers/identify.py` + `app/services/gallery_service.py` + `app/gallery.py`（FAISS 向量库）+ `app/reid.py`（ReID 指纹，可插拔 backend） |
+| 修改 YOLO 检测框颜色逻辑 / ReID 指纹后端（osnet[boxmot]/resnet50/coarse） | `app/reid.py`（默认经 boxmot 的 OSNet-AIN 域泛化 ReID；`REID_OSNET_WEIGHTS` 可调） |
+| 修改人脸识别分支（Phase 4 · Step 20；已接入 Step 24 事件管线，可选 `--face`） | `app/face.py`（InsightFace 检测+对齐+512维 embedding+质量评估+最佳脸/多帧融合+对到 track_id）；配置 `app/core/config.py` 的 `FACE_*` |
+| 修改结构化身份打包（Phase 4 · Step 22，喂 LLM 的身份上下文） | `app/services/identity_context.py`（`PersonIdentity` + `format_identity_context`：多源识别结果→LLM grounding 文本；身份外部给定、勿重新认人） |
+| 修改身份感知·多帧事件理解 LLM 段（Phase 4 · Step 23 / 3.4，本阶段灵魂） | `app/services/event_understanding.py`（`understand_event`：多帧关键帧+身份上下文→跨帧事件 JSON；WHO 外部给定/勿认人，WHAT 必须看图理解）；配置 `EVENT_LLM_*` |
+| 修改选帧②/关键帧选择（Phase 4 · Step 25 / 3.3，事件驱动） | `app/keyframe.py`（`select_keyframes`：接收每帧语义事件标注→事件帧必留+每track最佳帧+去重+保时序；**事件由语义信号定义，非 ffmpeg/像素**）；配置 `KEYFRAME_*` |
+| 跑/改 身份感知·多帧事件理解 **端到端**（Phase 4 · Step 24，把上面叶子串成一条流） | `app/event_pipeline.py`（`analyze_event_stream`：抽帧①→YOLO+ByteTrack→语义事件标注→ReID认人(按subject合并)→流式分窗→选帧②→身份打包→`understand_event`）+ CLI `scripts/event_understand_demo.py`（`--dry-run` 不调LLM验链路；默认视频 `data/samples/mixkit_31372.mp4`） |
 | 修改 `/fusion` 多线索融合/最佳帧投票（Phase 3 · Step 15 / 3.5） | `app/routers/fusion.py` + `app/services/fusion_service.py` + `app/track_fusion.py`（按 track 攒多帧证据：最佳帧+投票+多线索融合） |
 | 跑 Phase 3 识别+省钱评估（Phase 3 · Step 19，证明省钱没掉精度） | `scripts/eval_phase3.py`（合成自检 / `--manifest` 真实数据；精度·召回·ID切换 + 单位视频 LLM 调用省比 + 逐帧vs融合对比） |
 | 修改历史监控会话接口 | `app/routers/session.py` |
@@ -76,7 +82,7 @@
 | 修改末尾总结（整段分析跑完归纳总结） | `app/llm_client.py`（`summarize_events`）+ `app/routers/session.py`（`/summarize`） |
 | 修改实时流智能抽帧（mode①：画面没变跳过 + 兜底间隔） | `static/js/monitoring/ticker.js` + `static/js/core/utils.js`（`frameSignature`/`signatureDiff`） |
 | 修改整段视频分析（mode②：流式逐帧+末尾总结+归档） | `static/js/monitoring/ticker.js`（`startFullVideoRun`/`finishFullVideoRun`）+ `static/js/monitoring/batch-report.js`（`fetchSummary`/`showSummary`） |
-| 修改视频抽帧处理 | `app/video_processor.py` |
+| 修改视频抽帧处理 | `app/video_processor.py`（`extract_frames` 支持 `fps=` 亚秒级密采样，事件理解"选帧①"用） |
 
 ---
 
@@ -186,6 +192,20 @@ main.py
     ├── models/request_models.py
     ├── models/response_models.py
     └── core/state.py
+```
+
+### Phase 4 事件理解端到端（脚本流，非 FastAPI；Step 24）
+
+```text
+scripts/event_understand_demo.py  (CLI, --dry-run/--face/--fps)
+└── app/event_pipeline.py  analyze_event_stream（编排"流式开关窗"）
+    ├── video_processor.extract_frames(fps=)        # 选帧① 定时密采样
+    ├── tracker.track_objects → detector._predict   # YOLO + ByteTrack（稳定 track_id）
+    ├── reid.embed + gallery.identify_or_enroll      # 人形指纹 + 主体记忆（认人=身份，按 subject 合并）
+    ├── face.detect（可选 --face）                    # 人脸指纹（清晰正脸才有用）
+    ├── keyframe.select_keyframes                     # 选帧② 事件驱动砍帧
+    ├── services/identity_context.format_identity_context  # 身份打包成 grounding 文本
+    └── services/event_understanding.understand_event      # 多帧+身份 → 跨帧事件叙述（gpt-4o）
 ```
 
 ---

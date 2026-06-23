@@ -50,22 +50,31 @@ def extract_frames(
     interval_seconds: int | None = None,
     max_frames: int | None = None,
     width: int | None = None,
+    fps: float | None = None,
 ) -> list[Frame]:
     """从视频抽帧。
 
     Args:
         video_path: 输入视频。
         out_dir: 帧输出目录（会被创建/清空）。
-        interval_seconds: 每隔几秒抽一帧（默认取 settings）。
+        interval_seconds: 每隔几秒抽一帧（默认取 settings）。与 fps 互斥，fps 优先。
         max_frames: 最多抽几帧。
         width: 输出图片宽度（高度按比例，-2 保持偶数）。
+        fps: 每秒抽几帧（支持亚秒级，如 2 / 3）。给定时**优先于** interval_seconds，
+            用于事件理解的"选帧①"（密一点的定时采样，给跟踪/选帧②留足信号）。
 
     Returns:
         Frame 列表（含 frame_id / timestamp / local_path）。
     """
-    interval = interval_seconds or settings.frame_interval_seconds
     cap = max_frames or settings.max_frames
     w = width or settings.frame_width
+    # fps 优先：每帧时间步长 = 1/fps；否则按 interval 秒一帧。
+    if fps and fps > 0:
+        step = 1.0 / float(fps)
+        fps_expr = f"fps={fps}"
+    else:
+        step = float(interval_seconds or settings.frame_interval_seconds)
+        fps_expr = f"fps=1/{step}"
 
     video_path = Path(video_path)
     if not video_path.exists():
@@ -78,8 +87,8 @@ def extract_frames(
 
     ffmpeg = _resolve_ffmpeg()
     pattern = str(out_dir / "frame_%03d.jpg")
-    # fps=1/interval 每 interval 秒一帧；scale 缩放宽度；-frames:v 限制数量
-    vf = f"fps=1/{interval},scale={w}:-2"
+    # fps 控制采样密度；scale 缩放宽度；-frames:v 限制数量
+    vf = f"{fps_expr},scale={w}:-2"
     cmd = [
         ffmpeg,
         "-hide_banner",
@@ -97,7 +106,7 @@ def extract_frames(
         frames.append(
             Frame(
                 frame_id=p.stem,
-                timestamp=seconds_to_timestamp(i * interval),
+                timestamp=seconds_to_timestamp(i * step),
                 local_path=str(p),
             )
         )

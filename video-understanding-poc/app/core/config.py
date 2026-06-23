@@ -69,6 +69,7 @@ class Settings:
     # 主体记忆 / ReID 向量库（Phase 3 · Step 14）：认过一次就记住、命中即复用、不调 LLM。
     # backend: auto 自动择优（osnet→resnet50→coarse）；也可固定为某一档。
     reid_backend: str = _get("REID_BACKEND", "auto")
+    reid_osnet_weights: str = _get("REID_OSNET_WEIGHTS", "osnet_ain_x1_0_msmt17.pt")  # boxmot OSNet 域泛化权重
     # 余弦判定阈值（注意：不同 backend 的相似度分布不同，换 backend 需重调）。
     reid_hit_thresh: float = float(_get("REID_HIT_THRESH", "0.6"))     # ≥ 此分 → 认出已知主体
     reid_new_thresh: float = float(_get("REID_NEW_THRESH", "0.4"))     # < 此分 → 判为新主体（开放集登记）
@@ -95,6 +96,30 @@ class Settings:
     fusion_w_color: float = float(_get("FUSION_W_COLOR", "0.10"))
     fusion_w_motion: float = float(_get("FUSION_W_MOTION", "0.15"))
     fusion_w_face: float = float(_get("FUSION_W_FACE", "0.0"))
+
+    # 人脸识别分支（Phase 4 · Step 20）：InsightFace（SCRFD 检测 + ArcFace 识别）。
+    # 只在每条 track 的最佳帧稀疏调用；糊脸/侧脸/小脸由质量门控降权或拒用（攻"人脸模糊"）。
+    face_backend: str = _get("FACE_BACKEND", "insightface")
+    face_model: str = _get("FACE_MODEL", "buffalo_l")            # InsightFace 模型包
+    face_det_size: int = int(_get("FACE_DET_SIZE", "640"))       # 检测输入边长（小→快、精度略降）
+    face_min_det_score: float = float(_get("FACE_MIN_DET_SCORE", "0.5"))   # 低于此检测分不可信
+    face_min_size: int = int(_get("FACE_MIN_SIZE", "28"))        # 人脸框最小边（像素），太小不入库
+    face_min_frontalness: float = float(_get("FACE_MIN_FRONTALNESS", "0.45"))  # 正脸度下限（侧脸降权）
+    face_min_blur_var: float = float(_get("FACE_MIN_BLUR_VAR", "15.0"))    # 清晰度下限（拉普拉斯方差）
+    face_ref_area: int = int(_get("FACE_REF_AREA", "10000"))     # 面积归一化基准（约 100×100）
+    face_assoc_min_contain: float = float(_get("FACE_ASSOC_MIN_CONTAIN", "0.6"))  # 人脸被人体框包含度阈值
+
+    # 多帧事件理解（Phase 4 · Step 23 / 3.4，本阶段灵魂）：多帧关键帧 + 身份上下文 → 跨帧事件叙述。
+    # 模型名可配置：默认用现有 AZURE_OPENAI_DEPLOYMENT；以后指向 gpt-4.1/更强只改这一项。
+    event_llm_deployment: str | None = _get("EVENT_LLM_DEPLOYMENT")   # 留空则回退主部署
+    event_llm_max_tokens: int = int(_get("EVENT_LLM_MAX_TOKENS", "1500"))
+    event_llm_max_retries: int = int(_get("EVENT_LLM_MAX_RETRIES", "5"))  # 429 限流时退避重试次数
+    event_frame_detail: str = _get("EVENT_FRAME_DETAIL", "low")       # low 省 token / high 看细节
+
+    # 选帧②：事件驱动关键帧选择（Phase 4 · Step 25 / 3.3）——喂 LLM 前按"事件"砍图片数。
+    keyframe_max: int = int(_get("KEYFRAME_MAX", "24"))            # 喂 LLM 的关键帧上限
+    keyframe_context: int = int(_get("KEYFRAME_CONTEXT", "1"))     # 事件前后各留几帧上下文
+    keyframe_dedup_diff: float = float(_get("KEYFRAME_DEDUP_DIFF", "0.06"))  # 低于此签名差异视为"太像"去重
 
     # 智能抽帧（Phase 2 · Step 7）：场景突变 OR 定时兜底
     smart_frames: bool = _get("SMART_FRAMES", "true").strip().lower() in {"1", "true", "yes", "on"}

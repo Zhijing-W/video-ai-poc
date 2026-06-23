@@ -24,17 +24,25 @@ imageio-ffmpeg
 ultralytics
 
 # Phase 3 · Step 11：ByteTrack 多目标跟踪（MOT）。
-# 复用 ultralytics 内置 BYTETracker；lap 提供匈牙利/线性分配，跟踪关联必需
-# （ultralytics 首次跑 track 时会自动装，这里显式声明以便离线/可重现部署）。
-lap>=0.5.12
+# 复用 ultralytics 内置 BYTETracker；线性分配用 lap，Phase 4 起改用其维护分叉 lapx
+# （lapx 由下方 boxmot 带入，drop-in 兼容 `import lap`；不要再单独装 lap，二者会冲突覆盖）。
 
 # Phase 3 · Step 14：主体记忆 / ReID 向量库。
 # faiss-cpu：向量库余弦检索（IndexIDMap2 + IndexFlatIP）。
-# torchvision：ReID 默认主力后端（ResNet50 ImageNet 预训练，2048 维外观特征）；
-#   多为 ultralytics 的传递依赖，这里显式声明以便可重现。
-# （可选更真实后端：pip install torchreid 启用 OSNet 行人重识别；装了 REID_BACKEND=auto 会优先选用。）
+# torchvision：ReID 兜底后端（ResNet50 ImageNet 通用骨干，2048 维；非专用 ReID）。
 faiss-cpu
 torchvision
+
+# Phase 4：ReID 升级为真·行人重识别 OSNet（域泛化）。
+# boxmot：提供 OSNet/OSNet-AIN 等预训练 ReID（默认 osnet_ain_x1_0_msmt17，512 维，权重首次自动下载）；
+#   同时带入 lapx（替代 lap）。比通用 resnet50 强一个量级，REID_BACKEND=auto 会优先选 osnet。
+boxmot
+
+# Phase 4 · Step 20：人脸识别分支。
+# insightface：SCRFD 检测 + ArcFace(w600k_r50) 识别，512 维归一化 embedding（业界标杆，与客户 UniFace 同源）。
+# onnxruntime：insightface 的推理后端（CPU）。首次运行自动下 ~300MB buffalo_l 模型到 ~/.insightface。
+insightface
+onnxruntime
 
 # 仅文档用（生成架构图，App 运行时不需要，部署可不装）：
 #   pip install matplotlib
