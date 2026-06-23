@@ -1,0 +1,41 @@
+# Phase 1 (LLM-first MVP) dependencies
+# Web 层（后续 FastAPI 阶段用，竖切脚本不强依赖）
+fastapi
+uvicorn
+gunicorn
+python-multipart
+jinja2
+
+# Azure
+azure-storage-blob
+azure-identity
+openai>=1.40.0
+
+# 工具
+pydantic>=2.0
+python-dotenv
+
+# 抽帧兜底：本地已装 ffmpeg 时不需要；部署到没有 ffmpeg 的环境时启用，
+# imageio-ffmpeg 自带一份静态 ffmpeg 二进制，可免 Docker。
+imageio-ffmpeg
+
+# Phase 2 · Step 5：YOLO 物体检测层（廉价守门员，给事件门控提供依据）。
+# ultralytics 会按平台拉取 CPU 版 torch；首次调用自动下载模型权重。
+ultralytics
+
+# Phase 3 · Step 11：ByteTrack 多目标跟踪（MOT）。
+# 复用 ultralytics 内置 BYTETracker；lap 提供匈牙利/线性分配，跟踪关联必需
+# （ultralytics 首次跑 track 时会自动装，这里显式声明以便离线/可重现部署）。
+lap>=0.5.12
+
+# Phase 3 · Step 14：主体记忆 / ReID 向量库。
+# faiss-cpu：向量库余弦检索（IndexIDMap2 + IndexFlatIP）。
+# torchvision：ReID 默认主力后端（ResNet50 ImageNet 预训练，2048 维外观特征）；
+#   多为 ultralytics 的传递依赖，这里显式声明以便可重现。
+# （可选更真实后端：pip install torchreid 启用 OSNet 行人重识别；装了 REID_BACKEND=auto 会优先选用。）
+faiss-cpu
+torchvision
+
+# 仅文档用（生成架构图，App 运行时不需要，部署可不装）：
+#   pip install matplotlib
+#   python scripts/make_arch_diagram.py

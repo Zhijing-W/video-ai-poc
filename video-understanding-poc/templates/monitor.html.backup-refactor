@@ -1,0 +1,1893 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>实时比对监控台 · Video Understanding</title>
+  <style>
+    :root{
+      --bg:#f0eee6; --panel:#ffffff; --panel2:#faf9f4; --card:#f6f4ed; --line:#e7e3d8;
+      --fg:#2b2a26; --muted:#85816f; --accent:#cc785c; --accent2:#b8623f;
+      --ok:#2a9067; --warn:#bd8a2e; --alert:#c0392b; --idle:#cdc9bb;
+      --stage:#1b1a17;
+      --shadow:0 1px 2px rgba(50,46,38,.04),0 6px 18px rgba(50,46,38,.06);
+      --shadow-lg:0 8px 30px rgba(50,46,38,.12);
+      --mono:"SF Mono","Cascadia Mono","Consolas",ui-monospace,monospace;
+      --serif:"Iowan Old Style","Palatino Linotype",Georgia,"Songti SC",serif;
+    }
+    *{box-sizing:border-box;}
+    html,body{height:100%;}
+    body{margin:0;
+      font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif;
+      background:var(--bg);color:var(--fg);font-size:14px;line-height:1.5;
+      -webkit-font-smoothing:antialiased;}
+    ::selection{background:rgba(204,120,92,.22);}
+    /* 顶栏 */
+    .topbar{display:flex;align-items:center;gap:16px;padding:14px 24px;
+      border-bottom:1px solid var(--line);background:rgba(250,249,244,.86);backdrop-filter:blur(10px);
+      position:sticky;top:0;z-index:10;}
+    .brand{font-weight:600;letter-spacing:.1px;font-size:1.02rem;display:flex;align-items:center;gap:11px;color:var(--fg);font-family:var(--serif);}
+    .brand .logo{width:30px;height:30px;border-radius:9px;
+      background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;color:#fff;font-size:16px;box-shadow:0 2px 8px rgba(204,120,92,.35);}
+    .live{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:.82rem;color:var(--muted);}
+    .led{width:9px;height:9px;border-radius:50%;background:var(--idle);}
+    .led.on{background:var(--ok);animation:pulse 1.6s infinite;}
+    .led.cooldown{background:var(--warn);animation:pulse 1s infinite;}
+    @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(42,144,103,.5)}70%{box-shadow:0 0 0 7px rgba(42,144,103,0)}100%{box-shadow:0 0 0 0 rgba(42,144,103,0)}}
+    .clock{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--muted);font-size:.82rem;}
+
+    /* 布局 */
+    .grid{display:grid;grid-template-columns:1.7fr 1fr;gap:16px;padding:16px;max-width:1500px;margin:0 auto;}
+    @media(max-width:1000px){.grid{grid-template-columns:1fr;}}
+    .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;box-shadow:var(--shadow);}
+    .panel h2{margin:0 0 12px;font-size:.72rem;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);font-weight:600;}
+
+    /* 视频区 */
+    .stage{position:relative;background:var(--stage);border-radius:12px;overflow:hidden;aspect-ratio:16/9;border:1px solid var(--line);}
+    .stage video{width:100%;height:100%;object-fit:contain;background:var(--stage);display:block;}
+    .stage .scan{position:absolute;inset:0;pointer-events:none;
+      background:linear-gradient(180deg,transparent 0%,rgba(204,120,92,.16) 50%,transparent 100%);opacity:0;}
+    .stage.analyzing .scan{opacity:1;animation:scan 1.8s linear infinite;}
+    @keyframes scan{0%{transform:translateY(-100%)}100%{transform:translateY(100%)}}
+    .stage .boxes{position:absolute;inset:0;pointer-events:none;z-index:2;}
+    .stage .hud{position:absolute;top:10px;left:10px;display:flex;gap:8px;flex-wrap:wrap;}
+    .chip{font-size:.72rem;padding:3px 9px;border-radius:999px;background:rgba(0,0,0,.45);
+      border:1px solid rgba(255,255,255,.18);color:#f3efe6;backdrop-filter:blur(4px);}
+    .chip.src{border-color:var(--accent);color:#f3c9b8;}
+    .stage .corner{position:absolute;top:10px;right:12px;font-size:.72rem;color:#e7e1d4;
+      font-family:var(--mono);font-variant-numeric:tabular-nums;}
+    .empty{position:absolute;inset:0;display:grid;place-items:center;color:#9b968a;font-size:.9rem;text-align:center;}
+
+    /* 控件 */
+    .controls{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;}
+    button{background:#fff;color:var(--fg);border:1px solid var(--line);
+      padding:8px 14px;border-radius:9px;font-weight:500;cursor:pointer;font-size:.84rem;
+      font-family:inherit;transition:.15s;box-shadow:0 1px 1.5px rgba(50,46,38,.04);}
+    button:hover:not(:disabled){border-color:#d8c3b4;background:#fbf7f3;}
+    button:disabled{opacity:.45;cursor:not-allowed;}
+    button.primary{background:var(--accent);color:#fff;border-color:var(--accent);box-shadow:0 2px 8px rgba(204,120,92,.28);}
+    button.primary:hover:not(:disabled){background:var(--accent2);border-color:var(--accent2);}
+    button.danger{background:transparent;border-color:rgba(192,57,43,.4);color:var(--alert);box-shadow:none;}
+    button.danger:hover:not(:disabled){background:rgba(192,57,43,.08);border-color:var(--alert);}
+    .field{margin-top:14px;}
+    .field label{display:block;font-size:.76rem;color:var(--muted);margin-bottom:6px;}
+    .field input[type=text],.field input[type=number],.field select,
+    select,input[type=text],input[type=number]{
+      width:100%;padding:9px 11px;background:#fff;color:var(--fg);
+      border:1px solid var(--line);border-radius:9px;font-size:.86rem;
+      font-family:inherit;outline:none;caret-color:var(--accent);transition:.15s;}
+    input[type=text]:focus,input[type=number]:focus,select:focus{
+      border-color:var(--accent);box-shadow:0 0 0 3px rgba(204,120,92,.16);}
+    input::placeholder{color:#aaa597;}
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button{opacity:.6;}
+    select{appearance:none;-webkit-appearance:none;cursor:pointer;
+      background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+      background-position:calc(100% - 16px) center,calc(100% - 11px) center;
+      background-size:5px 5px,5px 5px;background-repeat:no-repeat;padding-right:28px;}
+    option{background:#fff;color:var(--fg);}
+    .row{display:flex;gap:10px;}.row>*{flex:1;}
+    .ref{display:flex;align-items:center;gap:10px;margin-top:8px;}
+    .ref img{width:54px;height:54px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:#f1efe7;}
+    .hint{font-size:.74rem;color:var(--muted);margin-top:6px;}
+
+    /* 比对大卡 */
+    .matchcard{border-radius:13px;padding:16px;text-align:center;border:1px solid var(--line);
+      background:var(--card);transition:.2s;}
+    .matchcard.match{border-color:var(--ok);background:rgba(42,144,103,.09);}
+    .matchcard.nomatch{border-color:var(--line);}
+    .matchcard.alert{border-color:var(--alert);background:rgba(192,57,43,.07);}
+    .matchcard .big{font-size:1.5rem;font-weight:700;letter-spacing:.5px;margin:2px 0;}
+    .matchcard .conf{font-size:.78rem;color:var(--muted);}
+    .matchcard .reason{font-size:.82rem;color:#54514a;margin-top:8px;line-height:1.45;text-align:left;}
+
+    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px;}
+    .stat{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:10px;text-align:center;}
+    .stat .n{font-size:1.3rem;font-weight:700;font-family:var(--mono);font-variant-numeric:tabular-nums;}
+    .stat .l{font-size:.68rem;color:var(--muted);letter-spacing:.3px;margin-top:2px;}
+
+    .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;}
+    .tag{font-size:.74rem;padding:3px 9px;border-radius:6px;background:var(--card);border:1px solid var(--line);color:#54514a;}
+    .scene{font-size:.86rem;color:#54514a;line-height:1.5;margin-top:6px;min-height:1.2em;}
+    /* YOLO 框 → LLM 结构化档案 */
+    #subjects{margin-top:10px;}
+    .subjhead{font-size:.7rem;letter-spacing:.6px;color:var(--muted);text-transform:uppercase;margin-bottom:6px;}
+    .subj{background:var(--card);border:1px solid var(--line);border-left:2px solid var(--accent);
+      border-radius:8px;padding:8px 10px;margin-bottom:6px;}
+    .subj .subjline{display:flex;justify-content:space-between;align-items:center;font-size:.82rem;}
+    .subj .subjline b{color:var(--fg);}
+    .subj .box{font-family:var(--mono);font-size:.68rem;color:var(--muted);}
+    .subj .subjapp{font-size:.8rem;color:#54514a;margin-top:3px;line-height:1.4;}
+    .subj .atags{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px;}
+    .subj .atag{font-size:.68rem;padding:2px 7px;border-radius:5px;background:rgba(204,120,92,.12);
+      border:1px solid rgba(204,120,92,.35);color:var(--accent2);}
+
+    /* 日志 */
+    .log{max-height:300px;overflow:auto;margin-top:4px;}
+    .logrow{display:flex;gap:10px;padding:8px 6px;border-bottom:1px solid var(--line);font-size:.8rem;align-items:flex-start;
+      cursor:pointer;border-radius:6px;}
+    .logrow:hover{background:var(--card);}
+    .logrow .t{color:var(--muted);font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap;}
+    .logrow .dot{width:8px;height:8px;border-radius:50%;margin-top:5px;flex:none;background:var(--idle);}
+    .logrow.normal .dot{background:#a39e8e;}
+    .logrow.attention .dot{background:var(--warn);}
+    .logrow.alert .dot{background:var(--alert);}
+    .logrow .msg{flex:1;}
+    .logrow .mtag{font-size:.68rem;color:var(--ok);font-weight:700;}
+    .logrow .thumb{width:42px;height:30px;object-fit:cover;border-radius:4px;border:1px solid var(--line);flex:none;}
+    .logrow .arrow{color:var(--muted);font-size:.7rem;align-self:center;}
+    .footer{color:#a39e8e;font-size:.72rem;text-align:center;padding:8px 0 18px;}
+    a{color:var(--accent2);}
+
+    /* 顶栏：标题 + 模式切换器 */
+    .topbar-main{display:flex;justify-content:space-between;align-items:center;
+      padding:18px 24px;background:var(--bg);border-bottom:1px solid var(--line);}
+    .topbar-title h2{font-size:1.3rem;color:var(--fg);margin:0;}
+    .mode-switcher{display:flex;gap:8px;}
+    .mode-btn{padding:8px 16px;border:1px solid var(--line);border-radius:8px;
+      background:var(--card);color:var(--muted);font-size:.88rem;font-weight:600;cursor:pointer;transition:.18s;}
+    .mode-btn:hover{border-color:var(--accent);color:var(--fg);}
+    .mode-btn.active{background:var(--accent);color:#fff;border-color:var(--accent);box-shadow:0 2px 8px rgba(204,120,92,.3);}
+
+    /* 视图容器 */
+    .view-container{min-height:calc(100vh - 80px);}
+
+    /* ===== 仪表盘布局（监控模式）===== */
+    .dashboard-layout{display:grid;grid-template-columns:300px 1fr 360px;gap:20px;padding:20px;
+      height:calc(100vh - 120px);overflow:hidden;}
+    
+    /* 左侧配置面板 */
+    .dash-sidebar{overflow-y:auto;display:flex;flex-direction:column;gap:16px;padding-right:8px;}
+    .dash-section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;}
+    .dash-heading{font-size:.95rem;font-weight:700;color:var(--fg);margin:0 0 12px 0;}
+    .dash-controls{display:flex;flex-direction:column;gap:10px;}
+    .dash-btn{width:100%;padding:8px 12px;border:1px solid var(--line);border-radius:8px;
+      background:var(--bg);color:var(--fg);font-size:.85rem;cursor:pointer;transition:.18s;}
+    .dash-btn:hover{border-color:var(--accent);background:var(--card);}
+    .dash-select{width:100%;padding:8px 12px;border:1px solid var(--line);border-radius:8px;
+      background:var(--bg);color:var(--fg);font-size:.85rem;}
+    .dash-input{width:100%;padding:8px 12px;border:1px solid var(--line);border-radius:8px;
+      background:var(--bg);color:var(--fg);font-size:.85rem;}
+    .dash-input-group{display:flex;flex-direction:column;gap:6px;}
+    .dash-label{font-size:.8rem;color:var(--muted);font-weight:600;}
+    .dash-hint{font-size:.78rem;color:var(--muted);}
+    .dash-switch{display:flex;align-items:center;gap:10px;cursor:pointer;}
+    .dash-switch input[type="checkbox"]{display:none;}
+    .dash-switch-slider{width:40px;height:22px;background:var(--idle);border-radius:11px;position:relative;transition:.2s;}
+    .dash-switch-slider::after{content:"";position:absolute;width:16px;height:16px;border-radius:50%;
+      background:#fff;top:3px;left:3px;transition:.2s;}
+    .dash-switch input:checked + .dash-switch-slider{background:var(--ok);}
+    .dash-switch input:checked + .dash-switch-slider::after{left:21px;}
+    .dash-switch-label{font-size:.85rem;color:var(--fg);flex:1;}
+    .dash-modes{display:flex;flex-direction:column;gap:6px;}
+    .dash-radio{display:flex;align-items:center;gap:8px;font-size:.82rem;color:var(--fg);padding:6px 8px;
+      background:var(--bg);border:1px solid var(--line);border-radius:6px;cursor:pointer;}
+    .dash-radio input{accent-color:var(--accent);}
+    
+    /* 主视图区域 */
+    .dash-main{display:flex;flex-direction:column;gap:16px;overflow:hidden;}
+    .dash-toolbar{display:flex;gap:12px;flex-wrap:wrap;}
+    .dash-btn-primary{padding:10px 20px;border:none;border-radius:8px;background:var(--accent);
+      color:#fff;font-size:.9rem;font-weight:600;cursor:pointer;transition:.18s;box-shadow:0 2px 6px rgba(204,120,92,.25);}
+    .dash-btn-primary:hover{box-shadow:0 4px 12px rgba(204,120,92,.35);transform:translateY(-1px);}
+    .dash-btn-primary:disabled{background:var(--idle);cursor:not-allowed;opacity:.5;}
+    .dash-btn-danger{padding:10px 20px;border:1px solid var(--alert);border-radius:8px;
+      background:var(--alert);color:#fff;font-size:.9rem;font-weight:600;cursor:pointer;transition:.18s;}
+    .dash-btn-danger:disabled{background:var(--idle);border-color:var(--idle);cursor:not-allowed;opacity:.5;}
+    .dash-btn-secondary{padding:10px 20px;border:1px solid var(--line);border-radius:8px;
+      background:var(--card);color:var(--fg);font-size:.9rem;font-weight:600;cursor:pointer;transition:.18s;}
+    .dash-btn-secondary:hover{border-color:var(--accent);}
+    .dash-btn-secondary:disabled{opacity:.5;cursor:not-allowed;}
+    
+    /* 视频画面 - 4:3 比例（传统监控摄像头比例，更节省横向空间） */
+    .dash-video-container{flex:0 0 auto;aspect-ratio:4/3;max-height:480px;width:100%;
+      background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+    .dash-stage{position:relative;width:100%;height:100%;background:#1a1916;}
+    .dash-stage video{width:100%;height:100%;object-fit:contain;display:none;}
+    .dash-stage video.on{display:block;}
+    .scan-dash{position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,var(--accent),transparent);
+      opacity:0;}
+    .dash-stage.analyzing .scan-dash{opacity:.6;animation:scan 2s ease-in-out infinite;}
+    @keyframes scan{0%,100%{top:0;opacity:0}50%{top:50%;opacity:.6}}
+    @keyframes pulsecorner{0%,100%{opacity:.7}50%{opacity:.3}}
+    .boxes-dash{position:absolute;inset:0;pointer-events:none;}
+    .hud-dash{position:absolute;top:14px;right:14px;background:rgba(26,25,22,.82);backdrop-filter:blur(6px);
+      border-radius:8px;padding:8px 12px;color:var(--accent);font-size:.78rem;font-family:var(--mono);
+      font-variant-numeric:tabular-nums;display:none;}
+    .dash-stage.analyzing .hud-dash{display:block;}
+    .corner-dash{position:absolute;top:14px;left:14px;font-size:.78rem;color:var(--accent);
+      font-family:var(--mono);font-variant-numeric:tabular-nums;display:none;}
+    .dash-stage.analyzing .corner-dash{display:block;}
+    .empty-dash{position:absolute;inset:0;display:grid;place-items:center;text-align:center;
+      color:var(--muted);font-size:.95rem;pointer-events:none;}
+    #video.on ~ .empty-dash{display:none;}
+    
+    /* 画面理解 - 固定在视频下方，永远可见 */
+    .dash-understanding{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;
+      flex:0 0 auto;}
+    .dash-understanding-title{font-size:.88rem;font-weight:700;color:var(--muted);margin-bottom:10px;}
+    .dash-scene{font-size:.9rem;color:var(--fg);line-height:1.5;margin-bottom:8px;}
+    .dash-tags{display:flex;flex-wrap:wrap;gap:6px;}
+    .dash-tag{padding:4px 10px;border-radius:6px;background:var(--bg);border:1px solid var(--line);
+      font-size:.75rem;color:var(--fg);}
+    
+    /* 目标档案 - 在监控模式也显示 */
+    #dash-subjects .subjhead{font-size:.7rem;letter-spacing:.6px;color:var(--muted);text-transform:uppercase;margin:10px 0 6px 0;}
+    #dash-subjects .subj{background:var(--bg);border:1px solid var(--line);border-left:2px solid var(--accent);
+      border-radius:8px;padding:8px 10px;margin-bottom:6px;}
+    #dash-subjects .subj .subjline{display:flex;justify-content:space-between;align-items:center;font-size:.82rem;}
+    #dash-subjects .subj .subjline b{color:var(--fg);}
+    #dash-subjects .subj .box{font-family:var(--mono);font-size:.68rem;color:var(--muted);}
+    #dash-subjects .subj .subjapp{font-size:.8rem;color:var(--fg);margin-top:3px;line-height:1.4;}
+    #dash-subjects .subj .atags{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px;}
+    #dash-subjects .subj .atag{font-size:.68rem;padding:2px 7px;border-radius:5px;background:rgba(204,120,92,.12);
+      border:1px solid rgba(204,120,92,.35);color:var(--accent2);}
+    
+    /* 比对匹配结果（可选显示） */
+    .dash-match{background:var(--card);border:2px solid var(--ok);border-radius:12px;padding:14px;
+      display:flex;align-items:center;gap:14px;flex:0 0 auto;box-shadow:0 2px 10px rgba(42,144,103,.12);}
+    .dash-match-icon{font-size:1.8rem;}
+    .dash-match-content{flex:1;}
+    .dash-match-label{font-size:.75rem;color:var(--muted);font-weight:600;}
+    .dash-match-value{font-size:1.2rem;font-weight:700;color:var(--fg);margin:2px 0;}
+    .dash-match-reason{font-size:.8rem;color:var(--muted);}
+    
+    /* 右侧面板：统计 + 日志 */
+    .dash-right-panel{display:flex;flex-direction:column;gap:16px;overflow:hidden;}
+    
+    /* 统计数据紧凑版 */
+    .dash-stats-compact{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;padding:12px;
+      background:var(--card);border:1px solid var(--line);border-radius:12px;}
+    .dash-stat-mini{display:flex;flex-direction:column;align-items:center;gap:4px;}
+    .dash-stat-mini-label{font-size:.72rem;color:var(--muted);text-align:center;}
+    .dash-stat-mini-value{font-size:1.1rem;font-weight:700;color:var(--fg);font-family:var(--mono);
+      font-variant-numeric:tabular-nums;}
+    
+    /* 事件日志 */
+    .dash-log-section{flex:1;display:flex;flex-direction:column;background:var(--card);border:1px solid var(--line);
+      border-radius:12px;padding:16px;overflow:hidden;}
+    .dash-log-container{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding-right:6px;}
+    .dash-log-empty{text-align:center;color:var(--muted);font-size:.85rem;margin-top:40px;}
+    .dash-log-item{display:flex;gap:10px;padding:10px;background:var(--bg);border:1px solid var(--line);
+      border-radius:8px;font-size:.82rem;}
+    .dash-log-item .dot{width:8px;height:8px;border-radius:50%;margin-top:5px;flex:none;background:var(--idle);}
+    .dash-log-item.normal .dot{background:#a39e8e;}
+    .dash-log-item.attention .dot{background:var(--warn);}
+    .dash-log-item.alert .dot{background:var(--alert);}
+    .dash-log-item .content{flex:1;display:flex;flex-direction:column;gap:4px;}
+    .dash-log-item .time{color:var(--muted);font-family:var(--mono);font-size:.75rem;font-variant-numeric:tabular-nums;}
+    .dash-log-item .msg{color:var(--fg);line-height:1.4;}
+
+    /* 比对标准单选 */
+    .modes{display:flex;flex-direction:column;gap:6px;margin-top:6px;}
+    .mode{display:flex;align-items:center;gap:8px;font-size:.84rem;color:#54514a;
+      background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 10px;cursor:pointer;}
+    .mode input{accent-color:var(--accent);}
+    .compareState.on{color:var(--ok);}
+
+    /* 帧预览弹窗 */
+    .modal{position:fixed;inset:0;background:rgba(58,54,46,.42);backdrop-filter:blur(3px);
+      display:none;place-items:center;z-index:50;padding:20px;}
+    .modal.open{display:grid;}
+    #modal{z-index:60;}
+    .modalbox{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+      max-width:760px;width:100%;max-height:88vh;overflow:auto;padding:16px;box-shadow:var(--shadow-lg);}
+    .modalbox h3{margin:0 0 4px;font-size:1rem;}
+    .modalbox .mt{color:var(--muted);font-size:.78rem;margin-bottom:10px;}
+    .modalbox img.frame{width:100%;border-radius:10px;border:1px solid var(--line);background:var(--stage);}
+    .modalbox pre{background:#f3f1ea;border:1px solid var(--line);border-radius:8px;padding:12px;
+      font-family:var(--mono);font-size:.78rem;overflow:auto;max-height:280px;margin-top:12px;color:#44423b;}
+    .modalbox .close{float:right;}
+
+    /* 历史周期列表 */
+    .hsess{display:flex;align-items:center;gap:12px;padding:11px 12px;margin-top:8px;
+      background:var(--card);border:1px solid var(--line);border-radius:8px;cursor:pointer;transition:.15s;}
+    .hsess:hover{border-color:var(--accent);background:#f6efe9;}
+    .hsess .hid{font-weight:600;color:var(--accent2);font-family:var(--mono);font-size:.8rem;}
+    .hsess .hmeta{flex:1;font-size:.78rem;color:var(--muted);}
+    .hsess .hnum{font-size:.74rem;color:var(--fg);white-space:nowrap;}
+    .hsess .hnum b{color:var(--accent2);}
+    .hsess .hnum .ha{color:var(--alert);}
+    .hsess .hdel{color:var(--alert);border-color:rgba(192,57,43,.35);background:transparent;padding:5px 9px;font-size:.7rem;box-shadow:none;}
+    .hempty{color:var(--muted);padding:16px 4px;font-size:.84rem;}
+
+    /* ===== 交互式流水线画布：架构图即控制台（浅色 / 流动连线 / 可插拔模型） ===== */
+    .canvas{max-width:1800px;margin:12px auto 0;padding:0 24px;}
+    .canvas .ctitle{display:flex;align-items:baseline;gap:12px;margin:0 2px 4px;flex-wrap:wrap;}
+    .canvas .ctitle h2{margin:0;font-size:1.02rem;font-family:var(--serif);font-weight:600;color:var(--fg);letter-spacing:.1px;text-transform:none;}
+    .canvas .ctitle .hint{margin:0;}
+    .railwrap{background:none;border:none;border-radius:0;padding:16px 2px 0;margin-top:10px;box-shadow:none;overflow-x:auto;}
+    .railwrap::-webkit-scrollbar{height:9px;}
+    .railwrap::-webkit-scrollbar-thumb{background:#dcd7c9;border-radius:5px;}
+    .railwrap::-webkit-scrollbar-track{background:transparent;}
+    .rail{display:flex;align-items:stretch;gap:0;min-width:max-content;}
+
+    .pnode{position:relative;width:212px;flex:none;background:#fff;border:1px solid var(--line);
+      border-radius:14px;padding:13px 14px 14px;transition:transform .18s,box-shadow .18s,border-color .18s;
+      box-shadow:0 1px 2px rgba(50,46,38,.04);display:flex;flex-direction:column;}
+    .pnode.wide{width:248px;}
+    .pnode.active{border-color:var(--accent);transform:translateY(-2px);
+      box-shadow:0 0 0 1px var(--accent),0 10px 26px rgba(204,120,92,.20);}
+    .pnode.hit{border-color:var(--ok);box-shadow:0 0 0 1px var(--ok),0 8px 22px rgba(42,144,103,.16);}
+    .pnode.warn{border-color:var(--warn);}
+    .pnode .ph{display:flex;align-items:center;gap:9px;font-weight:600;font-size:.86rem;color:var(--fg);}
+    .pnode .pico{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;
+      background:var(--card);border:1px solid var(--line);font-size:15px;flex:none;transition:.18s;}
+    .pnode.active .pico{background:linear-gradient(135deg,var(--accent),var(--accent2));border-color:transparent;box-shadow:0 3px 10px rgba(204,120,92,.4);}
+    .pnode.hit .pico{background:linear-gradient(135deg,var(--ok),#1f7d59);border-color:transparent;}
+    .pnode .pname{flex:1;}
+    .pnode .pled{width:8px;height:8px;border-radius:50%;background:var(--idle);transition:.2s;flex:none;}
+    .pnode.on .pled{background:var(--ok);}
+    .pnode.active .pled{background:var(--accent);animation:pulse 1.2s infinite;}
+    .pnode .pbody{margin-top:11px;display:flex;flex-direction:column;gap:9px;}
+    .pnode .pst{font-size:.71rem;color:var(--muted);margin-top:11px;padding-top:9px;border-top:1px dashed var(--line);
+      min-height:1.4em;line-height:1.35;font-family:var(--mono);font-variant-numeric:tabular-nums;word-break:break-word;}
+    .pnode .pstep{position:absolute;top:-9px;left:13px;width:20px;height:20px;border-radius:50%;
+      background:#fff;border:1px solid var(--line);display:grid;place-items:center;font-size:.66rem;font-weight:700;color:var(--muted);z-index:10;}
+    .pnode.active .pstep,.pnode.hit .pstep{border-color:var(--accent);color:var(--accent);}
+
+    /* 节点内联控件 */
+    .psel{width:100%;font-size:.77rem;padding:7px 26px 7px 10px;border-radius:8px;}
+    .plabel{font-size:.68rem;color:var(--muted);letter-spacing:.2px;margin-bottom:-3px;}
+    .pswitch{display:flex;align-items:center;gap:9px;font-size:.76rem;color:#56524a;cursor:pointer;user-select:none;}
+    .pswitch b{color:var(--fg);font-weight:600;}
+    .tgl{position:relative;width:34px;height:19px;flex:none;display:inline-block;}
+    .tgl input{opacity:0;width:0;height:0;position:absolute;margin:0;}
+    .tgl .sl{position:absolute;inset:0;background:var(--idle);border-radius:999px;transition:.18s;}
+    .tgl .sl::before{content:"";position:absolute;left:2px;top:2px;width:15px;height:15px;border-radius:50%;
+      background:#fff;transition:.18s;box-shadow:0 1px 2px rgba(50,46,38,.25);}
+    .tgl input:checked + .sl{background:var(--accent);}
+    .tgl input:checked + .sl::before{transform:translateX(15px);}
+    .pinline{display:flex;align-items:center;gap:7px;}
+    .pinline input[type=number]{padding:6px 8px;text-align:center;}
+    .pinline .u{font-size:.72rem;color:var(--muted);white-space:nowrap;}
+    .pmini{font-size:.72rem;padding:6px 10px;}
+    .pnode .modes{display:flex;flex-direction:row;flex-wrap:wrap;gap:6px;}
+    .pnode .mode{padding:5px 8px;font-size:.74rem;flex:1 1 auto;text-align:center;}
+    .pnode .ref{margin-top:0;}
+    .pnode .ref img{width:38px;height:38px;}
+    .rail-input-mini{width:100%;aspect-ratio:16/9;border-radius:9px;border:1px solid var(--line);
+      background:var(--stage);object-fit:contain;display:block;}
+    .planbox{font-size:.7rem;color:var(--muted);line-height:1.35;background:var(--card);
+      border:1px solid var(--line);border-radius:8px;padding:7px 9px;}
+    .modelpill{font-size:.64rem;color:var(--accent2);background:rgba(204,120,92,.1);
+      border:1px solid rgba(204,120,92,.3);border-radius:999px;padding:1px 7px;margin-left:auto;font-weight:600;}
+
+    /* ===== 架构图（紧凑·全屏免滚动）：栏A 输入+检测+门控 / 栏B 编译+巡航+理解 / ⑦结果 ＋ ⑧日志(并排,日志窄) ===== */
+    .diagram{display:flex;align-items:stretch;justify-content:center;gap:0;min-width:max-content;}
+    .dcol{display:flex;flex-direction:column;}
+    .colA{flex:0 0 470px;}                 /* 输入栏加宽：监控画面更大 */
+    .colB{flex:0 0 280px;}
+    .cres{flex:0 0 360px;}                 /* ⑦ 结果 */
+    .clog{flex:0 0 220px;}                 /* ⑧ 日志：窄栏 */
+    .dcol .pnode{width:100%;}
+    /* 每栏长度一致 + 单个模块超长内滚动 */
+    .colA,.colB{min-height:0;}
+    .dcol > .pnode{flex:0 0 auto;display:flex;flex-direction:column;}
+    .dcol > .pnode .pbody{flex:1;overflow-y:auto;min-height:0;}
+    .colA > .pnode:last-child,.colB > .pnode:last-child{flex:1 1 auto;}  /* 末节点撑满对齐底边 */
+    .dcol .pnode.wide{width:100%;}
+    /* 紧凑节点：缩小内边距与间距，压低整体高度 */
+    .pnode{padding:11px 13px 11px;}
+    .pnode .pbody{margin-top:9px;gap:8px;}
+    .pnode .pst{margin-top:9px;padding-top:8px;}
+    /* 输入视频：用上左右富余空间适当调大 */
+    .din .dctrl{margin-top:9px;}
+    .din .stage{flex:0 0 auto;height:236px;min-height:0;margin-top:9px;}
+    /* 栏内竖向连线固定小高度 */
+    .conn-v{flex:0 0 18px;min-height:18px;}
+    /* ⑦⑧ 内容设最大高度，超长则各自内部上下滚动；空内容时也撑满与各栏对齐 */
+    .cres,.clog{align-self:stretch;}
+    .cres .pbody{flex:1;max-height:none;overflow-y:auto;padding-right:2px;}
+    .clog{display:flex;flex-direction:column;}
+    .clog .log{flex:1;height:auto;max-height:none;min-height:120px;overflow-y:auto;margin-top:6px;}
+    /* ⑦ 结果栏整体缩字；⑧ 日志窄栏缩字 */
+    .cres .ph .pname,.clog .ph .pname{font-size:.8rem;}
+    .cres .matchcard{padding:11px;}
+    .cres .matchcard .big{font-size:1.15rem;}
+    .cres .matchcard .conf{font-size:.72rem;}
+    .cres .matchcard .reason{font-size:.76rem;}
+    .cres .stat .n{font-size:1.04rem;}
+    .cres .stat .l{font-size:.62rem;}
+    .cres .scene{font-size:.74rem;}
+    .clog .log{font-size:.72rem;}
+    @media(max-width:1100px){
+      .diagram{flex-direction:column;min-width:0;justify-content:flex-start;align-items:stretch;}
+      .colA,.colB,.cres,.clog{flex:1 1 auto;width:100%;}
+      .din .stage{height:240px;}
+      .conn-h,.conn-h.cross{display:none;}
+      .cres .pbody{max-height:none;overflow:visible;}
+      .clog .log{max-height:240px;}
+    }
+
+    /* 流动连接线（CSS 渐变，常态轻流动，活跃时加亮加速） */
+    .conn-h{flex:0 0 50px;align-self:center;position:relative;height:20px;}
+    .conn-h::before{content:"";position:absolute;left:5px;right:11px;top:50%;height:2px;transform:translateY(-50%);
+      background:repeating-linear-gradient(to right,var(--accent) 0 3px,transparent 3px 11px);
+      background-size:14px 2px;opacity:.22;animation:flowright 1.6s linear infinite;}
+    .conn-h.flow::before{opacity:1;animation-duration:.5s;}
+    .conn-h::after{content:"";position:absolute;right:3px;top:50%;transform:translateY(-50%);
+      border-left:7px solid var(--idle);border-top:5px solid transparent;border-bottom:5px solid transparent;transition:.18s;}
+    .conn-h.flow::after{border-left-color:var(--accent);}
+    @keyframes flowright{to{background-position:14px 0;}}
+
+    /* 跨栏连线：Z 形（横出→竖升→横进），直角转折 */
+    .conn-h.cross{flex:0 0 50px;align-self:stretch;height:auto;position:relative;}
+    .conn-h.cross svg{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;}
+    .conn-h.cross path{fill:none;stroke:var(--idle);stroke-width:2.5;opacity:.3;
+      stroke-dasharray:8 6;animation:flowpath 2s linear infinite;stroke-linecap:square;}
+    .conn-h.cross.flow path{stroke:var(--accent);opacity:1;stroke-width:3;animation-duration:.7s;}
+    .conn-h.cross .arrow{fill:var(--idle);transition:.18s;}
+    .conn-h.cross.flow .arrow{fill:var(--accent);}
+    @keyframes flowpath{to{stroke-dashoffset:-14;}}
+    .conn-h.cross.flow::after{border-bottom-color:var(--accent);}
+    @keyframes flowup{to{background-position:0 -14px;}}
+    .conn-v{flex:0 0 18px;min-height:18px;position:relative;width:100%;}
+    .conn-v::before{content:"";position:absolute;top:3px;bottom:9px;left:50%;width:2px;transform:translateX(-50%);
+      background:repeating-linear-gradient(to bottom,var(--accent) 0 3px,transparent 3px 11px);
+      background-size:2px 14px;opacity:.22;animation:flowdown 1.6s linear infinite;}
+    .conn-v.flow::before{opacity:1;animation-duration:.5s;}
+    .conn-v::after{content:"";position:absolute;bottom:1px;left:50%;transform:translateX(-50%);
+      border-top:7px solid var(--idle);border-left:5px solid transparent;border-right:5px solid transparent;transition:.18s;}
+    .conn-v.flow::after{border-top-color:var(--accent);}
+    @keyframes flowdown{to{background-position:0 14px;}}
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand"><span class="logo">◉</span> 实时比对监控系统 <span style="color:var(--muted);font-weight:400;font-size:.78rem">实时视频分析</span></div>
+    <div class="live"><span class="led" id="led"></span><span id="liveText">待机</span></div>
+    <button id="btnHistory" style="padding:6px 12px;font-size:.74rem">历史记录</button>
+    <div class="clock" id="clock">--:--:--</div>
+  </div>
+
+  <!-- ===== 顶栏：标题 + 模式切换器 ===== -->
+  <div class="topbar-main">
+    <div class="topbar-title">
+      <h2>视频理解 PoC · 实时监控</h2>
+    </div>
+    <div class="mode-switcher">
+      <button id="btnMonitorMode" class="mode-btn active">🎬 监控模式</button>
+      <button id="btnTechMode" class="mode-btn">🔧 技术模式</button>
+    </div>
+  </div>
+
+  <!-- ===== 监控模式视图（默认）===== -->
+  <div id="monitor-view" class="view-container">
+    <div class="dashboard-layout">
+      
+      <!-- 左侧配置面板 -->
+      <div class="dash-sidebar">
+        <div class="dash-section">
+          <h3 class="dash-heading">📷 输入源</h3>
+          <div class="dash-controls">
+            <button id="btnCam-dash" class="dash-btn">📷 摄像头</button>
+            <button id="btnFile-dash" class="dash-btn">🎞️ 视频文件</button>
+            <input id="fileInput-dash" type="file" accept="video/*" hidden />
+          </div>
+        </div>
+
+        <div class="dash-section">
+          <h3 class="dash-heading">🟩 YOLO 检测</h3>
+          <div class="dash-controls">
+            <select id="yoloModel-dash" class="dash-select">
+              <option value="yolov8m" selected>YOLOv8m · 当前后端</option>
+              <option value="yolov8n">YOLOv8n · 更快</option>
+              <option value="yolov8x">YOLOv8x · 更准</option>
+            </select>
+            <label class="dash-switch">
+              <input type="checkbox" id="boxToggle-dash" checked />
+              <span class="dash-switch-slider"></span>
+              <span class="dash-switch-label">显示检测框</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="dash-section">
+          <h3 class="dash-heading">🚦 事件门控</h3>
+          <div class="dash-controls">
+            <label class="dash-switch">
+              <input type="checkbox" id="gateToggle-dash" checked />
+              <span class="dash-switch-slider"></span>
+              <span class="dash-switch-label">门控初筛</span>
+            </label>
+            <div class="dash-input-group">
+              <label class="dash-label">采样间隔</label>
+              <div style="display:flex;gap:6px;">
+                <input id="intervalVal-dash" type="number" min="0.2" step="0.1" value="3" class="dash-input" style="width:70px" />
+                <select id="intervalUnit-dash" class="dash-select" style="flex:1">
+                  <option value="1000" selected>秒</option>
+                  <option value="1">毫秒</option>
+                  <option value="60000">分钟</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="dash-section">
+          <h3 class="dash-heading">🎯 目标比对</h3>
+          <div class="dash-controls">
+            <input id="target-dash" type="text" placeholder="目标：穿红外套的人" class="dash-input" />
+            <div class="dash-modes">
+              <label class="dash-radio"><input type="radio" name="cmode-dash" value="text" checked /> 文字为准</label>
+              <label class="dash-radio"><input type="radio" name="cmode-dash" value="image" /> 图片为准</label>
+              <label class="dash-radio"><input type="radio" name="cmode-dash" value="both" /> 文字+图片</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="dash-section">
+          <h3 class="dash-heading">🛰️ 巡航裁决</h3>
+          <div class="dash-controls">
+            <label class="dash-switch">
+              <input type="checkbox" id="cruiseToggle-dash" checked />
+              <span class="dash-switch-slider"></span>
+              <span class="dash-switch-label">YOLO 巡航</span>
+            </label>
+            <div class="dash-input-group">
+              <label class="dash-label">审计间隔</label>
+              <div style="display:flex;gap:6px;align-items:center;">
+                <input id="auditEvery-dash" type="number" min="2" max="60" value="8" class="dash-input" style="width:70px" />
+                <span class="dash-hint">帧/次</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="dash-section">
+          <h3 class="dash-heading">🧠 多模态理解</h3>
+          <div class="dash-controls">
+            <select id="llmModel-dash" class="dash-select">
+              <option value="gpt-4o" selected>gpt-4o · 当前后端</option>
+              <option value="gpt-4o-mini">gpt-4o-mini · 更省</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- 主视图区域 -->
+      <div class="dash-main">
+        <!-- 控制栏 -->
+        <div class="dash-toolbar">
+          <button id="btnStart-dash" class="dash-btn-primary" disabled>▶ 开始监控</button>
+          <button id="btnStop-dash" class="dash-btn-danger" disabled>■ 停止</button>
+          <button id="btnCompare-dash" class="dash-btn-secondary">🎯 开始比对</button>
+          <button id="btnCompareStop-dash" class="dash-btn-secondary" disabled>停止比对</button>
+        </div>
+
+        <!-- 视频画面 + 检测框 -->
+        <div class="dash-video-container">
+          <div class="dash-stage" id="stage-dash">
+            <!-- video元素会从tech-view动态移动到这里 -->
+            <div class="scan-dash"></div>
+            <svg class="boxes-dash" id="boxes-dash" preserveAspectRatio="none"></svg>
+            <div class="hud-dash" id="hud-dash"></div>
+            <div class="corner-dash" id="corner-dash"></div>
+            <div class="empty-dash" id="empty-dash">
+              无信号 · 未连接信号源<br/>
+              <span style="font-size:.85rem;color:var(--muted);margin-top:8px;display:block">请在左侧配置面板选择输入源</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 画面理解 - 固定在视频下方，实时更新 -->
+        <div class="dash-understanding">
+          <div class="dash-understanding-title">🧠 当前画面理解</div>
+          <div class="dash-scene" id="dash-scene">—</div>
+          <div class="dash-tags" id="dash-tags"></div>
+          <div id="dash-subjects" style="margin-top:10px;"></div>
+        </div>
+
+        <!-- 比对匹配结果（如果启用比对才显示） -->
+        <div class="dash-match" id="dash-match-card" style="display:none;">
+          <div class="dash-match-icon">✅</div>
+          <div class="dash-match-content">
+            <div class="dash-match-label">比对结果</div>
+            <div class="dash-match-value" id="dash-match-big">未匹配</div>
+            <div class="dash-match-reason" id="dash-match-reason">—</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右侧：统计数据 + 事件日志 -->
+      <div class="dash-right-panel">
+        <!-- 统计数据（紧凑） -->
+        <div class="dash-stats-compact">
+          <div class="dash-stat-mini">
+            <div class="dash-stat-mini-label">已分析</div>
+            <div class="dash-stat-mini-value" id="dash-frames">0</div>
+          </div>
+          <div class="dash-stat-mini">
+            <div class="dash-stat-mini-label">命中</div>
+            <div class="dash-stat-mini-value" style="color:var(--ok)" id="dash-match-count">0</div>
+          </div>
+          <div class="dash-stat-mini">
+            <div class="dash-stat-mini-label">告警</div>
+            <div class="dash-stat-mini-value" style="color:var(--alert)" id="dash-alert">0</div>
+          </div>
+          <div class="dash-stat-mini">
+            <div class="dash-stat-mini-label">gpt-4o</div>
+            <div class="dash-stat-mini-value" style="color:var(--accent2)" id="dash-llm">0</div>
+          </div>
+          <div class="dash-stat-mini">
+            <div class="dash-stat-mini-label">省钱</div>
+            <div class="dash-stat-mini-value" style="color:var(--ok)" id="dash-save-pct">0%</div>
+          </div>
+        </div>
+
+        <!-- 事件日志 -->
+        <div class="dash-log-section">
+          <h3 class="dash-heading">📋 事件日志</h3>
+          <div class="dash-log-container" id="dash-log-container">
+            <div class="dash-log-empty">等待开始监控...</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ===== 技术模式视图（流程图）===== -->
+  <div id="tech-view" class="view-container" style="display:none">
+  <div class="canvas">
+    <div class="ctitle">
+      <h2>识别架构 · Live Architecture</h2>
+      <span class="hint">整张图就是系统，分三栏读：<b>栏A 输入·检测·门控</b> → <b>栏B 编译·巡航·理解</b> → <b>栏C 结果·事件日志</b>。数据沿连线实时流动、点亮当前步骤；每个模块的<b>模型/方案</b>可在节点上直接切换。</span>
+    </div>
+    <div class="railwrap">
+    <div class="diagram" id="rail">
+
+      <!-- ===== 栏 A：输入 + 物体检测 + 事件门控 ===== -->
+      <div class="dcol colA">
+
+      <!-- 输入源 · 监控大屏 -->
+      <div class="pnode din" id="nd-input" data-node="input">
+        <span class="pstep">1</span>
+        <div class="ph"><span class="pico">📷</span><span class="pname">输入源 · 监控画面</span><span class="pled"></span></div>
+        <div class="pinline dctrl" style="flex-wrap:wrap">
+          <button id="btnCam" class="pmini">📷 摄像头</button>
+          <button id="btnFile" class="pmini">🎞️ 视频</button>
+          <input id="fileInput" type="file" accept="video/*" hidden />
+          <button id="btnStart" class="primary pmini" style="flex:1" disabled>▶ 开始监控</button>
+          <button id="btnStop" class="danger pmini" disabled>■ 停止</button>
+        </div>
+        <div class="stage" id="stage">
+          <video id="video" playsinline muted></video>
+          <div class="scan"></div>
+          <svg class="boxes" id="boxes" preserveAspectRatio="none"></svg>
+          <div class="hud" id="hud"></div>
+          <div class="corner" id="corner"></div>
+          <div class="empty" id="empty">无信号 · 未连接信号源<br/><span style="font-size:.76rem;color:var(--muted)">用上方按钮开启摄像头或载入视频</span></div>
+        </div>
+        <div class="pst" id="st-input">未连接信号源</div>
+      </div>
+
+      <div class="conn-v" data-from="input" data-to="yolo"></div>
+
+      <!-- ② 物体检测 -->
+      <div class="pnode" id="nd-yolo" data-node="yolo">
+        <span class="pstep">2</span>
+        <div class="ph"><span class="pico">🟩</span><span class="pname">物体检测</span><span class="modelpill" id="pill-yolo">YOLOv8m</span><span class="pled"></span></div>
+        <div class="pbody">
+          <div class="plabel">检测模型 / 方案（可插拔）</div>
+          <select id="yoloModel" class="psel">
+            <option value="yolov8m" selected>YOLOv8m · 当前后端</option>
+            <option value="yolov8n">YOLOv8n · 更快</option>
+            <option value="yolov8x">YOLOv8x · 更准</option>
+            <option value="rtdetr">RT-DETR · 规划中</option>
+            <option value="grounding-dino">GroundingDINO · 开放词表(规划)</option>
+          </select>
+          <label class="pswitch"><span class="tgl"><input type="checkbox" id="boxToggle" checked /><span class="sl"></span></span><b>显示检测框</b></label>
+        </div>
+        <div class="pst" id="st-yolo">待机</div>
+      </div>
+
+      <div class="conn-v" data-from="yolo" data-to="gate"></div>
+
+      <!-- ③ 事件门控 -->
+      <div class="pnode" id="nd-gate" data-node="gate">
+        <span class="pstep">3</span>
+        <div class="ph"><span class="pico">🚦</span><span class="pname">事件门控</span><span class="pled"></span></div>
+        <div class="pbody">
+          <label class="pswitch"><span class="tgl"><input type="checkbox" id="gateToggle" checked /><span class="sl"></span></span><b>门控初筛</b></label>
+          <div class="plabel">采样间隔（多久抽一帧）</div>
+          <div class="pinline">
+            <input id="intervalVal" type="number" min="0.2" step="0.1" value="3" style="width:62px" />
+            <select id="intervalUnit" class="psel" style="flex:1">
+              <option value="1000" selected>秒</option>
+              <option value="1">毫秒</option>
+              <option value="60000">分钟</option>
+            </select>
+          </div>
+        </div>
+        <div class="pst" id="st-gate">—</div>
+      </div>
+
+      </div><!-- /colA -->
+
+      <div class="conn-h cross" data-from="gate" data-to="compile">
+        <svg viewBox="0 0 50 100" preserveAspectRatio="none">
+          <path d="M 0,85 L 15,85 L 15,15 L 50,15" />
+          <polygon class="arrow" points="50,15 42,11 42,19" />
+        </svg>
+      </div>
+
+      <!-- ===== 栏 B：目标编译 + 巡航裁决 + 多模态理解 ===== -->
+      <div class="dcol colB">
+
+      <!-- ④ 目标编译 / 比对 -->
+      <div class="pnode wide" id="nd-compile" data-node="compile">
+        <span class="pstep">4</span>
+        <div class="ph"><span class="pico">🎯</span><span class="pname">目标编译</span><span class="pled"></span></div>
+        <div class="pbody">
+          <input id="target" type="text" placeholder="目标：穿红外套的人 / 快递包裹" />
+          <div class="ref">
+            <img id="refThumb" alt="ref" style="display:none" />
+            <button id="btnRef" class="pmini">选择参考图</button>
+            <button id="btnRefClear" class="pmini" style="display:none">清除</button>
+            <input id="refInput" type="file" accept="image/*" hidden />
+          </div>
+          <div class="modes">
+            <label class="mode"><input type="radio" name="cmode" value="text" checked /> 文字为准</label>
+            <label class="mode"><input type="radio" name="cmode" value="image" /> 图片为准</label>
+            <label class="mode"><input type="radio" name="cmode" value="both" /> 文字 + 图片</label>
+          </div>
+          <div class="pinline">
+            <button id="btnCompare" class="primary pmini" style="flex:1">开始比对</button>
+            <button id="btnCompareStop" class="danger pmini" disabled>停止</button>
+          </div>
+          <span class="hint" id="compareState" style="margin:0">未比对（仅做画面理解）</span>
+          <div class="planbox" id="planStatus">编译目标后显示巡航计划。</div>
+        </div>
+        <div class="pst" id="st-compile">未设比对目标</div>
+      </div>
+
+      <div class="conn-v" data-from="compile" data-to="cruise"></div>
+
+      <!-- ⑤ 巡航裁决 -->
+      <div class="pnode" id="nd-cruise" data-node="cruise">
+        <span class="pstep">5</span>
+        <div class="ph"><span class="pico">🛰️</span><span class="pname">巡航裁决</span><span class="pled"></span></div>
+        <div class="pbody">
+          <label class="pswitch"><span class="tgl"><input type="checkbox" id="cruiseToggle" checked /><span class="sl"></span></span><b>YOLO 巡航</b></label>
+          <div class="plabel">审计间隔</div>
+          <div class="pinline">
+            <input id="auditEvery" type="number" min="2" max="60" value="8" style="width:62px" />
+            <span class="u">帧 · gpt-4o 复核一次</span>
+          </div>
+        </div>
+        <div class="pst" id="st-cruise">未启用</div>
+      </div>
+
+      <div class="conn-v" data-from="cruise" data-to="llm"></div>
+
+      <!-- ⑥ 多模态理解 -->
+      <div class="pnode" id="nd-llm" data-node="llm">
+        <span class="pstep">6</span>
+        <div class="ph"><span class="pico">🧠</span><span class="pname">多模态理解</span><span class="modelpill" id="pill-llm">gpt-4o</span><span class="pled"></span></div>
+        <div class="pbody">
+          <div class="plabel">理解 / 比对模型（可插拔）</div>
+          <select id="llmModel" class="psel">
+            <option value="gpt-4o" selected>gpt-4o · 当前后端</option>
+            <option value="gpt-4o-mini">gpt-4o-mini · 更省</option>
+            <option value="gemini-2.0-flash">Gemini 2.0 Flash · 规划</option>
+            <option value="qwen2.5-vl">Qwen2.5-VL · 规划</option>
+          </select>
+        </div>
+        <div class="pst" id="st-llm">0 次调用</div>
+      </div>
+
+      </div><!-- /colB -->
+
+      <div class="conn-h cross" data-from="llm" data-to="result">
+        <svg viewBox="0 0 50 100" preserveAspectRatio="none">
+          <path d="M 0,85 L 15,85 L 15,15 L 50,15" />
+          <polygon class="arrow" points="50,15 42,11 42,19" />
+        </svg>
+      </div>
+
+      <!-- ===== ⑦ 比对结果 ＋ ⑧ 事件日志：并排，日志窄栏；内容超长则各自内部滚动 ===== -->
+
+        <!-- ⑦ 比对结果 -->
+        <div class="pnode cres" id="nd-result" data-node="result">
+          <span class="pstep">7</span>
+          <div class="ph"><span class="pico">✅</span><span class="pname">比对结果 · Match</span><span class="pled"></span></div>
+          <div class="pbody">
+            <div class="matchcard nomatch" id="matchCard">
+              <div class="conf" id="matchTarget">未设置比对目标</div>
+              <div class="big" id="matchBig">待机</div>
+              <div class="conf" id="matchConf"></div>
+              <div class="reason" id="matchReason"></div>
+            </div>
+
+            <div class="stats">
+              <div class="stat"><div class="n" id="sFrames">0</div><div class="l">已分析帧</div></div>
+              <div class="stat"><div class="n" id="sMatch" style="color:var(--ok)">0</div><div class="l">命中次数</div></div>
+              <div class="stat"><div class="n" id="sAlert" style="color:var(--alert)">0</div><div class="l">告警次数</div></div>
+            </div>
+            <div class="stats" style="margin-top:8px;grid-template-columns:repeat(3,1fr)">
+              <div class="stat"><div class="n" id="sLlm" style="color:var(--accent2)">0</div><div class="l">gpt-4o 调用</div></div>
+              <div class="stat"><div class="n" id="sSaved" style="color:var(--ok)">0</div><div class="l">门控已省</div></div>
+              <div class="stat"><div class="n" id="sSavePct" style="color:var(--ok)">0%</div><div class="l">省下比例</div></div>
+            </div>
+
+            <div style="margin-top:12px">
+              <div class="plabel">当前画面理解</div>
+              <div class="scene" id="scene">—</div>
+              <div class="tags" id="tags"></div>
+              <div id="subjects"></div>
+            </div>
+            <div class="planbox" id="resultMini" style="display:none">等待开始监控…</div>
+          </div>
+          <div class="pst" id="st-result">待机</div>
+        </div>
+
+        <div class="conn-h cross" data-from="result" data-to="log">
+          <svg viewBox="0 0 50 100" preserveAspectRatio="none">
+            <path d="M 0,50 L 50,50" />
+            <polygon class="arrow" points="50,50 42,46 42,54" />
+          </svg>
+        </div>
+
+        <!-- ⑧ 事件日志 -->
+        <div class="pnode dlog clog" id="nd-log" data-node="log">
+          <span class="pstep">8</span>
+          <div class="ph"><span class="pico">📜</span><span class="pname">事件日志 · Event Log</span><span class="pled"></span></div>
+          <div class="log" id="log"></div>
+        </div>
+
+    </div>
+    </div>
+  </div>
+  </div><!-- /tech-view -->
+
+  <canvas id="canvas" hidden></canvas>
+
+  <!-- 帧预览弹窗：点击日志查看当时发给大模型的帧 -->
+  <div class="modal" id="modal">
+    <div class="modalbox">
+      <button class="close" id="modalClose">✕ 关闭</button>
+      <h3 id="modalTitle">发给大模型的帧</h3>
+      <div class="mt" id="modalTime"></div>
+      <img class="frame" id="modalImg" alt="frame" />
+      <pre id="modalJson"></pre>
+    </div>
+  </div>
+
+  <!-- 历史日志弹窗：按监控周期浏览过往日志 + 帧 -->
+  <div class="modal" id="histModal">
+    <div class="modalbox" style="max-width:880px">
+      <button class="close" id="histClose">✕ 关闭</button>
+      <h3 id="histTitle">历史监控记录</h3>
+      <div class="mt" id="histSub">每次「开始监控 → 停止监控」为一个周期</div>
+      <div id="histList"></div>
+      <div id="histDetail" style="display:none">
+        <button id="histBack" style="margin-bottom:10px">‹ 返回列表</button>
+        <div class="mt" id="histDetailMeta"></div>
+        <div class="log" id="histLog" style="max-height:52vh"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ===== 模式切换：监控模式 vs 技术模式 =====
+    const monitorView = document.getElementById("monitor-view");
+    const techView = document.getElementById("tech-view");
+    const btnMonitorMode = document.getElementById("btnMonitorMode");
+    const btnTechMode = document.getElementById("btnTechMode");
+
+    // 默认技术模式（流程图已完成，监控模式待开发）
+    let currentMode = localStorage.getItem("view-mode") || "tech";
+    function switchMode(mode){
+      currentMode = mode;
+      localStorage.setItem("view-mode", mode);
+      if (mode === "monitor"){
+        monitorView.style.display = "block";
+        techView.style.display = "none";
+        btnMonitorMode.classList.add("active");
+        btnTechMode.classList.remove("active");
+      } else {
+        monitorView.style.display = "none";
+        techView.style.display = "block";
+        btnMonitorMode.classList.remove("active");
+        btnTechMode.classList.add("active");
+      }
+    }
+    btnMonitorMode.addEventListener("click", () => switchMode("monitor"));
+    btnTechMode.addEventListener("click", () => switchMode("tech"));
+    switchMode(currentMode);  // 初始化视图
+
+    // ===== 共享业务逻辑和 DOM 元素 =====
+    const $ = (id) => document.getElementById(id);
+    const video = $("video"), canvas = $("canvas"), stage = $("stage");
+    let stream = null, timer = null, inFlight = false, refDataUri = null;
+    let stats = { frames: 0, match: 0, alert: 0, llm: 0, skipped: 0 };
+    let activeCompare = null;           // {mode,target,reference} —— 点「开始比对」后才有值
+    let frameStore = {}, frameSeq = 0;  // 存每帧的图像+结果，供日志点击预览
+    let cycle = null;                   // 当前监控周期（开始监控→停止监控）
+    let lastCounts = null;              // 上一帧 YOLO counts（传给门控判断进出场）
+    let lastLlmTs = 0;                  // 上次真正调用 gpt-4o 的时间戳（冷却/心跳）
+    let cruiseBuf = [];                 // YOLO 巡航期缓冲的帧（审计发现偏差时回填重判）
+    let cruiseCount = 0;                // 巡航帧计数器（用于审计间隔节流）
+    let lastLlmSig = null, lastLlmData = null;   // #1 复用：上次真调 gpt-4o 的签名 + 完整结果
+    let lastAuditCount = 0, lastCruiseVerdict = null, cruiseFlip = false;  // #2 颜色触发审计状态
+    const BACKFILL_MAX = 4;             // 单次回填最多重判的帧数（防长时间冻结实时画面）
+
+    function auditEvery(){ return Math.max(2, Math.min(60, parseInt($("auditEvery").value) || 8)); }
+
+    // ===== 交互式流水线：节点弹层 + 实时高亮当前流经步骤 =====
+    const STAGES = ["input","yolo","gate","compile","cruise","llm","result"];
+    let camOn = false, cooldownTimer = null;   // 摄像头开关状态 / 结束后 5s 冷静期计时器
+    function closeAllPops(){}   // 已改为节点内联控件，无浮层（保留空函数兼容旧调用）
+
+    // —— 可插拔模型/方案选择（架构演示）——
+    // 当前后端实跑 YOLOv8m + gpt-4o；其余为方案占位，切换后随请求透传，后端接入后即生效。
+    let yoloModelSel = "yolov8m", llmModelSel = "gpt-4o";
+    function wireModelSelect(id, pillId, setter, planned){
+      const sel = $(id), pill = $(pillId);
+      if (!sel) return;
+      sel.addEventListener("change", () => {
+        const v = sel.value, txt = sel.options[sel.selectedIndex].text;
+        setter(v);
+        if (pill) pill.textContent = txt.split(" ·")[0];
+        const isPlanned = /规划/.test(txt);
+        if (isPlanned) logRow("attention", "🧩 已切换为「" + txt + "」：当前后端尚未接入，实跑仍为默认方案；该选择会随请求透传，接入后即生效。", false, null);
+        else logRow("normal", "🧩 模型方案 → " + txt, false, null);
+      });
+    }
+    wireModelSelect("yoloModel", "pill-yolo", v => yoloModelSel = v);
+    wireModelSelect("llmModel", "pill-llm", v => llmModelSel = v);
+
+    // ===== 监控模式与技术模式共享逻辑 =====
+    // 策略：两个模式共享同一个video元素（技术模式的video），监控模式通过按钮代理和数据同步实现功能复用
+    if ($("btnCam-dash")) {
+      // 按钮代理：监控模式按钮触发技术模式按钮
+      $("btnCam-dash").onclick = () => $("btnCam").click();
+      $("btnFile-dash").onclick = () => $("btnFile").click();
+      $("fileInput-dash").onchange = (e) => { const dt = new DataTransfer(); Array.from(e.target.files).forEach(f => dt.items.add(f)); $("fileInput").files = dt.files; $("fileInput").dispatchEvent(new Event("change")); };
+      $("btnStart-dash").onclick = () => $("btnStart").click();
+      $("btnStop-dash").onclick = () => $("btnStop").click();
+      $("btnCompare-dash").onclick = () => $("btnCompare").click();
+      $("btnCompareStop-dash").onclick = () => $("btnCompareStop").click();
+      
+      // 配置同步：监控模式控件改变时同步到技术模式
+      $("yoloModel-dash").onchange = () => { $("yoloModel").value = $("yoloModel-dash").value; $("yoloModel").dispatchEvent(new Event("change")); };
+      $("llmModel-dash").onchange = () => { $("llmModel").value = $("llmModel-dash").value; $("llmModel").dispatchEvent(new Event("change")); };
+      $("boxToggle-dash").onchange = () => $("boxToggle").checked = $("boxToggle-dash").checked;
+      $("gateToggle-dash").onchange = () => $("gateToggle").checked = $("gateToggle-dash").checked;
+      $("cruiseToggle-dash").onchange = () => $("cruiseToggle").checked = $("cruiseToggle-dash").checked;
+      $("intervalVal-dash").oninput = () => $("intervalVal").value = $("intervalVal-dash").value;
+      $("intervalUnit-dash").onchange = () => $("intervalUnit").value = $("intervalUnit-dash").value;
+      $("auditEvery-dash").oninput = () => $("auditEvery").value = $("auditEvery-dash").value;
+      $("target-dash").oninput = () => $("target").value = $("target-dash").value;
+      document.querySelectorAll('input[name="cmode-dash"]').forEach(r => {
+        r.onchange = () => { const target = document.querySelector(`input[name="cmode"][value="${r.value}"]`); if (target) target.checked = true; };
+      });
+      
+      // video元素复用：移除dash模式的独立video，复用技术模式的video
+      const dashStage = $("stage-dash");
+      const videoDash = $("video-dash");
+      if (videoDash) videoDash.remove();  // 移除占位video
+      const boxesDash = $("boxes-dash");
+      if (boxesDash) boxesDash.remove();  // 移除占位svg
+      
+      // 把技术模式的stage内容移到监控模式（保持两个stage独立但共享video引用）
+      // HTML里已经有scan-dash/hud-dash/corner-dash/empty-dash，不需要重复创建
+      dashStage.insertBefore(video, dashStage.firstChild);   // video移到最前
+      dashStage.insertBefore($("boxes"), video.nextSibling);  // svg紧跟video
+      
+      // 切换模式时移动video位置
+      const originalSwitchMode = switchMode;
+      switchMode = function(mode){
+        originalSwitchMode(mode);
+        if (mode === "monitor") {
+          // 移动到dash
+          if (dashStage && video.parentElement !== dashStage) {
+            dashStage.insertBefore(video, dashStage.firstChild);
+            dashStage.insertBefore($("boxes"), video.nextSibling);
+          }
+        } else if (mode === "tech") {
+          // 移回tech
+          const techStage = $("stage");
+          if (techStage && video.parentElement !== techStage) {
+            techStage.insertBefore(video, techStage.firstChild);
+            const techBoxes = document.getElementById("boxes");
+            if (techBoxes) techStage.insertBefore(techBoxes, video.nextSibling);
+          }
+        }
+      };
+      
+      // 初始化：根据当前模式放置video
+      if (currentMode === "monitor") {
+        dashStage.insertBefore(video, dashStage.firstChild);
+        dashStage.insertBefore($("boxes"), video.nextSibling);
+      }
+    }
+
+    // 点亮一条路径：active=本帧实际流经的节点数组；相邻活跃节点间的连线流动（移动光点+虚线）
+    let stageClear = null;
+    function lightPath(active){
+      STAGES.forEach(s => { const n = $("nd-" + s); if (n) n.classList.toggle("active", active.includes(s)); });
+      document.querySelectorAll(".conn-h,.conn-v").forEach(a => {
+        const f = a.dataset.from, t = a.dataset.to;
+        a.classList.toggle("flow", active.includes(f) && active.includes(t));
+      });
+      if (stageClear) clearTimeout(stageClear);
+      stageClear = setTimeout(dimPath, Math.max(900, intervalMs() + 400));  // 帧间隔后自动熄灭
+    }
+    function dimPath(){
+      STAGES.forEach(s => { const n = $("nd-" + s); if (n) n.classList.remove("active"); });
+      document.querySelectorAll(".conn-h.flow,.conn-v.flow").forEach(a => a.classList.remove("flow"));
+    }
+    function nstat(id, txt){
+      const e = $("st-" + id); if (e) e.textContent = txt;
+      if (id === "result"){ const r = $("resultMini"); if (r) r.textContent = txt; }
+    }
+    function countsSummary(yolo){
+      const c = (yolo && yolo.counts) || {};
+      const ks = Object.keys(c);
+      return ks.length ? ks.map(k => k + "×" + c[k]).join(" ") : "无目标";
+    }
+    // 输入节点内的小预览（让架构图的「输入框」实时显示当前帧）
+    function updateMini(dataUri){ const m = $("ndImg"); if (m) m.src = dataUri; }
+
+    // —— YOLO 检测框可视化（叠加在 live feed 上）——
+    const COLOR_HEX = { red:"#ef4444", orange:"#f97316", yellow:"#eab308", green:"#22c55e",
+      blue:"#3b82f6", purple:"#a855f7", pink:"#ec4899", white:"#e5e7eb", gray:"#9ca3af",
+      black:"#4b5563", brown:"#a16207" };
+    function colorHex(c){ return c ? (COLOR_HEX[c] || null) : null; }
+
+    // 视频在 stage 内的实际渲染矩形（object-fit:contain 会有黑边，需还原）
+    function videoRect(){
+      const vw = video.videoWidth, vh = video.videoHeight;
+      if (!vw || !vh) return null;
+      
+      // 根据video当前所在的容器计算
+      const container = video.parentElement;
+      if (!container) return null;
+      
+      const Sw = container.clientWidth, Sh = container.clientHeight;
+      const scale = Math.min(Sw / vw, Sh / vh);
+      const w = vw * scale, h = vh * scale;
+      return { x:(Sw - w) / 2, y:(Sh - h) / 2, w, h, Sw, Sh };
+    }
+    function sameBox(a, b){
+      return a && b && a.length === 4 && b.length === 4 && a.every((v, i) => Math.abs(v - b[i]) < 0.5);
+    }
+    function clearBoxes(){ 
+      $("boxes").innerHTML = ""; 
+      if ($("boxes-dash")) $("boxes-dash").innerHTML = "";
+    }
+
+    // 把 YOLO 框（capture 像素坐标）映射到屏幕，绘制矩形+标签；命中绿、目标候选橙、其余按 CV 主色
+    function drawBoxes(yolo, opts){
+      const svg = $("boxes");
+      const svgDash = $("boxes-dash");
+      
+      if (!$("boxToggle").checked || !yolo || !yolo.detections || !yolo.img_w || !yolo.img_h){ 
+        svg.innerHTML = ""; 
+        if (svgDash) svgDash.innerHTML = "";
+        return; 
+      }
+      const rect = videoRect();
+      if (!rect){ 
+        svg.innerHTML = ""; 
+        if (svgDash) svgDash.innerHTML = "";
+        return; 
+      }
+      
+      const viewBox = `0 0 ${rect.Sw} ${rect.Sh}`;
+      svg.setAttribute("viewBox", viewBox);
+      if (svgDash) svgDash.setAttribute("viewBox", viewBox);
+      
+      const sx = rect.w / yolo.img_w, sy = rect.h / yolo.img_h;
+      const plan = opts && opts.plan, matched = (opts && opts.matchedBoxes) || [];
+      const parts = [];
+      for (const d of yolo.detections){
+        const b = d.box; if (!b || b.length < 4) continue;
+        const x = rect.x + b[0] * sx, y = rect.y + b[1] * sy;
+        const w = (b[2] - b[0]) * sx, h = (b[3] - b[1]) * sy;
+        const isTarget = plan && plan.yolo_class && d.label === plan.yolo_class;
+        const isMatched = matched.some(mb => sameBox(mb, b));
+        let stroke = colorHex(d.color) || "#38bdf8", sw = 2, dash = "";
+        if (isMatched){ stroke = "#22c55e"; sw = 3; }
+        else if (isTarget){ stroke = "#f59e0b"; sw = 2.5; dash = "6 4"; }
+        let label = `${d.label} ${Math.round((d.confidence || 0) * 100)}%`;
+        if (d.color_zh) label += " ·" + d.color_zh;
+        const tw = label.length * 7.4 + 10, ty = y > 16 ? y - 16 : y + 1;
+        parts.push(
+          `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(0,w).toFixed(1)}" height="${Math.max(0,h).toFixed(1)}" `
+          + `fill="none" stroke="${stroke}" stroke-width="${sw}"${dash ? ` stroke-dasharray="${dash}"` : ""} rx="3"/>`
+          + `<rect x="${x.toFixed(1)}" y="${ty.toFixed(1)}" width="${tw.toFixed(1)}" height="15" fill="${stroke}" opacity="0.9" rx="2"/>`
+          + `<text x="${(x + 4).toFixed(1)}" y="${(ty + 11).toFixed(1)}" font-size="11" font-family="monospace" fill="#0b0f14">${escapeHtml(label)}</text>`
+        );
+      }
+      const html = parts.join("");
+      svg.innerHTML = html;
+      if (svgDash) svgDash.innerHTML = html;
+    }
+
+    // 时钟
+    setInterval(() => { $("clock").textContent = new Date().toLocaleTimeString("zh-CN", {hour12:false}); }, 1000);
+
+    function intervalMs(){
+      const v = parseFloat($("intervalVal").value) || 3;
+      const unit = parseFloat($("intervalUnit").value);
+      return Math.max(200, Math.round(v * unit));   // 最小 200ms，防止过密
+    }
+
+    function setSource(label, kind){
+      const emptyEl = $("empty");
+      const emptyDashEl = $("empty-dash");
+      if (emptyEl) emptyEl.style.display = "none";
+      if (emptyDashEl) emptyDashEl.style.display = "none";
+      
+      const hudEl = $("hud");
+      if (hudEl) hudEl.innerHTML = `<span class="chip src">${kind}</span><span class="chip" id="resChip">—</span>`;
+      
+      // 显示video
+      if (video) video.classList.add("on");
+      
+      if ($("btnStart")) $("btnStart").disabled = false;
+      if ($("btnStart-dash")) $("btnStart-dash").disabled = false;
+      
+      const inputNode = $("nd-input");
+      if (inputNode) inputNode.classList.add("on");
+      
+      nstat("input", kind + (label ? " · " + label : ""));
+    }
+    function clearStartStop(running){
+      const cooling = cooldownTimer !== null;
+      $("btnStart").disabled = running || cooling || !hasSignal();
+      $("btnStop").disabled = !running;
+      $("btnCam").disabled = running; $("btnFile").disabled = running;
+      
+      // 同步更新监控模式按钮
+      if ($("btnStart-dash")) $("btnStart-dash").disabled = running || cooling || !hasSignal();
+      if ($("btnStop-dash")) $("btnStop-dash").disabled = !running;
+    }
+    function hasSignal(){ return (stream !== null) || (video.src && video.readyState >= 2); }
+
+    // 摄像头按钮文案/样式随开关切换
+    function setCamBtn(on){ $("btnCam").innerHTML = on ? "■ 关闭摄像头" : "📷 摄像头"; $("btnCam").classList.toggle("danger", on); }
+    // 当前已无任何信号源时，把输入节点恢复成「无信号」初始态
+    function clearSourceUI(){
+      if (hasSignal()) return;
+      const emptyEl = $("empty");
+      const emptyDashEl = $("empty-dash");
+      if (emptyEl) emptyEl.style.display = "";
+      if (emptyDashEl) emptyDashEl.style.display = "";
+      
+      const hudEl = $("hud");
+      if (hudEl) hudEl.innerHTML = "";
+      
+      const inputNode = $("nd-input");
+      if (inputNode) inputNode.classList.remove("on");
+      
+      if ($("btnStart")) $("btnStart").disabled = true;
+      if ($("btnStart-dash")) $("btnStart-dash").disabled = true;
+      
+      nstat("input", "未连接信号源");
+    }
+
+    // —— 摄像头（开/关 切换）——
+    $("btnCam").onclick = async () => {
+      if (camOn) { stopCamera(); clearSourceUI(); return; }   // 已开 → 关闭摄像头
+      stopAll();
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { width:1280, height:720 }, audio:false });
+        video.srcObject = stream; video.src = ""; await video.play();
+        camOn = true; setCamBtn(true);
+        setSource("摄像头", "📷 摄像头");
+      } catch (e) { camOn = false; setCamBtn(false); alert("无法访问摄像头：" + e.message + "\n（需 https 或 localhost，且授权摄像头权限）"); }
+    };
+
+    // —— 上传视频 ——
+    $("btnFile").onclick = () => $("fileInput").click();
+    $("fileInput").onchange = (e) => {
+      const f = e.target.files[0]; if (!f) return;
+      stopCamera();
+      video.srcObject = null; video.src = URL.createObjectURL(f);
+      video.loop = true; video.controls = true; video.muted = true;
+      video.play().catch(()=>{});
+      setSource(f.name, "🎞️ 视频文件");
+    };
+
+    // —— 参考图 ——
+    $("btnRef").onclick = () => $("refInput").click();
+    $("refInput").onchange = (e) => {
+      const f = e.target.files[0]; if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => { refDataUri = reader.result;
+        $("refThumb").src = refDataUri; $("refThumb").style.display = "block";
+        $("btnRefClear").style.display = "inline-block"; };
+      reader.readAsDataURL(f);
+    };
+    $("btnRefClear").onclick = () => { refDataUri = null; $("refThumb").style.display="none"; $("btnRefClear").style.display="none"; $("refInput").value=""; };
+
+    // —— 开始 / 停止监控 ——
+    $("btnStart").onclick = () => {
+      if (cooldownTimer) return;          // 冷静期内禁止开始新监控
+      if (!hasSignal()) return;
+      clearStartStop(true);
+      $("led").classList.add("on"); $("liveText").textContent = "● 监控中";
+      // 开启一个新的监控周期，统计清零
+      stats = { frames: 0, match: 0, alert: 0, llm: 0, skipped: 0 };
+      $("sFrames").textContent = 0; $("sMatch").textContent = 0; $("sAlert").textContent = 0;
+      $("sLlm").textContent = 0; $("sSaved").textContent = 0; $("sSavePct").textContent = "0%";
+      // 同步监控模式统计数据
+      if ($("dash-frames")) $("dash-frames").textContent = 0;
+      if ($("dash-match-count")) $("dash-match-count").textContent = 0;
+      if ($("dash-alert")) $("dash-alert").textContent = 0;
+      if ($("dash-llm")) $("dash-llm").textContent = 0;
+      if ($("dash-save-pct")) $("dash-save-pct").textContent = "0%";
+      
+      lastCounts = null; lastLlmTs = 0;
+      lastLlmSig = null; lastLlmData = null;
+      lastAuditCount = 0; lastCruiseVerdict = null; cruiseFlip = false;
+      
+      // 清空两个模式的日志
+      if ($("log")) $("log").innerHTML = "";
+      const dashLogContainer = $("dash-log-container");
+      if (dashLogContainer) dashLogContainer.innerHTML = "";
+      
+      frameStore = {};
+      nstat("llm", "0 次调用"); nstat("result", "监控中");
+      $("nd-result").classList.remove("hit","warn");
+      closeAllPops();
+      cycle = { startedAt: new Date().toISOString(), entries: [] };
+      tick();                       // 立即跑一帧
+      timer = setInterval(tick, intervalMs());
+    };
+    $("btnStop").onclick = () => stopMonitor();
+
+    // —— 开始 / 停止比对 ——
+    $("btnCompare").onclick = async () => {
+      const mode = document.querySelector('input[name="cmode"]:checked').value;
+      const target = $("target").value.trim();
+      if ((mode === "text" || mode === "both") && !target) { alert("请先填写文字目标描述"); return; }
+      if ((mode === "image" || mode === "both") && !refDataUri) { alert("请先上传参考图片"); return; }
+      activeCompare = {
+        mode,
+        target: (mode === "image") ? null : target,
+        reference: (mode === "text") ? null : refDataUri,
+        plan: null,
+      };
+      cruiseBuf = []; cruiseCount = 0;
+      lastAuditCount = 0; lastCruiseVerdict = null; cruiseFlip = false;
+      const label = { text:"文字描述", image:"参考图片", both:"文字+图片" }[mode];
+      $("compareState").textContent = "比对中 · 标准：" + label + (activeCompare.target ? "（"+activeCompare.target+"）" : "");
+      $("compareState").className = "hint compareState on";
+      $("btnCompare").disabled = true; $("btnCompareStop").disabled = false;
+      $("nd-compile").classList.add("on");
+      nstat("compile", "比对中 · " + label + (activeCompare.target ? "「"+activeCompare.target+"」" : ""));
+      nstat("cruise", "编译中…");
+
+      // ① 目标编译：把自然语言条件编译成 YOLO 可执行规则（仅在有文字目标时）
+      if (activeCompare.target) {
+        $("planStatus").innerHTML = "⏳ 正在编译目标…";
+        try {
+          const r = await fetch("/compile-target", {
+            method:"POST", headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({ target: activeCompare.target, reference_image: activeCompare.reference })
+          });
+          if (r.ok) {
+            const d = await r.json();
+            activeCompare.plan = d.plan || null;
+            showPlanStatus(d.plan);
+          } else { $("planStatus").innerHTML = "⚠ 目标编译失败，回落每帧 gpt-4o"; }
+        } catch(e) { $("planStatus").innerHTML = "⚠ 目标编译异常，回落每帧 gpt-4o"; }
+      } else {
+        $("planStatus").innerHTML = "参考图模式：YOLO 无法独立比对，使用每帧 gpt-4o。";
+      }
+    };
+
+    function showPlanStatus(plan){
+      if (!plan){ $("planStatus").innerHTML = "⚠ 未能编译，回落每帧 gpt-4o。"; return; }
+      const attr = plan.attribute;
+      const desc = (plan.yolo_class || "—") + (attr && attr.value ? ("（" + attr.value + (attr.region&&attr.region!=="whole"?"/"+attr.region:"") + "）") : "");
+      if (plan.can_yolo_handle){
+        $("planStatus").innerHTML = "✅ YOLO 可独立巡航：监视 <b>" + escapeHtml(desc) + "</b>，每 "
+          + auditEvery() + " 帧用 gpt-4o 审计回填。<br><span style='color:var(--muted)'>" + escapeHtml(plan.summary||"") + "</span>";
+        $("nd-cruise").classList.add("on");
+        nstat("cruise", "YOLO 巡航：" + desc);
+      } else {
+        $("planStatus").innerHTML = "⚠ 需每帧 gpt-4o：YOLO 无法判断该目标（姿态/动作/身份等）。<br><span style='color:var(--muted)'>" + escapeHtml(plan.summary||"") + "</span>";
+        $("nd-cruise").classList.remove("on");
+        nstat("cruise", "不可巡航 · 每帧 gpt-4o");
+      }
+    }
+    $("btnCompareStop").onclick = () => {
+      activeCompare = null;
+      cruiseBuf = []; cruiseCount = 0;
+      lastAuditCount = 0; lastCruiseVerdict = null; cruiseFlip = false;
+      $("compareState").textContent = "未比对（仅做画面理解）";
+      $("compareState").className = "hint";
+      $("planStatus").innerHTML = "编译目标后显示巡航计划。";
+      $("btnCompare").disabled = false; $("btnCompareStop").disabled = true;
+      $("nd-compile").classList.remove("on"); $("nd-cruise").classList.remove("on");
+      nstat("compile", "未设比对目标"); nstat("cruise", "未启用");
+      $("nd-result").classList.remove("hit","warn");
+      $("matchCard").className = "matchcard nomatch";
+      $("matchBig").textContent = "监控中"; $("matchTarget").textContent = "未设置比对目标";
+      $("matchConf").textContent = ""; $("matchReason").textContent = "";
+    };
+
+    function stopMonitor(){
+      const wasRunning = timer !== null;
+      if (timer) { clearInterval(timer); timer = null; }
+      stage.classList.remove("analyzing");
+      const stageDash = $("stage-dash");
+      if (stageDash) stageDash.classList.remove("analyzing");
+      clearBoxes();
+      $("led").classList.remove("on"); $("liveText").textContent = "已停止";
+      dimPath();
+      nstat("yolo", "待机"); nstat("gate", "—");
+      nstat("cruise", activeCompare ? "已暂停" : "未启用");
+      if (wasRunning) startCooldown();   // 进入 5s 冷静期，收尾后再归档
+      else { nstat("result", "已停止"); clearStartStop(false); }
+    }
+
+    // 结束监控后 5s 冷静期：继续收录延迟到达的帧，期满才归档；期间不允许开始新监控
+    function startCooldown(){
+      const SEC = 5;
+      let left = SEC;
+      const tickDown = () => {
+        $("liveText").textContent = "● 冷静期 " + left + "s";
+        nstat("result", "冷静期 " + left + "s · 收尾中（延迟帧仍在收录）");
+      };
+      tickDown();
+      $("led").classList.add("cooldown");
+      clearStartStop(true);              // 冷静期内禁开始（btnStop 也已禁用）
+      $("btnStop").disabled = true;
+      logRow("normal", "监控已停止，进入 " + SEC + "s 冷静期：继续收录延迟到达的帧，期满后归档（这 " + SEC + "s 内不可开始新监控）", false, null);
+      cooldownTimer = setInterval(() => {
+        left--;
+        if (left > 0) { tickDown(); return; }
+        clearInterval(cooldownTimer); cooldownTimer = null;
+        $("led").classList.remove("cooldown");
+        $("liveText").textContent = "已停止"; nstat("result", "已停止");
+        saveCycle();                     // 收尾完成，归档（含冷静期内补到的帧）
+        clearStartStop(false);           // 恢复可开始
+      }, 1000);
+    }
+
+    // 保存当前监控周期到后端（历史日志）
+    async function saveCycle(){
+      if (!cycle || !cycle.entries.length) { cycle = null; return; }
+      const payload = {
+        started_at: cycle.startedAt,
+        ended_at: new Date().toISOString(),
+        target: activeCompare ? (activeCompare.target || "（参考图）") : null,
+        mode: activeCompare ? activeCompare.mode : null,
+        stats: { frames: stats.frames, match: stats.match, alert: stats.alert },
+        entries: cycle.entries.slice(-300),   // 上限 300 帧，控制体积
+      };
+      cycle = null;
+      try {
+        const r = await fetch("/monitor-sessions", {
+          method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload)
+        });
+        if (r.ok) { const d = await r.json(); logRow("normal", "已归档监控周期 " + d.id + "（" + d.frames + " 帧），可在『历史日志』查看", false, null); }
+      } catch(e) { /* 离线保存失败忽略 */ }
+    }
+    function stopCamera(){ if (stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; } video.srcObject=null; camOn=false; setCamBtn(false); clearBoxes(); }
+    function stopAll(){ stopMonitor(); stopCamera(); }
+    $("boxToggle").onchange = () => { if (!$("boxToggle").checked) clearBoxes(); };
+    
+    // 采样间隔修改时，如果正在监控，则重启定时器
+    function restartTimerIfRunning() {
+      if (timer) {
+        clearInterval(timer);
+        timer = setInterval(tick, intervalMs());
+        logRow("normal", "⚙ 采样间隔已更新为 " + ($("intervalVal").value) + ($("intervalUnit").value === "1000" ? "秒" : $("intervalUnit").value === "60000" ? "分钟" : "毫秒"), false, null);
+      }
+    }
+    $("intervalVal").oninput = restartTimerIfRunning;
+    $("intervalUnit").onchange = restartTimerIfRunning;
+    
+    window.addEventListener("resize", clearBoxes);
+
+    // —— 抓帧 → 后端分析 ——
+    async function tick(){
+      if (inFlight) return;                       // 上一帧没返回则跳过（天然门控，防堆积）
+      if (!video.videoWidth) return;
+      const W = 640, H = Math.round(video.videoHeight / video.videoWidth * W);
+      canvas.width = W; canvas.height = H;
+      canvas.getContext("2d").drawImage(video, 0, 0, W, H);
+      const dataUri = canvas.toDataURL("image/jpeg", 0.7);
+      updateMini(dataUri);   // 架构图「输入源」节点的实时小预览
+
+      // 级联：目标可被 YOLO 独立判断且开启巡航 → 走 YOLO 巡航 + 定期 gpt-4o 审计
+      const plan = activeCompare && activeCompare.plan;
+      const cruiseOn = plan && plan.can_yolo_handle && $("cruiseToggle").checked;
+
+      inFlight = true; 
+      stage.classList.add("analyzing");
+      const stageDash = $("stage-dash");
+      if (stageDash) stageDash.classList.add("analyzing");
+      try {
+        if (cruiseOn) {
+          cruiseCount++;
+          // #2 颜色/事件触发审计：目标在场时，裁决翻转或到达审计间隔才花 gpt-4o；
+          // 目标不在场则巡航足以确定「未命中」，仅用 4× 间隔做长心跳安全网，省下大量审计调用。
+          const tcls = plan.yolo_class;
+          const targetSeen = !!(lastCounts && tcls && lastCounts[tcls] > 0);
+          const sinceAudit = cruiseCount - lastAuditCount;
+          const doAudit = targetSeen
+            ? (cruiseFlip || sinceAudit >= auditEvery())
+            : (sinceAudit >= auditEvery() * 4);
+          if (doAudit) { lastAuditCount = cruiseCount; cruiseFlip = false; await auditTick(dataUri, plan); }
+          else await cruiseTickFrame(dataUri, plan);
+        } else {
+          await analyzeTick(dataUri, plan);
+        }
+      } catch (e) { logRow("alert", "网络错误：" + e.message, false, null); }
+      finally { 
+        inFlight = false; 
+        stage.classList.remove("analyzing"); 
+        const stageDash = $("stage-dash");
+        if (stageDash) stageDash.classList.remove("analyzing");
+      }
+    }
+
+    // 普通路径（无巡航 / YOLO 搞不定）：YOLO→门控→条件 gpt-4o
+    async function analyzeTick(dataUri, plan){
+      const payload = {
+        image: dataUri, target: null, reference_image: null,
+        gate_enabled: $("gateToggle").checked,
+        prev_counts: lastCounts,
+        since_last_llm_ms: lastLlmTs ? (Date.now() - lastLlmTs) : null,
+        comparing: !!activeCompare,
+        plan: plan || null,
+        last_llm_signature: lastLlmSig,   // #1 复用：签名未变后端会直接复用、省一次调用
+        yolo_model: yoloModelSel, llm_model: llmModelSel,   // 可插拔模型（后端接入后生效）
+      };
+      if (activeCompare) { payload.target = activeCompare.target; payload.reference_image = activeCompare.reference; }
+      const t0 = performance.now();
+      const r = await fetch("/analyze-frame", {
+        method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify(payload)
+      });
+      const ms = Math.round(performance.now() - t0);
+      if (!r.ok) { logRow("alert", "分析失败：" + (await r.text()).slice(0,120), false, null); return; }
+      const data = await r.json();
+      lastCounts = (data.yolo && data.yolo.counts) || {};
+      const usedLlm = data.gated && !data.reused;
+      const route = ["input","yolo","gate"];
+      if (activeCompare && plan) route.push("compile");
+      if (usedLlm) route.push("llm");
+      route.push("result");
+      lightPath(route);
+      nstat("gate", data.gated ? (data.reused ? "→ 复用 ♻" : "→ gpt-4o") : "跳过 ⏭");
+      if (data.gated && !data.reused) {
+        // 真·调了 gpt-4o：缓存权威结论 + 签名，供后续复用
+        lastLlmTs = Date.now();
+        lastLlmSig = data.signature || null; lastLlmData = data;
+        render(data, ms, dataUri);
+      } else if (data.signature && data.signature === lastLlmSig && lastLlmData) {
+        // #1 复用上次权威结论（后端已省下 LLM 调用），避免显示 YOLO 空壳
+        const shown = Object.assign({}, lastLlmData, { yolo: data.yolo, gated: false, reused: true, cruise_match: null });
+        shown.result = Object.assign({}, lastLlmData.result || {}, {
+          notification: data.reused ? "♻ 复用上次 gpt-4o 结论（签名未变，省一次调用）"
+                                    : "⏭ " + (((lastLlmData.result||{}).scene) || "沿用上次结论"),
+        });
+        render(shown, ms, dataUri);
+      } else {
+        render(data, ms, dataUri);  // 门控跳过且签名不同 → 显示 YOLO 标签合成结果
+      }
+    }
+
+    // 巡航帧（便宜）：只跑 /cruise-frame（YOLO+颜色），不调 gpt-4o，缓冲起来等审计
+    async function cruiseTickFrame(dataUri, plan){
+      const t0 = performance.now();
+      const r = await fetch("/cruise-frame", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ image: dataUri, plan, yolo_model: yoloModelSel })
+      });
+      const ms = Math.round(performance.now() - t0);
+      if (!r.ok) { logRow("alert", "巡航失败：" + (await r.text()).slice(0,120), false, null); return; }
+      const data = await r.json();
+      lastCounts = (data.yolo && data.yolo.counts) || {};
+      lightPath(["input","yolo","compile","cruise","result"]);
+      nstat("gate", "巡航旁路 ⏭");
+      const verdict = !!(data.cruise && data.cruise.is_match);
+      if (lastCruiseVerdict !== null && verdict !== lastCruiseVerdict) cruiseFlip = true;  // #2 颜色裁决翻转 → 触发审计
+      lastCruiseVerdict = verdict;
+      const fid = renderCruise(data, ms, dataUri, plan);
+      cruiseBuf.push({ fid, dataUri, verdict });
+    }
+
+    // 审计帧：调 /analyze-frame（带 plan）拿 gpt-4o 权威裁决 + 同帧 YOLO 巡航裁决对比
+    async function auditTick(dataUri, plan){
+      const payload = {
+        image: dataUri, target: activeCompare.target, reference_image: activeCompare.reference,
+        gate_enabled: false, comparing: true, plan,
+        yolo_model: yoloModelSel, llm_model: llmModelSel,
+      };
+      const t0 = performance.now();
+      const r = await fetch("/analyze-frame", {
+        method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(payload)
+      });
+      const ms = Math.round(performance.now() - t0);
+      if (!r.ok) { logRow("alert", "审计失败：" + (await r.text()).slice(0,120), false, null); return; }
+      const data = await r.json();
+      lastCounts = (data.yolo && data.yolo.counts) || {};
+      lightPath(["input","yolo","compile","cruise","llm","result"]);
+      nstat("gate", "审计帧 · 强制 gpt-4o");
+      lastLlmTs = Date.now();
+      lastLlmSig = data.signature || null; lastLlmData = data;   // #1 审计是权威调用：刷新复用缓存
+      if (data.cruise_match) { lastCruiseVerdict = !!data.cruise_match.is_match; cruiseFlip = false; }  // #2 同步裁决基线
+      render(data, ms, dataUri);
+
+      // gpt-4o（权威） vs YOLO 巡航（本帧）一致性
+      const llmMatch = (data.result && data.result.match) ? data.result.match.is_match : null;
+      const yoloMatch = (data.cruise_match) ? data.cruise_match.is_match : null;
+      if (llmMatch !== null && yoloMatch !== null && llmMatch !== yoloMatch) {
+        const n = Math.min(cruiseBuf.length, BACKFILL_MAX);
+        logRow("alert", "🔎 审计发现偏差：YOLO 巡航判为「" + (yoloMatch?"命中":"未命中")
+          + "」，gpt-4o 实为「" + (llmMatch?"命中":"未命中") + "」，后台回填最近 " + n + " 帧（不阻塞实时）…", false, null);
+        backfillCruise(plan);   // 不 await：后台并发回填，实时抽帧继续，不再冻结
+      } else if (cruiseBuf.length) {
+        logRow("normal", "✓ 审计通过：YOLO 巡航与 gpt-4o 一致，继续巡航（已确认 " + cruiseBuf.length + " 帧）", false, null);
+        cruiseBuf = [];
+      }
+    }
+
+    // 回填：把巡航期缓冲的帧补调 gpt-4o，纠正结论与统计。
+    // 关键修复：① 不阻塞实时循环（auditTick 不 await 本函数）；② 只回填最近 BACKFILL_MAX 帧，
+    // 避免一次回溯 8 张、每张 ~8s 把画面冻死；③ backfilling 锁防止并发重入。
+    let backfilling = false;
+    async function backfillCruise(plan){
+      if (backfilling) return;
+      backfilling = true;
+      const buf = cruiseBuf.slice(-BACKFILL_MAX); cruiseBuf = [];
+      try {
+        for (const item of buf){
+          if (!activeCompare) break;   // 期间停止比对则中断
+          try {
+            const r = await fetch("/analyze-frame", {
+              method:"POST", headers:{"Content-Type":"application/json"},
+              body: JSON.stringify({ image: item.dataUri, target: activeCompare.target,
+                reference_image: activeCompare.reference, gate_enabled: false, comparing: true, plan })
+            });
+            if (!r.ok) continue;
+            const data = await r.json();
+            const m = (data.result && data.result.match) || {};
+            if (m.is_match !== item.verdict){
+              // 之前按巡航算作「省下的帧」，现已补调 LLM：统计搬运
+              stats.skipped = Math.max(0, stats.skipped - 1); stats.llm++;
+              $("sLlm").textContent = stats.llm; $("sSaved").textContent = stats.skipped;
+              $("sSavePct").textContent = stats.frames ? Math.round(stats.skipped / stats.frames * 100) + "%" : "0%";
+              if (m.is_match === true && activeCompare) { stats.match++; $("sMatch").textContent = stats.match; }
+              // 更新缓存帧的权威结论 + 追加纠正日志
+              if (frameStore[item.fid]) frameStore[item.fid].res = data;
+              logRow(m.is_match===true?"alert":"normal",
+                "⟲ 回填纠正 帧#" + item.fid + "：" + (m.is_match?"实为命中「"+(m.target||"")+"」":"实为未命中") + " · " + (m.reason||""),
+                m.is_match===true, item.fid, item.dataUri);
+            }
+          } catch(e) { /* 单帧回填失败忽略 */ }
+        }
+      } finally { backfilling = false; }
+    }
+
+    function render(data, ms, dataUri){
+      const res = data.result || {};
+      const gated = data.gated;          // true=调了 gpt-4o；false=门控跳过(只 YOLO)
+      stats.frames++; 
+      $("sFrames").textContent = stats.frames;
+      if ($("dash-frames")) $("dash-frames").textContent = stats.frames;
+      
+      if (gated) stats.llm++; else stats.skipped++;
+      $("sLlm").textContent = stats.llm; 
+      $("sSaved").textContent = stats.skipped;
+      const savePct = stats.frames ? Math.round(stats.skipped / stats.frames * 100) + "%" : "0%";
+      $("sSavePct").textContent = savePct;
+      if ($("dash-llm")) $("dash-llm").textContent = stats.llm;
+      if ($("dash-save-pct")) $("dash-save-pct").textContent = savePct;
+      
+      const tag = gated ? (ms + "ms · gpt-4o") : (ms + "ms · YOLO");
+      $("corner").textContent = "● REC  " + tag;
+      if ($("corner-dash")) $("corner-dash").textContent = "● REC  " + tag;
+      $("resChip") && ($("resChip").textContent = gated ? (res.alert_level || "normal").toUpperCase() : "YOLO");
+      
+      // 同步HUD
+      const hudEl = $("hud");
+      const hudDashEl = $("hud-dash");
+      if (hudEl && hudDashEl) hudDashEl.innerHTML = hudEl.innerHTML;
+      nstat("yolo", countsSummary(data.yolo));
+      nstat("llm", stats.llm + " 次调用" + (data.reused ? " · 复用 ♻" : ""));
+      drawBoxes(data.yolo, { plan: activeCompare && activeCompare.plan,
+        matchedBoxes: data.cruise_match && data.cruise_match.matched_boxes });
+
+      // 画面理解 - 同时更新技术模式和监控模式
+      const sceneText = res.scene || "—";
+      const tagsHtml = (res.detected_objects || []).map(o => `<span class="tag">${escapeHtml(o)}</span>`).join("");
+      
+      if ($("scene")) $("scene").textContent = sceneText;
+      if ($("dash-scene")) $("dash-scene").textContent = sceneText;
+      
+      if ($("tags")) $("tags").innerHTML = tagsHtml;
+      if ($("dash-tags")) $("dash-tags").innerHTML = tagsHtml.replace(/class="tag"/g, 'class="dash-tag"');
+      
+      // YOLO 框 → LLM 结构化档案（接 DB / 人脸 / 人形比对的字段）
+      const subs = res.subjects || [];
+      const subsHtml = subs.length ? ('<div class="subjhead">目标档案 · 基于 YOLO 框</div>' + subs.map(s => {
+        const attrs = (s.attributes || []).map(a => `<span class="atag">${escapeHtml(a)}</span>`).join("");
+        const box = (s.box || []).join(", ");
+        return `<div class="subj"><div class="subjline"><b>${escapeHtml(s.ref||"")} ${escapeHtml(s.label||"")}</b>`
+          + (box ? `<span class="box">[${box}]</span>` : "") + `</div>`
+          + `<div class="subjapp">${escapeHtml(s.appearance||"")}</div>`
+          + (attrs ? `<div class="atags">${attrs}</div>` : "") + `</div>`;
+      }).join("")) : "";
+      if ($("subjects")) $("subjects").innerHTML = subsHtml;
+      if ($("dash-subjects")) $("dash-subjects").innerHTML = subsHtml;
+
+      // 比对卡
+      const m = res.match || {};
+      const card = $("matchCard");
+      const hasTarget = m.target && m.target.length > 0;
+      const alert = (res.alert_level === "alert");
+      if (!activeCompare) {
+        card.className = "matchcard " + (alert ? "alert" : "nomatch");
+        $("matchTarget").textContent = "未设置比对目标";
+        $("matchBig").textContent = alert ? "⚠ 注意" : "监控中";
+        $("matchConf").textContent = ""; $("matchReason").textContent = res.scene || "";
+      } else {
+        $("matchTarget").textContent = hasTarget ? ("目标：" + m.target) : "目标：参考图片";
+        card.className = "matchcard " + (m.is_match === true ? "match" : alert ? "alert" : "nomatch");
+        if (m.is_match === true) { 
+          $("matchBig").textContent = "✓ 命中"; 
+          stats.match++; 
+          $("sMatch").textContent = stats.match;
+          if ($("dash-match-count")) $("dash-match-count").textContent = stats.match;
+        }
+        else if (m.is_match === false) { $("matchBig").textContent = "✗ 未命中"; }
+        else { $("matchBig").textContent = alert ? "⚠ 注意" : "监控中"; }
+        $("matchConf").textContent = m.confidence ? ("置信度 " + m.confidence) : "";
+        $("matchReason").textContent = m.reason || "";
+      }
+      
+      // 同步更新监控模式的比对结果
+      if ($("dash-match-big")) $("dash-match-big").textContent = $("matchBig").textContent;
+      if ($("dash-match-reason")) $("dash-match-reason").textContent = $("matchReason").textContent;
+      if ($("dash-match-card")) $("dash-match-card").style.display = activeCompare ? "flex" : "none";
+      
+      if (alert) { 
+        stats.alert++; 
+        $("sAlert").textContent = stats.alert;
+        if ($("dash-alert")) $("dash-alert").textContent = stats.alert;
+      }
+      nstat("result", $("matchBig").textContent || "—");
+      $("nd-result").classList.toggle("hit", m.is_match === true);
+      $("nd-result").classList.toggle("warn", alert);
+
+      // 存帧 + 日志（frameStore/历史存完整 payload：含 gated/gate_reason/yolo，便于点开复盘）
+      const fid = ++frameSeq;
+      frameStore[fid] = { dataUri, res: data, ts: new Date().toLocaleTimeString("zh-CN", {hour12:false}), ms };
+      const lvl = res.alert_level || "normal";
+      let msg = res.notification || res.scene || "已分析";
+      if (!gated) msg = "⏭ " + msg;                                  // 门控跳过(仅 YOLO，未花 LLM)
+      if (activeCompare && m.is_match === true) msg = "🎯 命中「" + (m.target||"参考图")+ "」· " + msg;
+      // 累积到当前监控周期（用于历史日志）
+      if (cycle) cycle.entries.push({
+        seq: fid, ts: frameStore[fid].ts, level: lvl, msg,
+        is_match: (activeCompare && m.is_match === true), image: dataUri, result: data,
+      });
+      logRow(lvl, msg, activeCompare && m.is_match === true, fid, dataUri);
+    }
+
+    // 巡航帧的轻量渲染：只有 YOLO+颜色裁决，未调 gpt-4o（计入"省下"）
+    function renderCruise(data, ms, dataUri, plan){
+      const yolo = data.yolo || {};
+      const cruise = data.cruise || {};
+      stats.frames++;
+      $("sFrames").textContent = stats.frames;
+      if ($("dash-frames")) $("dash-frames").textContent = stats.frames;
+      
+      stats.skipped++; 
+      $("sSaved").textContent = stats.skipped;
+      const savePct = stats.frames ? Math.round(stats.skipped / stats.frames * 100) + "%" : "0%";
+      $("sSavePct").textContent = savePct;
+      if ($("dash-save-pct")) $("dash-save-pct").textContent = savePct;
+      $("corner").textContent = "● REC  " + ms + "ms · YOLO巡航";
+      $("resChip") && ($("resChip").textContent = "巡航");
+      nstat("yolo", countsSummary(yolo));
+      nstat("cruise", cruise.is_match === true ? "命中（巡航）" : (cruise.reason ? "巡航中" : "巡航中"));
+      nstat("result", cruise.is_match === true ? "✓ 命中（巡航）" : "巡航中");
+      $("nd-result").classList.toggle("hit", cruise.is_match === true);
+      $("nd-result").classList.remove("warn");
+      drawBoxes(yolo, { plan, matchedBoxes: cruise.matched_boxes });
+
+      const counts = yolo.counts || {};
+      const labels = Object.keys(counts);
+      const sceneText = cruise.reason || ("巡航中：" + labels.map(k=>k+"×"+counts[k]).join("、"));
+      const tagsHtml = labels.map(o => `<span class="tag">${escapeHtml(o)}</span>`).join("");
+      
+      // 同时更新两个模式
+      if ($("scene")) $("scene").textContent = sceneText;
+      if ($("dash-scene")) $("dash-scene").textContent = sceneText;
+      if ($("tags")) $("tags").innerHTML = tagsHtml;
+      if ($("dash-tags")) $("dash-tags").innerHTML = tagsHtml.replace(/class="tag"/g, 'class="dash-tag"');
+      if ($("subjects")) $("subjects").innerHTML = "";
+
+      const card = $("matchCard");
+      $("matchTarget").textContent = "目标：" + (activeCompare.target || "参考图片") + " · YOLO 巡航";
+      if (cruise.is_match === true){
+        card.className = "matchcard match"; $("matchBig").textContent = "✓ 命中（巡航）";
+        stats.match++; 
+        $("sMatch").textContent = stats.match;
+        if ($("dash-match-count")) $("dash-match-count").textContent = stats.match;
+      } else {
+        card.className = "matchcard nomatch"; $("matchBig").textContent = "巡航中";
+      }
+      $("matchConf").textContent = ""; $("matchReason").textContent = cruise.reason || "";
+
+      const fid = ++frameSeq;
+      frameStore[fid] = { dataUri, res: data, ts: new Date().toLocaleTimeString("zh-CN", {hour12:false}), ms };
+      let msg = "⏭ 巡航：" + (cruise.reason || "无目标");
+      if (cruise.is_match === true) msg = "🎯 巡航命中「" + (activeCompare.target||"") + "」· " + (cruise.reason||"");
+      if (cycle) cycle.entries.push({
+        seq: fid, ts: frameStore[fid].ts, level: "normal", msg,
+        is_match: cruise.is_match === true, image: dataUri, result: data,
+      });
+      logRow("normal", msg, cruise.is_match === true, fid, dataUri);
+      return fid;
+    }
+
+    function logRow(level, msg, isMatch, fid, dataUri){
+      const t = new Date().toLocaleTimeString("zh-CN", {hour12:false});
+      const thumb = dataUri ? `<img class="thumb" src="${dataUri}" alt="frame"/>` : `<span class="dot"></span>`;
+      
+      // 技术模式日志
+      const row = document.createElement("div");
+      row.className = "logrow " + level;
+      row.innerHTML = `${thumb}<span class="t">${t}</span>
+        <span class="msg">${isMatch ? '<span class="mtag">命中 </span>' : ''}${escapeHtml(msg)}</span>
+        ${fid ? '<span class="arrow">查看帧 ›</span>' : ''}`;
+      if (fid) row.onclick = () => openFrame(fid);
+      const log = $("log"); 
+      if (log) {
+        log.prepend(row);
+        while (log.children.length > 60) log.removeChild(log.lastChild);
+      }
+      
+      // 监控模式日志（带缩略图）
+      const dashLogContainer = $("dash-log-container");
+      if (dashLogContainer) {
+        // 移除占位的empty提示
+        const emptyEl = dashLogContainer.querySelector(".dash-log-empty");
+        if (emptyEl) emptyEl.remove();
+        
+        const dashRow = document.createElement("div");
+        dashRow.className = "dash-log-item " + level;
+        
+        // 如果有图片，添加缩略图
+        const thumbHtml = dataUri ? `<img class="thumb" src="${dataUri}" alt="frame" style="width:42px;height:30px;object-fit:cover;border-radius:4px;border:1px solid var(--line);margin-right:4px;"/>` : '';
+        
+        dashRow.innerHTML = `<span class="dot"></span>
+          <div class="content">
+            <div class="time">${t}</div>
+            <div class="msg" style="display:flex;align-items:center;gap:6px;">
+              ${thumbHtml}
+              <span>${isMatch ? '<span style="color:var(--ok);font-weight:700;font-size:.75rem">✓ 命中</span> ' : ''}${escapeHtml(msg)}</span>
+            </div>
+          </div>`;
+        if (fid) {
+          dashRow.style.cursor = "pointer";
+          dashRow.onclick = () => openFrame(fid);
+        }
+        dashLogContainer.prepend(dashRow);
+        while (dashLogContainer.children.length > 60) dashLogContainer.removeChild(dashLogContainer.lastChild);
+      }
+    }
+
+    // —— 点击日志：预览发给大模型的帧 ——
+    function openFrame(fid){
+      const f = frameStore[fid]; if (!f) return;
+      const gated = f.res && f.res.gated;
+      const isCruise = f.res && f.res.cruise !== undefined && f.res.gated === undefined;
+      $("modalImg").src = f.dataUri;
+      $("modalTime").textContent = "采集时间 " + f.ts + " · 耗时 " + f.ms + "ms · "
+        + (gated ? "已调用 gpt-4o 分析" : isCruise ? "YOLO 自动巡航（未花 LLM）" : "门控跳过 · 仅 YOLO（未花 LLM）");
+      $("modalJson").textContent = JSON.stringify(f.res, null, 2);
+      $("modal").classList.add("open");
+    }
+    $("modalClose").onclick = () => $("modal").classList.remove("open");
+    $("modal").onclick = (e) => { if (e.target === $("modal")) $("modal").classList.remove("open"); };
+
+    // —— 历史日志（按监控周期）——
+    $("btnHistory").onclick = openHistory;
+    $("histClose").onclick = () => $("histModal").classList.remove("open");
+    $("histModal").onclick = (e) => { if (e.target === $("histModal")) $("histModal").classList.remove("open"); };
+    $("histBack").onclick = () => { $("histDetail").style.display="none"; $("histList").style.display="block"; };
+
+    async function openHistory(){
+      $("histDetail").style.display="none"; $("histList").style.display="block";
+      $("histList").innerHTML = '<div class="hempty">加载中…</div>';
+      $("histModal").classList.add("open");
+      try {
+        const r = await fetch("/monitor-sessions");
+        const items = (await r.json()).sessions || [];
+        if (!items.length) { $("histList").innerHTML = '<div class="hempty">暂无历史周期。完整地「开始监控 → 停止监控」一次后会自动归档。</div>'; return; }
+        $("histList").innerHTML = items.map(s => `
+          <div class="hsess" data-id="${s.id}">
+            <span class="hid">${s.id}</span>
+            <span class="hmeta">${fmtSpan(s.started_at,s.ended_at)}${s.target ? ' · 目标:'+escapeHtml(s.target) : ' · 仅理解'}</span>
+            <span class="hnum"><b>${s.frames||0}</b> 帧 · 命中 <b>${s.match||0}</b> · <span class="ha">告警 ${s.alert||0}</span></span>
+            <button class="hdel" data-del="${s.id}">删</button>
+          </div>`).join("");
+        $("histList").querySelectorAll(".hsess").forEach(el => {
+          el.onclick = (e) => { if (e.target.dataset.del) return; loadSession(el.dataset.id); };
+        });
+        $("histList").querySelectorAll("[data-del]").forEach(b => {
+          b.onclick = async (e) => { e.stopPropagation();
+            if (!confirm("删除该监控周期？")) return;
+            await fetch("/monitor-sessions/"+b.dataset.del, {method:"DELETE"}); openHistory(); };
+        });
+      } catch(e) { $("histList").innerHTML = '<div class="hempty">加载失败：'+escapeHtml(e.message)+'</div>'; }
+    }
+
+    async function loadSession(id){
+      try {
+        const m = await (await fetch("/monitor-sessions/"+id)).json();
+        $("histList").style.display="none"; $("histDetail").style.display="block";
+        const st = m.stats || {};
+        $("histDetailMeta").textContent = "周期 "+id+" · "+fmtSpan(m.started_at,m.ended_at)
+          +" · "+(st.frames||m.entries.length)+" 帧 · 命中 "+(st.match||0)+" · 告警 "+(st.alert||0)
+          +(m.target ? " · 目标:"+m.target : " · 仅理解");
+        const log = $("histLog"); log.innerHTML = "";
+        m.entries.slice().reverse().forEach(e => {
+          const row = document.createElement("div");
+          row.className = "logrow " + (e.level||"normal");
+          const thumb = e.frame_url ? `<img class="thumb" src="${e.frame_url}" alt="f"/>` : `<span class="dot"></span>`;
+          row.innerHTML = `${thumb}<span class="t">${e.ts||""}</span>
+            <span class="msg">${e.is_match ? '<span class="mtag">命中 </span>':''}${escapeHtml(e.msg||"")}</span>
+            <span class="arrow">查看帧 ›</span>`;
+          row.onclick = () => openFrameUrl(e.frame_url, e.result, e.ts);
+          log.appendChild(row);
+        });
+      } catch(e) { alert("加载失败："+e.message); }
+    }
+
+    function fmtSpan(a,b){
+      try { const s=new Date(a), en=new Date(b);
+        const d = Math.max(0, Math.round((en-s)/1000));
+        return s.toLocaleString("zh-CN",{hour12:false}) + " · 时长 " + d + "s";
+      } catch(e) { return a||""; }
+    }
+
+    function openFrameUrl(url, res, ts){
+      if (!url) return;
+      $("modalImg").src = url;
+      $("modalTime").textContent = "采集时间 " + (ts||"") + " · 历史归档帧 · 发送给 gpt-4o 的画面";
+      $("modalJson").textContent = JSON.stringify(res||{}, null, 2);
+      $("modal").classList.add("open");
+    }
+
+    function escapeHtml(s){ return (s||"").replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+
+    window.addEventListener("beforeunload", stopAll);
+  </script>
+</body>
+</html>

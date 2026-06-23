@@ -1,0 +1,116 @@
+/* ========================================
+   CSS Variables & Theme
+   视频理解PoC - 主题变量定义
+   ======================================== */
+
+:root {
+  /* 颜色系统 */
+  --bg: #f0eee6;              /* 页面背景 - 暖灰色 */
+  --panel: #ffffff;           /* 面板背景 - 纯白 */
+  --panel2: #faf9f4;          /* 次级面板 - 淡黄 */
+  --card: #f6f4ed;            /* 卡片背景 - 米白 */
+  --line: #e7e3d8;            /* 边框线 - 浅棕灰 */
+  
+  --fg: #2b2a26;              /* 主文字 - 深棕灰 */
+  --muted: #85816f;           /* 次要文字 - 中灰 */
+  
+  --accent: #cc785c;          /* 主色调 - 赤土橙 */
+  --accent2: #b8623f;         /* 主色深色 - 深橙 */
+  
+  --ok: #2a9067;              /* 成功/正常 - 绿色 */
+  --warn: #bd8a2e;            /* 警告 - 黄色 */
+  --alert: #c0392b;           /* 错误/告警 - 红色 */
+  --idle: #cdc9bb;            /* 空闲/禁用 - 灰色 */
+  
+  --stage: #1b1a17;           /* 视频背景 - 深黑 */
+  
+  /* 阴影系统 */
+  --shadow: 0 1px 2px rgba(50,46,38,.04), 0 6px 18px rgba(50,46,38,.06);
+  --shadow-lg: 0 8px 30px rgba(50,46,38,.12);
+  
+  /* 字体系统 */
+  --mono: "SF Mono", "Cascadia Mono", "Consolas", ui-monospace, monospace;
+  --serif: "Iowan Old Style", "Palatino Linotype", Georgia, "Songti SC", serif;
+}
+
+/* ========================================
+   全局重置
+   ======================================== */
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: rgba(204,120,92,.22);
+}
+
+/* ========================================
+   关键帧动画
+   ======================================== */
+
+/* LED脉冲动画 */
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(42,144,103,.5);
+  }
+  70% {
+    box-shadow: 0 0 0 7px rgba(42,144,103,0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(42,144,103,0);
+  }
+}
+
+/* 扫描线动画 */
+@keyframes scan {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(100%);
+  }
+}
+
+/* 仪表盘扫描线动画 */
+@keyframes scan-dash {
+  0%, 100% {
+    top: 0;
+    opacity: 0;
+  }
+  50% {
+    top: 50%;
+    opacity: .6;
+  }
+}
+
+/* 角标脉冲动画 */
+@keyframes pulsecorner {
+  0%, 100% {
+    opacity: .7;
+  }
+  50% {
+    opacity: .3;
+  }
+}
+
+/* 连线流动动画 */
+@keyframes flowright {
+  to {
+    background-position: 14px 0;
+  }
+}
