@@ -158,4 +158,104 @@ def understand_event(
     return result
 
 
-__all__ = ["understand_event"]
+# ============ 跨窗整段事件总结（Phase 4 · E）============
+# 长视频被切成多个事件窗，各窗已"看图"理解过。这里再做一道**纯文本**整合（无图片、便宜）：
+# 把各窗叙述 + 身份名册喂给 LLM，串成整段视频的一个连贯事件故事——靠 ReID 身份把"同一主体在
+# 不同窗"关联起来（主体#1 在 0:05 和 1:10 都出现）。
+
+WINDOW_SUMMARY_SYSTEM = (
+    "你是监控视频的整段事件总结助手。下面给你同一段视频里【按时间顺序的若干事件窗】"
+    "（每个窗已由多模态模型理解过：时间段、涉及的人物身份、发生了什么、告警级别），"
+    "以及全程出现过的【人物身份名册】。请把这些窗整合成【整段视频的一个连贯事件故事】："
+    "同一身份（主体#/库内身份）在不同窗里是同一个人，按时间把他们的行为串起来；"
+    "只依据给定信息，不要臆造画面之外的内容。"
+)
+
+WINDOW_SUMMARY_SCHEMA = (
+    "请严格输出 JSON（不要多余文字），字段：\n"
+    "{\n"
+    '  "overall_summary": "用 2-4 句话总结整段视频发生了什么（贯穿各窗）",\n'
+    '  "story": [\n'
+    '    {"time": "时间/时间段", "subject": "涉及身份（如 主体#1）", "action": "做了什么（跨窗连贯叙述）"}\n'
+    "  ],\n"
+    '  "subjects": ["涉及到的身份及其一句话概括，如 主体#1：闯入并翻找后离开"],\n'
+    '  "overall_alert_level": "normal | attention | alert（整段最高告警级别）",\n'
+    '  "notification": "给值班人员的一句话整段通知"\n'
+    "}"
+)
+
+
+def _build_roster(windows: list[dict]) -> str:
+    """身份名册：每个主体出现在哪些窗的时间段（让模型跨窗认出同一人）。"""
+    appear: dict[str, list[str]] = {}
+    for w in windows:
+        tr = w.get("time_range", ["", ""])
+        for p in w.get("people", []):
+            sid = p.get("subject_id")
+            label = f"主体#{sid}" if sid is not None else f"track {p.get('track_id')}"
+            appear.setdefault(label, []).append(f"{tr[0]}~{tr[1]}")
+    if not appear:
+        return "（无可用身份）"
+    return "\n".join(f"- {label}：出现于 {', '.join(rs)}" for label, rs in appear.items())
+
+
+def _windows_to_text(windows: list[dict]) -> str:
+    """把各窗的事件理解结果压成紧凑文本时间线（喂给整段总结，无图片）。"""
+    lines: list[str] = []
+    for w in windows:
+        ev = w.get("event") or {}
+        tr = w.get("time_range", ["", ""])
+        lines.append(f"[窗{w.get('window_index')} {tr[0]}~{tr[1]}] 告警={ev.get('alert_level', 'normal')}")
+        if ev.get("summary"):
+            lines.append(f"  概述：{ev['summary']}")
+        for e in ev.get("events", []):
+            flag = "⚠" if e.get("abnormal") else ""
+            lines.append(f"  - {e.get('time')} {e.get('subject')}：{flag}{e.get('action')}")
+    return "\n".join(lines) or "（无事件窗）"
+
+
+def summarize_event_windows(windows: list[dict], model: str | None = None) -> dict:
+    """把若干事件窗整合成整段视频的连贯事件故事（纯文本调用）。
+
+    Args:
+        windows: analyze_event_stream 产出的窗列表（每项含 time_range / people / event）。
+        model: 覆盖部署名（默认主部署）。
+
+    Returns:
+        dict：overall_summary, story[{time,subject,action}], subjects[], overall_alert_level, notification。
+        无任何已理解的窗时返回 {}（上层据此跳过）。
+    """
+    ev_windows = [w for w in windows if w.get("event")]
+    if not ev_windows:
+        return {}
+
+    roster = _build_roster(windows)
+    timeline = _windows_to_text(windows)
+    prompt = (
+        WINDOW_SUMMARY_SCHEMA
+        + "\n\n【人物身份名册（同一身份跨窗即同一人）】\n" + roster
+        + "\n\n【各事件窗（按时间顺序）】\n" + timeline
+    )
+
+    deployment = model or settings.event_llm_deployment or settings.azure_openai_deployment
+    client = _client()
+    resp = _create_with_retry(
+        client,
+        model=deployment,
+        messages=[
+            {"role": "system", "content": WINDOW_SUMMARY_SYSTEM},
+            {"role": "user", "content": prompt},
+        ],
+        response_format={"type": "json_object"},
+        temperature=0.2,
+        max_tokens=settings.event_llm_max_tokens,
+    )
+    result = _parse_json(resp.choices[0].message.content or "{}")
+    result.setdefault("story", [])
+    result.setdefault("overall_alert_level", "normal")
+    result["_model"] = deployment
+    result["_windows"] = len(ev_windows)
+    return result
+
+
+__all__ = ["understand_event", "summarize_event_windows"]

@@ -34,7 +34,7 @@ from . import reid as reid_mod
 from . import tracker as tracker_mod
 from .core.config import settings
 from .keyframe import FrameMeta, select_keyframes
-from .services.event_understanding import understand_event
+from .services.event_understanding import summarize_event_windows, understand_event
 from .services.identity_context import format_identity_context
 from .utils.image_utils import image_to_data_uri, seconds_to_timestamp
 from .video_processor import Frame, extract_frames
@@ -77,6 +77,7 @@ def analyze_event_stream(
     include_keyframe_images: bool = False,
     max_window_seconds: float | None = None,
     stitch_thresh: float | None = None,
+    overall_summary: bool | None = None,
 ) -> dict:
     """对一段视频做"身份感知·多帧事件理解"的完整端到端处理。
 
@@ -96,6 +97,8 @@ def analyze_event_stream(
             默认取 settings.event_window_max_seconds。
         stitch_thresh: 同视频内"轨迹缝合"的余弦阈值；灰区孤立 track 与某主体相似度 ≥ 此值即并入。
             默认取 settings.event_stitch_thresh；设 0 关闭缝合。
+        overall_summary: 是否在所有窗理解完后做一次"跨窗整段事件总结"（纯文本、便宜）。
+            默认取 settings.event_overall_summary；dry-run（run_llm=False）下不做。
 
     Returns:
         dict：含 tracks（每条轨迹的身份裁决）、windows（每个事件窗的关键帧/身份/事件叙述）。
@@ -264,6 +267,15 @@ def analyze_event_stream(
             window_out["event"] = understand_event(kf, identity_text, objective=objective)
         out_windows.append(window_out)
 
+    # ---- 跨窗整段事件总结：所有窗理解完后，纯文本把多窗串成整段连贯故事（便宜；dry-run 跳过）----
+    overall = None
+    do_overall = settings.event_overall_summary if overall_summary is None else overall_summary
+    if run_llm and do_overall and out_windows:
+        try:
+            overall = summarize_event_windows(out_windows) or None
+        except Exception as exc:  # 总结失败不致命：逐窗结果仍在
+            overall = {"error": str(exc)}
+
     return {
         "video": str(video_path),
         "fps": fps,
@@ -278,6 +290,7 @@ def analyze_event_stream(
         "elapsed_seconds": round(time.time() - t_start, 1),
         "tracks": {str(tid): identities[tid] for tid in identities},
         "windows": out_windows,
+        "overall": overall,
     }
 
 

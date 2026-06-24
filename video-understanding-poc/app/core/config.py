@@ -130,6 +130,10 @@ class Settings:
     # 设 0 关闭缝合。阈值越低越敢并（省"一人两条"），但过低会误并不同人。
     event_stitch_thresh: float = float(_get("EVENT_STITCH_THRESH", "0.45"))
 
+    # 跨窗整段事件总结（Phase 4 · E）：所有事件窗理解完后，把各窗叙述 + 身份名册做一次**纯文本**整合，
+    # 串成整段视频的连贯事件故事（靠 ReID 身份跨窗关联同一人）。纯文本调用、便宜；dry-run 跳过。
+    event_overall_summary: bool = _get("EVENT_OVERALL_SUMMARY", "true").strip().lower() in {"1", "true", "yes", "on"}
+
     # 智能抽帧（Phase 2 · Step 7）：场景突变 OR 定时兜底
     smart_frames: bool = _get("SMART_FRAMES", "true").strip().lower() in {"1", "true", "yes", "on"}
     scene_threshold: float = float(_get("SCENE_THRESHOLD", "0.4"))

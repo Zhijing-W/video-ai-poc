@@ -48,6 +48,8 @@ def main() -> int:
                     help="单个事件窗时长上限（秒），超过则切新窗、多调一次 LLM（默认 30）。长连续视频调小可拿到更细叙述")
     ap.add_argument("--stitch-thresh", type=float, default=None,
                     help="同视频内轨迹缝合余弦阈值（默认 0.45）。灰区孤立 track 与主体相似度≥此值即并入；设 0 关闭")
+    ap.add_argument("--no-overall", action="store_true",
+                    help="关闭跨窗整段事件总结（默认开；纯文本便宜调用）")
     ap.add_argument("--face", action="store_true", help="启用人脸分支（InsightFace，较慢）")
     ap.add_argument("--objective", default=None, help="给事件理解的关注点提示")
     ap.add_argument("--dry-run", action="store_true", help="只跑到 LLM 边界，不真调模型（不花额度）")
@@ -71,6 +73,7 @@ def main() -> int:
             objective=args.objective, max_keyframes=args.max_keyframes,
             max_window_seconds=args.max_window_seconds,
             stitch_thresh=args.stitch_thresh,
+            overall_summary=(False if args.no_overall else None),
         )
     except Exception as exc:  # noqa: BLE001
         print(f"[X] 处理失败：{exc}")
@@ -110,6 +113,16 @@ def main() -> int:
                 print(f"   {flag} [{e.get('time')}] {e.get('subject')}: {e.get('action')}")
         else:
             print("  （dry-run：未调用 LLM。以上身份上下文 + 关键帧即为将要喂给模型的内容。）")
+
+    ov = payload.get("overall")
+    if ov and not ov.get("error"):
+        print("\n========== 整段事件总结（跨窗整合）==========")
+        print(f"  概述: {ov.get('overall_summary')}")
+        print(f"  整段告警: {ov.get('overall_alert_level')}   通知: {ov.get('notification')}")
+        for s in ov.get("story", []):
+            print(f"   [{s.get('time')}] {s.get('subject')}: {s.get('action')}")
+        for s in ov.get("subjects", []):
+            print(f"   · {s}")
 
     print(f"\n[✓] 完整结果已写入 {out_file}")
     if payload.get("dry_run"):

@@ -58,6 +58,7 @@
 
     $("btnRun").disabled = true;
     $("empty").style.display = "none";
+    $("overall").hidden = true;
     $("timeline").innerHTML = "";
     $("tracks").innerHTML = "";
     $("meta").innerHTML = "";
@@ -95,6 +96,7 @@
     $("resultTools").hidden = false;
     $("jsonView").hidden = true;
     $("btnToggleJson").textContent = "查看原始 JSON";
+    renderOverall(data.overall);
     // 元信息
     $("meta").innerHTML =
       `视频 <b>${esc(baseName(data.video))}</b> · ${data.frames_total} 帧 @ ${data.fps}fps · ` +
@@ -122,6 +124,34 @@
 
     // 事件窗时间线
     $("timeline").innerHTML = (data.windows || []).map(renderWindow).join("");
+  }
+
+  // ---- 整段事件总结（跨窗整合，置顶 headline）----
+  function renderOverall(ov) {
+    const el = $("overall");
+    if (!ov || ov.error) {
+      el.hidden = true;
+      el.innerHTML = "";
+      return;
+    }
+    const level = ov.overall_alert_level || "normal";
+    const story = (ov.story || [])
+      .map(
+        (s) =>
+          `<div class="em-event"><span class="et">${esc(s.time)}</span>` +
+          `<span class="es">${esc(s.subject)}</span><span class="ea">${esc(s.action)}</span></div>`
+      )
+      .join("");
+    const subs = (ov.subjects || []).map((s) => `<li>${esc(s)}</li>`).join("");
+    el.hidden = false;
+    el.className = "em-overall " + level;
+    el.innerHTML =
+      `<div class="em-window-head"><span class="em-otitle">📋 整段事件总结（跨窗整合）</span>` +
+      `<span class="em-badge ${esc(level)}">${esc(level)}</span></div>` +
+      `<div class="em-summary">${esc(ov.overall_summary)}</div>` +
+      (ov.notification ? `<div class="em-notify">🔔 ${esc(ov.notification)}</div>` : "") +
+      (story ? `<div class="em-events">${story}</div>` : "") +
+      (subs ? `<ul class="em-subjects">${subs}</ul>` : "");
   }
 
   function renderWindow(w) {

@@ -141,6 +141,23 @@
   word-break: break-word;
 }
 
+/* 整段事件总结（跨窗整合，置顶 headline 卡） */
+.em-overall {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 5px solid var(--accent);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow);
+}
+.em-overall.normal    { border-left-color: var(--ok); }
+.em-overall.attention { border-left-color: var(--warn); }
+.em-overall.alert     { border-left-color: var(--alert); }
+.em-otitle { font-weight: 700; font-size: .9rem; color: var(--fg); }
+.em-subjects { margin: 8px 0 0; padding-left: 18px; font-size: .78rem; color: var(--muted); }
+.em-subjects li { margin: 2px 0; }
+
 /* 主体记忆（认人结果）摘要 */
 .em-tracks {
   display: flex;

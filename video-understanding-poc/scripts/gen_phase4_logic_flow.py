@@ -13,6 +13,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.font_manager import FontProperties
 from matplotlib.patches import FancyBboxPatch, Polygon
 
 plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "DengXian"]
@@ -29,10 +30,16 @@ RESERVED = ("#F2F2F2", "#9AA0A6")
 P1 = ("#FFF4CE", "#F7630C")
 P2 = ("#E8DAEF", "#5C2D91")
 OPTIONAL = ("#E3E3E3", "#495057")
+CIRCLED_CJK_FONT_PATH = Path(r"C:\Windows\Fonts\NotoSansSC-VF.ttf")
+CIRCLED_CJK_FONT = (
+    FontProperties(fname=str(CIRCLED_CJK_FONT_PATH))
+    if CIRCLED_CJK_FONT_PATH.exists()
+    else FontProperties(family="Noto Sans SC")
+)
 
 # Large vector canvas: keep lanes and branches spacious instead of compressing.
-FIG_W, FIG_H = 38, 68
-XMAX, YMAX = 1600, 3000
+FIG_W, FIG_H = 38, 72
+XMAX, YMAX = 1600, 3200
 fig, ax = plt.subplots(figsize=(FIG_W, FIG_H))
 fig.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
 ax.set_xlim(0, XMAX)
@@ -77,6 +84,7 @@ def rbox(
     badge_text: str | None = None,
     badge_color=ORANGE,
     name: str | None = None,
+    fontproperties: FontProperties | None = None,
 ) -> None:
     """Rounded box with centered multiline text."""
     fc, ec = RESERVED if reserved else col
@@ -102,6 +110,7 @@ def rbox(
         fontsize=fs,
         color="#4A4A4A" if reserved else "#111111",
         linespacing=1.18,
+        fontproperties=fontproperties,
         zorder=4,
     )
     if badge_text:
@@ -505,6 +514,21 @@ rbox(
     5.9,
     name="Timeline",
 )
+rbox(
+    350,
+    3000,
+    580,
+    118,
+    "⑫ 跨窗整段事件总结 summarize_event_windows（已实现）\n"
+    "所有事件窗理解完后，纯文本整合多窗叙述 + 身份名册\n"
+    "→ 整段视频【连贯事件故事】；ReID 身份跨窗关联同一人\n"
+    "便宜；dry-run 跳过；输出 overall_summary / story[时间·身份·动作]\n"
+    "/ overall_alert_level / notification",
+    TEAL,
+    5.35,
+    name="OverallSummary",
+    fontproperties=CIRCLED_CJK_FONT,
+)
 reserved_box(900, 2845, 310, 70, "highlight 视频片段拼接\napp/clip_export.py\n按事件裁剪/拼接(ffmpeg)", "P2", 5.8, name="Clip")
 reserved_box(
     1320,
@@ -517,6 +541,7 @@ reserved_box(
     name="BadCase",
 )
 arrow(CX - 160, 2730, 350, 2805)
+arrow(350, 2885, 350, 2938, "多窗事件结果", fs=5.8)
 arrow(CX, 2730, 900, 2810, ls="--", color="#9AA0A6", lw=1.1)
 arrow(CX + 160, 2730, 1320, 2805, ls="--", color="#9AA0A6", lw=1.1)
 
@@ -536,10 +561,10 @@ side_panel(
 )
 
 # Small visual anchors to reinforce implemented vs reserved path semantics.
-ax.plot([450, 610], [2945, 2945], color="#666666", lw=1.6)
-ax.text(625, 2945, "实线路径已实现", va="center", fontsize=6.5, color="#333333")
-ax.plot([900, 1060], [2945, 2945], color="#9AA0A6", lw=1.4, ls="--")
-ax.text(1075, 2945, "虚线灰为预留槽（均带 P1/P2/可选 badge）", va="center", fontsize=6.5, color="#555555")
+ax.plot([450, 610], [3145, 3145], color="#666666", lw=1.6)
+ax.text(625, 3145, "实线路径已实现", va="center", fontsize=6.5, color="#333333")
+ax.plot([900, 1060], [3145, 3145], color="#9AA0A6", lw=1.4, ls="--")
+ax.text(1075, 3145, "虚线灰为预留槽（均带 P1/P2/可选 badge）", va="center", fontsize=6.5, color="#555555")
 
 
 def _warn_overlaps() -> None:
