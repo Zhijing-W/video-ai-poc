@@ -36,7 +36,7 @@ from .core.config import settings
 from .keyframe import FrameMeta, select_keyframes
 from .services.event_understanding import understand_event
 from .services.identity_context import format_identity_context
-from .utils.image_utils import seconds_to_timestamp
+from .utils.image_utils import image_to_data_uri, seconds_to_timestamp
 from .video_processor import Frame, extract_frames
 
 
@@ -74,6 +74,8 @@ def analyze_event_stream(
     objective: str | None = None,
     quiet_seconds: float = 2.0,
     max_keyframes: int | None = None,
+    include_keyframe_images: bool = False,
+    max_window_seconds: float | None = None,
 ) -> dict:
     """对一段视频做"身份感知·多帧事件理解"的完整端到端处理。
 
@@ -87,6 +89,10 @@ def analyze_event_stream(
         with_face: 是否启用人脸分支（InsightFace，较慢；此夜间蒙面片多半无脸，默认关）。
         objective: 可选关注点，写进事件理解 prompt（如"留意陌生人/包裹被取走"）。
         quiet_seconds: 连续无人多久算"活动结束"，用于切分事件窗。
+        max_keyframes: 喂 LLM 的关键帧上限（覆盖 settings.keyframe_max）。
+        include_keyframe_images: 是否在每个窗里附带关键帧的 data URI（前端展示用；脚本默认关）。
+        max_window_seconds: 单个事件窗的时长上限（秒）；超过则冲刷开新窗，避免长连续事件欠采样。
+            默认取 settings.event_window_max_seconds。
 
     Returns:
         dict：含 tracks（每条轨迹的身份裁决）、windows（每个事件窗的关键帧/身份/事件叙述）。
@@ -204,8 +210,10 @@ def analyze_event_stream(
     if with_face:
         _attach_faces(frames, tracks, identities)
 
-    # ---- 流式分窗：把帧序列按"活动段"切成事件窗 ----
-    windows = _split_windows(metas, quiet_frames)
+    # ---- 流式分窗：把帧序列按"活动段 + 时长上限"切成事件窗 ----
+    win_secs = settings.event_window_max_seconds if max_window_seconds is None else max_window_seconds
+    max_window_frames = int(round(win_secs * fps)) if win_secs and win_secs > 0 else None
+    windows = _split_windows(metas, quiet_frames, max_window_frames)
     if not windows:  # 全程无人/无活动 → 整段当一个窗，LLM 仍可描述场景
         windows = [list(range(len(metas)))]
 
@@ -235,6 +243,11 @@ def analyze_event_stream(
             "people": people,
             "identity_context": identity_text,
         }
+        if include_keyframe_images:
+            window_out["keyframes"] = [
+                {"timestamp": idx2frame[i].timestamp, "image": image_to_data_uri(idx2frame[i].local_path)}
+                for i in sel
+            ]
         if run_llm:
             window_out["event"] = understand_event(kf, identity_text, objective=objective)
         out_windows.append(window_out)
@@ -344,8 +357,19 @@ def _group_people(
     return people
 
 
-def _split_windows(metas: list[FrameMeta], quiet_frames: int) -> list[list[int]]:
-    """把帧序列按活动段切窗：连续有人为一窗，允许桥接 < quiet_frames 的短暂无人。"""
+def _split_windows(
+    metas: list[FrameMeta], quiet_frames: int, max_window_frames: int | None = None
+) -> list[list[int]]:
+    """把帧序列按"活动段 + 时长上限"切窗，返回每个窗的帧 index 列表。
+
+    关窗条件二选一：
+      (a) 活动结束：连续 ≥ quiet_frames 帧无人（允许桥接 < quiet_frames 的短暂无人）；
+      (b) 时长封顶：窗内帧数达到 max_window_frames（= 时长上限 × fps）→ 冲刷并立刻开新窗。
+
+    (b) 是为"长连续事件"准备的：否则一个人在画面里连续待很久会被压成单窗、只调一次 LLM、
+    关键帧被严重欠采样。封顶后长事件会被切成多个窗、各调一次，细节不丢（跨窗的"谁"靠 ReID
+    主体记忆保持一致）。
+    """
     windows: list[list[int]] = []
     cur: list[int] = []
     gap = 0
@@ -353,14 +377,18 @@ def _split_windows(metas: list[FrameMeta], quiet_frames: int) -> list[list[int]]
         if m.active_tracks:
             cur.append(m.index)
             gap = 0
+            if max_window_frames and len(cur) >= max_window_frames:
+                windows.append(cur)          # 时长封顶 → 冲刷
+                cur = []
+                gap = 0
         elif cur:
             gap += 1
             if gap >= quiet_frames:
-                windows.append(cur)
+                windows.append(cur)          # 活动结束 → 冲刷
                 cur = []
                 gap = 0
             else:
-                cur.append(m.index)  # 短暂无人，桥接进当前窗
+                cur.append(m.index)          # 短暂无人，桥接进当前窗
     if cur:
         windows.append(cur)
     return windows

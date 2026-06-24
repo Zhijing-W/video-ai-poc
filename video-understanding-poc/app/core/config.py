@@ -121,6 +121,10 @@ class Settings:
     keyframe_context: int = int(_get("KEYFRAME_CONTEXT", "1"))     # 事件前后各留几帧上下文
     keyframe_dedup_diff: float = float(_get("KEYFRAME_DEDUP_DIFF", "0.06"))  # 低于此签名差异视为"太像"去重
 
+    # 流式事件分窗（Phase 4 · Step 24）：窗 = 一次 LLM 调用。窗按"活动段 + 时长上限"切。
+    # 时长上限是给"长连续事件"准备的：超过则冲刷开新窗，否则长事件被压成单窗、关键帧严重欠采样。
+    event_window_max_seconds: float = float(_get("EVENT_WINDOW_MAX_SECONDS", "30"))
+
     # 智能抽帧（Phase 2 · Step 7）：场景突变 OR 定时兜底
     smart_frames: bool = _get("SMART_FRAMES", "true").strip().lower() in {"1", "true", "yes", "on"}
     scene_threshold: float = float(_get("SCENE_THRESHOLD", "0.4"))

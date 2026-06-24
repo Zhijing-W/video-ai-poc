@@ -11,6 +11,7 @@ from .routers import (
     analyze_router,
     compare_router,
     detect_router,
+    eventmonitor_router,
     fusion_router,
     identify_router,
     session_router,
@@ -28,7 +29,7 @@ async def no_cache_dev_assets(request: Request, call_next):
     """开发期防缓存：前端 JS/CSS/页面频繁迭代，禁用浏览器缓存避免跑到旧代码。"""
     response = await call_next(request)
     path = request.url.path
-    if path.startswith("/static") or path in ("/", "/monitor"):
+    if path.startswith("/static") or path in ("/", "/monitor", "/eventmonitor"):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
@@ -42,6 +43,7 @@ app.include_router(identify_router)
 app.include_router(fusion_router)
 app.include_router(compare_router)
 app.include_router(session_router)
+app.include_router(eventmonitor_router)
 
 
 @app.get("/")
@@ -53,3 +55,9 @@ def index() -> RedirectResponse:
 @app.get("/monitor", response_class=HTMLResponse)
 def monitor(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "monitor.html")
+
+
+@app.get("/eventmonitor", response_class=HTMLResponse)
+def eventmonitor(request: Request) -> HTMLResponse:
+    # Phase 4：身份感知·多帧事件理解（视频流 → 事件窗时间线）。
+    return templates.TemplateResponse(request, "eventmonitor.html")

@@ -1,0 +1,267 @@
+/* ========================================
+   事件监控台 eventmonitor.css
+   身份感知·多帧事件理解（视频流 → 事件窗时间线）
+   复用 variables.css 的主题变量
+   ======================================== */
+
+.em-link {
+  margin-left: auto;
+  margin-right: 14px;
+  color: var(--accent);
+  text-decoration: none;
+  font-size: .8rem;
+}
+.em-link:hover { text-decoration: underline; }
+
+.em-wrap {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 16px;
+  padding: 16px;
+  align-items: start;
+}
+
+/* ---------- 左侧控制面板 ---------- */
+.em-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: var(--shadow);
+  position: sticky;
+  top: 16px;
+}
+.em-heading {
+  font-size: .82rem;
+  margin: 0 0 8px;
+  color: var(--fg);
+}
+.em-label {
+  display: block;
+  font-size: .72rem;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.em-input {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel2);
+  color: var(--fg);
+  font-size: .8rem;
+}
+.em-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.em-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: .76rem;
+  color: var(--muted);
+  margin-top: 10px;
+}
+.em-btn {
+  width: 100%;
+  margin-top: 16px;
+  padding: 10px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: .85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.em-btn:hover { background: var(--accent2); }
+.em-btn:disabled { background: var(--idle); cursor: not-allowed; }
+.em-status {
+  margin-top: 10px;
+  font-size: .74rem;
+  color: var(--muted);
+  min-height: 18px;
+}
+.em-note {
+  margin-top: 16px;
+  font-size: .68rem;
+  line-height: 1.6;
+  color: var(--muted);
+  border-top: 1px dashed var(--line);
+  padding-top: 10px;
+}
+
+/* ---------- 右侧结果 ---------- */
+.em-main { min-width: 0; }
+.em-empty {
+  color: var(--muted);
+  font-size: .85rem;
+  padding: 40px;
+  text-align: center;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+}
+.em-meta {
+  font-size: .74rem;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.em-meta b { color: var(--fg); }
+
+/* 结果工具条 + 原始 JSON 查看 */
+.em-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.em-tool-btn {
+  font-size: .74rem;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel2);
+  color: var(--fg);
+  cursor: pointer;
+}
+.em-tool-btn:hover { border-color: var(--accent); color: var(--accent); }
+.em-tool-hint { font-size: .68rem; color: var(--muted); }
+.em-json {
+  max-height: 360px;
+  overflow: auto;
+  background: var(--stage);
+  color: #d7e0c8;
+  font-family: var(--mono);
+  font-size: .72rem;
+  line-height: 1.5;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  margin-bottom: 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 主体记忆（认人结果）摘要 */
+.em-tracks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.em-chip {
+  font-size: .72rem;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  color: var(--fg);
+}
+.em-chip .reused { color: var(--accent); font-weight: 600; }
+
+/* ---------- 事件窗时间线 ---------- */
+.em-timeline { display: flex; flex-direction: column; gap: 16px; }
+
+.em-window {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--idle);
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: var(--shadow);
+}
+.em-window.normal    { border-left-color: var(--ok); }
+.em-window.attention { border-left-color: var(--warn); }
+.em-window.alert     { border-left-color: var(--alert); }
+
+.em-window-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.em-time { font-family: var(--mono); font-size: .78rem; color: var(--muted); }
+.em-badge {
+  font-size: .68rem;
+  font-weight: 700;
+  padding: 2px 9px;
+  border-radius: 999px;
+  color: #fff;
+  background: var(--idle);
+  text-transform: uppercase;
+}
+.em-badge.normal    { background: var(--ok); }
+.em-badge.attention { background: var(--warn); }
+.em-badge.alert     { background: var(--alert); }
+
+.em-summary { font-size: .9rem; color: var(--fg); margin: 6px 0; line-height: 1.6; }
+.em-notify {
+  font-size: .78rem;
+  color: var(--accent2);
+  background: rgba(204,120,92,.08);
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin: 6px 0 10px;
+}
+
+/* 关键帧缩略图条 */
+.em-frames {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  margin-bottom: 10px;
+}
+.em-frame { position: relative; flex: 0 0 auto; }
+.em-frame img {
+  height: 90px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  display: block;
+}
+.em-frame span {
+  position: absolute;
+  left: 3px;
+  bottom: 3px;
+  font-family: var(--mono);
+  font-size: .6rem;
+  color: #fff;
+  background: rgba(0,0,0,.55);
+  padding: 0 4px;
+  border-radius: 3px;
+}
+
+/* 逐条事件 */
+.em-events { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.em-event {
+  display: grid;
+  grid-template-columns: 64px 110px 1fr;
+  gap: 8px;
+  font-size: .78rem;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--card);
+}
+.em-event.abnormal { background: rgba(192,57,43,.07); }
+.em-event .et { font-family: var(--mono); color: var(--muted); }
+.em-event .es { color: var(--accent2); font-weight: 600; }
+.em-event .ea { color: var(--fg); }
+.em-event .flag { color: var(--alert); margin-right: 4px; }
+
+/* 身份卡 */
+.em-people { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.em-person {
+  font-size: .72rem;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: var(--fg);
+}
+.em-person .pl { font-weight: 600; }
+.em-person .pc { color: var(--muted); }
+
+@media (max-width: 880px) {
+  .em-wrap { grid-template-columns: 1fr; }
+  .em-panel { position: static; }
+}

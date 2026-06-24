@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>事件监控台 · 身份感知多帧事件理解</title>
+  <link rel="stylesheet" href="/static/css/variables.css" />
+  <link rel="stylesheet" href="/static/css/layout.css" />
+  <link rel="stylesheet" href="/static/css/components.css" />
+  <link rel="stylesheet" href="/static/css/eventmonitor.css" />
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand"><span class="logo">◉</span> 事件监控台
+      <span style="color:var(--muted);font-weight:400;font-size:.78rem">身份感知 · 多帧事件理解</span>
+    </div>
+    <a class="em-link" href="/monitor">← 实时比对监控台</a>
+    <div class="clock" id="clock">--:--:--</div>
+  </div>
+
+  <div class="em-wrap">
+    <!-- ===== 左：控制面板 ===== -->
+    <aside class="em-panel">
+      <h3 class="em-heading">📹 输入源</h3>
+      <label class="em-label">选择样片</label>
+      <select id="sampleSelect" class="em-input"></select>
+      <label class="em-label" style="margin-top:10px">或上传视频</label>
+      <input id="fileInput" type="file" accept="video/*" class="em-input" />
+
+      <h3 class="em-heading" style="margin-top:18px">⚙️ 参数</h3>
+      <div class="em-row">
+        <div>
+          <label class="em-label">采样 fps</label>
+          <input id="fps" type="number" class="em-input" value="2" min="0.5" max="8" step="0.5" />
+        </div>
+        <div>
+          <label class="em-label">关键帧上限</label>
+          <input id="maxKeyframes" type="number" class="em-input" value="8" min="2" max="24" step="1" />
+        </div>
+      </div>
+      <label class="em-label" style="margin-top:10px">关注点（可选）</label>
+      <input id="objective" type="text" class="em-input" placeholder="如：留意陌生人闯入、拿走物品" />
+
+      <label class="em-check"><input type="checkbox" id="withFace" /> 启用人脸分支（较慢）</label>
+      <label class="em-check"><input type="checkbox" id="dryRun" /> Dry-run（不调 LLM，仅验链路）</label>
+
+      <button id="btnRun" class="em-btn">▶ 分析事件</button>
+      <div id="status" class="em-status"></div>
+
+      <div class="em-note">
+        流程：选帧①(定时) → YOLO+ByteTrack → 人形ReID认人 → 流式分窗 → 选帧②(事件驱动) → 身份打包 → gpt-4o 跨帧事件理解
+      </div>
+    </aside>
+
+    <!-- ===== 右：结果 ===== -->
+    <main class="em-main">
+      <div id="meta" class="em-meta"></div>
+      <div id="resultTools" class="em-tools" hidden>
+        <button id="btnDownloadJson" class="em-tool-btn">⬇ 下载 JSON</button>
+        <button id="btnToggleJson" class="em-tool-btn">查看原始 JSON</button>
+        <span class="em-tool-hint">本地模型最终输出（含/不含 LLM 事件，取决于是否 dry-run）</span>
+      </div>
+      <pre id="jsonView" class="em-json" hidden></pre>
+      <div id="tracks" class="em-tracks"></div>
+      <div id="timeline" class="em-timeline"></div>
+      <div id="empty" class="em-empty">选择样片或上传视频，点击「分析事件」开始。</div>
+    </main>
+  </div>
+
+  <script src="/static/js/eventmonitor/main.js"></script>
+</body>
+</html>
