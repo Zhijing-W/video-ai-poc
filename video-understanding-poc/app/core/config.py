@@ -108,6 +108,9 @@ class Settings:
     face_min_blur_var: float = float(_get("FACE_MIN_BLUR_VAR", "15.0"))    # 清晰度下限（拉普拉斯方差）
     face_ref_area: int = int(_get("FACE_REF_AREA", "10000"))     # 面积归一化基准（约 100×100）
     face_assoc_min_contain: float = float(_get("FACE_ASSOC_MIN_CONTAIN", "0.6"))  # 人脸被人体框包含度阈值
+    # 人脸库比对阈值（ArcFace 余弦分布与人形 OSNet 不同，单独配）：≥hit 认人，<new 判新主体。
+    face_hit_thresh: float = float(_get("FACE_HIT_THRESH", "0.45"))   # 同人 ArcFace 余弦通常 >0.4
+    face_new_thresh: float = float(_get("FACE_NEW_THRESH", "0.30"))   # 陌生人通常 <0.3
 
     # 多帧事件理解（Phase 4 · Step 23 / 3.4，本阶段灵魂）：多帧关键帧 + 身份上下文 → 跨帧事件叙述。
     # 模型名可配置：默认用现有 AZURE_OPENAI_DEPLOYMENT；以后指向 gpt-4.1/更强只改这一项。

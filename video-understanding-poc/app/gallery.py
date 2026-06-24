@@ -114,22 +114,28 @@ class SessionGallery:
             self._row_vecs.pop(drop, None)
 
     # ---- 对外 API ----
-    def identify(self, vec: np.ndarray, top_k: int = 5) -> dict:
+    def identify(self, vec: np.ndarray, top_k: int = 5,
+                 hit_thresh: float | None = None, new_thresh: float | None = None) -> dict:
         """只查不写：返回这条向量的归属裁决（不登记、不改库）。
 
         decision ∈ {hit, grey, new}：
           - hit  : 最高分 ≥ hit_thresh → 认出已知主体，可直接复用其档案、不必调 LLM。
           - new  : 最高分 < new_thresh（或库为空）→ 大概率是没见过的新主体。
           - grey : 介于两者之间 → 灰区，建议升级细粒度/多帧投票/LLM 裁决。
+
+        hit_thresh/new_thresh 可覆盖（默认用 ReID 阈值）；不同 backbone 余弦分布不同——人脸
+        ArcFace 与人形 OSNet 各传各的阈值。
         """
+        hit_t = settings.reid_hit_thresh if hit_thresh is None else hit_thresh
+        new_t = settings.reid_new_thresh if new_thresh is None else new_thresh
         v = self._prepare(vec)
         ranked = self._search_subjects(v, top_k)
         best_sid, best_score = (ranked[0] if ranked else (None, 0.0))
         runner_up = ranked[1][1] if len(ranked) > 1 else None
 
-        if best_sid is not None and best_score >= settings.reid_hit_thresh:
+        if best_sid is not None and best_score >= hit_t:
             decision = "hit"
-        elif best_sid is None or best_score < settings.reid_new_thresh:
+        elif best_sid is None or best_score < new_t:
             decision = "new"
         else:
             decision = "grey"
@@ -158,15 +164,19 @@ class SessionGallery:
         attributes: list[str] | None = None,
         auto_enroll: bool = True,
         top_k: int = 5,
+        hit_thresh: float | None = None,
+        new_thresh: float | None = None,
     ) -> dict:
         """查库 + 按裁决处理（开放集登记的主路径，供 /identify 用）。
 
         - hit  : 命中 → 复用档案；若 shot 数未满且本帧质量合格，顺手补一张 shot（多角度更稳）。
         - new  : 新主体 → 质量合格则登记建档（auto_enroll=True）；否则只判定不入库（污染防护）。
         - grey : 不登记（交给上层升级裁决），但记入负缓存倾向（不主动登记，避免污染）。
+
+        hit_thresh/new_thresh 可覆盖（人脸 ArcFace 与人形 OSNet 余弦分布不同，各传各的）。
         """
         v = self._prepare(vec)
-        res = self.identify(v, top_k=top_k)
+        res = self.identify(v, top_k=top_k, hit_thresh=hit_thresh, new_thresh=new_thresh)
         decision = res["decision"]
         accept, why = quality_ok(quality)
         res["quality_ok"] = accept
