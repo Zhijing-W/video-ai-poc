@@ -29,6 +29,7 @@ import numpy as np
 from PIL import Image
 
 from . import face as face_mod
+from . import gait as gait_mod
 from . import gallery as gallery_mod
 from . import reid as reid_mod
 from . import tracker as tracker_mod
@@ -61,6 +62,18 @@ def _crop(img: Image.Image, box: list[float]) -> Image.Image | None:
     return img.crop((x1, y1, x2, y2))
 
 
+def _iou_xyxy(a, b) -> float:
+    """两个 [x1,y1,x2,y2] 框的 IoU（步态把 YOLO-Pose 的人关联到 track 的 person box）。"""
+    ax1, ay1, ax2, ay2 = a[:4]
+    bx1, by1, bx2, by2 = b[:4]
+    ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+    iw, ih = max(0.0, ix2 - ix1), max(0.0, iy2 - iy1)
+    inter = iw * ih
+    ua = (ax2 - ax1) * (ay2 - ay1) + (bx2 - bx1) * (by2 - by1) - inter
+    return inter / ua if ua > 0 else 0.0
+
+
 # ---------------- 主编排 ----------------
 def analyze_event_stream(
     video_path: str | Path,
@@ -71,6 +84,7 @@ def analyze_event_stream(
     session_id: str = "event-demo",
     run_llm: bool = True,
     with_face: bool = False,
+    with_gait: bool = False,
     objective: str | None = None,
     quiet_seconds: float = 2.0,
     max_keyframes: int | None = None,
@@ -89,6 +103,7 @@ def analyze_event_stream(
         session_id: 跟踪/记忆会话标识（隔离 tracker & gallery）。
         run_llm: True 真调多模态 LLM 做事件理解；False 只跑到 LLM 边界（dry-run，不花额度）。
         with_face: 是否启用人脸分支（InsightFace，较慢；此夜间蒙面片多半无脸，默认关）。
+        with_gait: 是否启用步态分支（SkeletonGait++，CPU 较慢；需 OpenGait+权重就绪）。无脸/背身时兜底。
         objective: 可选关注点，写进事件理解 prompt（如"留意陌生人/包裹被取走"）。
         quiet_seconds: 连续无人多久算"活动结束"，用于切分事件窗。
         max_keyframes: 喂 LLM 的关键帧上限（覆盖 settings.keyframe_max）。
@@ -126,6 +141,9 @@ def analyze_event_stream(
     #              "best_box": box, "centers": [(i,(cx,cy))], "boxes": {i: box}}
     tracks: dict[int, dict] = {}
     prev_person_count = 0
+    # 步态可用性（OpenGait+权重就绪才采集，避免每帧白跑 pose/seg）
+    gait_use = bool(with_gait and settings.gait_enabled and gait_mod.available())
+    gait_collect_error = None
 
     for i, fr in enumerate(frames):
         pil = Image.open(fr.local_path).convert("RGB")
@@ -168,6 +186,26 @@ def analyze_event_stream(
         if len(active) != prev_person_count:
             events.append("count_change")
         prev_person_count = len(active)
+
+        # ---- 步态：本帧跑一次 YOLO-Pose+Seg，按 box 关联到 track，累积姿态/剪影序列 ----
+        if with_gait and gait_use and persons:
+            try:
+                bgr = np.asarray(pil)[:, :, ::-1]  # PIL RGB → BGR
+                gp = gait_mod.extract_persons(bgr)
+                for d in persons:
+                    tid = int(d["track_id"])
+                    pb = d["box"]
+                    best, best_iou = None, 0.30  # 至少 0.3 IoU 才认为是同一人
+                    for gpitem in gp:
+                        iou = _iou_xyxy(pb, gpitem["box"])
+                        if iou > best_iou:
+                            best_iou, best = iou, gpitem
+                    if best is not None:
+                        t = tracks[tid]
+                        t.setdefault("pose_seq", []).append(best["kpts"])
+                        t.setdefault("sil_seq", []).append(best["mask"])
+            except Exception as exc:  # 步态采集失败不致命
+                gait_collect_error = str(exc)
 
         metas.append(FrameMeta(
             index=i,
@@ -224,6 +262,36 @@ def analyze_event_stream(
     # ---- 可选人脸分支：仅在每条 track 的最佳帧上稀疏跑（攻"人脸模糊"的同时不拖慢全片）----
     if with_face:
         _attach_faces(frames, tracks, identities)
+
+    # ---- 步态认人：每条 track 用累积的(姿态+剪影)序列提步态向量 → 步态库 → 写 gait_cue ----
+    gait_dim = None
+    if gait_use:
+        gait_sess = f"{session_id}-gait"
+        gallery_mod.reset_gallery(gait_sess)
+        for tid, t in tracks.items():
+            pose_seq = t.get("pose_seq") or []
+            sil_seq = t.get("sil_seq") or []
+            if len(pose_seq) < settings.gait_min_frames:
+                continue
+            try:
+                gvec = gait_mod.embed_track(pose_seq, sil_seq)
+                if gvec is None:
+                    continue
+                gvec = np.asarray(gvec, dtype=np.float32).reshape(-1)
+                if gait_dim is None:
+                    gait_dim = int(gvec.shape[0])
+                gres = gallery_mod.with_gallery_locked(
+                    gait_sess, gait_dim,
+                    lambda g: g.identify_or_enroll(gvec, None, auto_enroll=True),
+                )
+                identities[tid]["gait"] = {
+                    "score": gres.get("score"),
+                    "subject_id": gres.get("subject_id"),
+                    "decision": gres.get("decision"),
+                    "frames": len(pose_seq),
+                }
+            except Exception as exc:  # 步态认人失败不致命
+                identities[tid].setdefault("gait_error", str(exc))
 
     # ---- 流式分窗：把帧序列按"活动段 + 时长上限"切成事件窗 ----
     win_secs = settings.event_window_max_seconds if max_window_seconds is None else max_window_seconds
@@ -285,6 +353,8 @@ def analyze_event_stream(
         "reid_backend": reid_mod.active_backend(),
         "reid_dim": dim,
         "with_face": with_face,
+        "with_gait": gait_use,
+        "gait_error": (gait_mod.load_error() if (with_gait and not gait_use) else gait_collect_error),
         "model": settings.event_llm_deployment or settings.azure_openai_deployment,
         "dry_run": not run_llm,
         "elapsed_seconds": round(time.time() - t_start, 1),
@@ -329,7 +399,7 @@ def _person_record(tid: int, t: dict, ident: dict, win_idx: list[int], img_w: in
         "trajectory": [list(c) for c in centers],
         "reid": {"score": ident.get("score")} if ident.get("score") is not None else None,
         "face": ident.get("face"),
-        "gait": None,
+        "gait": ident.get("gait"),
     }
 
 
@@ -367,6 +437,7 @@ def _group_people(
         best_score = max((identities[t].get("score") or 0.0) for t in tids)
         rep_box = tracks[rep]["boxes"].get(win_idx[-1]) or tracks[rep].get("best_box") or []
         face = next((identities[t].get("face") for t in tids if identities[t].get("face")), None)
+        gait = next((identities[t].get("gait") for t in tids if identities[t].get("gait")), None)
         people.append({
             "track_id": rep,
             "box": rep_box,
@@ -376,7 +447,7 @@ def _group_people(
             "trajectory": [list(c) for (_, c) in merged_centers],
             "reid": {"score": round(best_score, 4)} if best_score > 0 else None,
             "face": face,
-            "gait": None,
+            "gait": gait,
             "attributes": [f"由{len(tids)}条轨迹合并(同一人)"],
         })
     return people

@@ -51,6 +51,7 @@ def main() -> int:
     ap.add_argument("--no-overall", action="store_true",
                     help="关闭跨窗整段事件总结（默认开；纯文本便宜调用）")
     ap.add_argument("--face", action="store_true", help="启用人脸分支（InsightFace，较慢）")
+    ap.add_argument("--gait", action="store_true", help="启用步态分支（SkeletonGait++，CPU 较慢；需 OpenGait+权重）")
     ap.add_argument("--objective", default=None, help="给事件理解的关注点提示")
     ap.add_argument("--dry-run", action="store_true", help="只跑到 LLM 边界，不真调模型（不花额度）")
     args = ap.parse_args()
@@ -62,14 +63,15 @@ def main() -> int:
         return 1
 
     mode = "DRY-RUN（不调 LLM）" if args.dry_run else "FULL（真调 gpt-4o，消耗额度）"
-    print(f"[*] 视频：{video.name}   采样：{args.fps} fps   人脸：{'开' if args.face else '关'}   模式：{mode}")
+    print(f"[*] 视频：{video.name}   采样：{args.fps} fps   "
+          f"人脸：{'开' if args.face else '关'}   步态：{'开' if args.gait else '关'}   模式：{mode}")
     print("[1/2] 抽帧 → 检测/跟踪 → 认人(ReID) → 分窗 → 选帧② ...")
 
     try:
         payload = analyze_event_stream(
             video, OUT_DIR,
             fps=args.fps, max_frames=args.max_frames,
-            run_llm=not args.dry_run, with_face=args.face,
+            run_llm=not args.dry_run, with_face=args.face, with_gait=args.gait,
             objective=args.objective, max_keyframes=args.max_keyframes,
             max_window_seconds=args.max_window_seconds,
             stitch_thresh=args.stitch_thresh,
@@ -90,10 +92,17 @@ def main() -> int:
           f"共 {payload['frames_total']} 帧 / {len(payload['windows'])} 个事件窗 / "
           f"{len(payload['tracks'])} 条轨迹。ReID={payload['reid_backend']}({payload['reid_dim']}d)\n")
 
+    if payload.get("with_gait"):
+        print(f"   （步态分支已启用 SkeletonGait++）")
+    elif args.gait and payload.get("gait_error"):
+        print(f"   （步态未启用：{payload['gait_error']}）")
+
     print("== 主体记忆（认人结果）==")
     for tid, idn in payload["tracks"].items():
+        g = idn.get("gait")
+        gtxt = f"步态分={round(g['score'],3)}({g['frames']}帧)" if g and g.get("score") is not None else "步态无"
         print(f"  track {tid}: 主体#{idn.get('subject_id')}  裁决={idn.get('decision')}  "
-              f"分={idn.get('score')}  回头客={idn.get('reused')}  脸={'有' if idn.get('face') else '无'}")
+              f"分={idn.get('score')}  回头客={idn.get('reused')}  脸={'有' if idn.get('face') else '无'}  {gtxt}")
 
     for win in payload["windows"]:
         print(f"\n========== 事件窗 #{win['window_index']}  时间 {win['time_range'][0]}~{win['time_range'][1]}"
