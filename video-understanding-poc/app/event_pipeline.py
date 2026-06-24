@@ -76,6 +76,7 @@ def analyze_event_stream(
     max_keyframes: int | None = None,
     include_keyframe_images: bool = False,
     max_window_seconds: float | None = None,
+    stitch_thresh: float | None = None,
 ) -> dict:
     """对一段视频做"身份感知·多帧事件理解"的完整端到端处理。
 
@@ -93,6 +94,8 @@ def analyze_event_stream(
         include_keyframe_images: 是否在每个窗里附带关键帧的 data URI（前端展示用；脚本默认关）。
         max_window_seconds: 单个事件窗的时长上限（秒）；超过则冲刷开新窗，避免长连续事件欠采样。
             默认取 settings.event_window_max_seconds。
+        stitch_thresh: 同视频内"轨迹缝合"的余弦阈值；灰区孤立 track 与某主体相似度 ≥ 此值即并入。
+            默认取 settings.event_stitch_thresh；设 0 关闭缝合。
 
     Returns:
         dict：含 tracks（每条轨迹的身份裁决）、windows（每个事件窗的关键帧/身份/事件叙述）。
@@ -180,6 +183,7 @@ def analyze_event_stream(
 
     # ---- 认人：每条 track 用最佳 crop 提指纹、查/登记主体记忆库 → 身份 ----
     identities: dict[int, dict] = {}
+    track_emb: dict[int, np.ndarray] = {}   # track_id -> ReID 向量（缝合用）
     for tid, t in tracks.items():
         ident = {"track_id": tid, "subject_id": None, "decision": None,
                  "score": None, "reused": False, "face": None}
@@ -187,6 +191,7 @@ def analyze_event_stream(
         if crop is not None:
             try:
                 vec = reid_mod.embed(crop)
+                track_emb[tid] = np.asarray(vec, dtype=np.float32).reshape(-1)
                 qa = reid_mod.assess_quality(crop)
                 res = gallery_mod.with_gallery_locked(
                     session_id, dim,
@@ -199,6 +204,13 @@ def analyze_event_stream(
             except Exception as exc:  # 认人失败不致命：身份留空，仍可做事件理解
                 ident["error"] = str(exc)
         identities[tid] = ident
+
+    # ---- 同视频内"轨迹缝合"：把灰区孤立 track 并进最相近的已建主体 ----
+    # 动机：gallery 阈值是为"跨摄像头开放集"的安全设的；同一段视频里 ByteTrack 把一个连续的人
+    # 断成几段，先验很强（同场景、时间连续），可更大胆地合并。只在编排层做，不动 gallery 语义。
+    thr = settings.event_stitch_thresh if stitch_thresh is None else stitch_thresh
+    if thr and thr > 0:
+        _stitch_orphans(tracks, identities, track_emb, thr)
 
     # 身份命中 → 在该 track 首帧补 identity_hit 语义事件
     for tid, ident in identities.items():
@@ -355,6 +367,58 @@ def _group_people(
             "attributes": [f"由{len(tids)}条轨迹合并(同一人)"],
         })
     return people
+
+
+def _stitch_orphans(
+    tracks: dict[int, dict],
+    identities: dict[int, dict],
+    track_emb: dict[int, np.ndarray],
+    thresh: float,
+) -> None:
+    """把灰区孤立 track（subject_id 为空）并进同视频内最相近的已建主体（就地改 identities）。
+
+    做法：用各 track 的 ReID 向量，为每个已知主体算一个代表向量（成员均值，再归一化），
+    按 track 出现时间顺序处理孤立 track；与某主体相似度 ≥ thresh 即并入该主体（标记 decision
+    ="stitched"、reused=True），并把它的向量并进该主体代表里（让后续断片能接力缝合）。
+    不达阈值则保持孤立（大概率是不同的人，宁缺毋滥）。
+    """
+    def _norm(v: np.ndarray) -> np.ndarray:
+        n = float(np.linalg.norm(v))
+        return v / n if n > 0 else v
+
+    # 各主体的成员向量（来自已分配 subject_id 的 track）
+    members: dict[int, list[np.ndarray]] = {}
+    for tid, idn in identities.items():
+        sid = idn.get("subject_id")
+        if sid is not None and tid in track_emb:
+            members.setdefault(sid, []).append(track_emb[tid])
+    if not members:
+        return
+    reps: dict[int, np.ndarray] = {sid: _norm(np.mean(vs, axis=0)) for sid, vs in members.items()}
+
+    # 孤立 track：按首次出现时间顺序缝合
+    orphans = [tid for tid, idn in identities.items()
+               if idn.get("subject_id") is None and tid in track_emb]
+    orphans.sort(key=lambda t: tracks[t]["first"])
+
+    for tid in orphans:
+        v = _norm(track_emb[tid])
+        best_sid, best_sim = None, -1.0
+        for sid, rep in reps.items():
+            sim = float(np.dot(v, rep))
+            if sim > best_sim:
+                best_sid, best_sim = sid, sim
+        if best_sid is not None and best_sim >= thresh:
+            idn = identities[tid]
+            idn["subject_id"] = best_sid
+            idn["decision"] = "stitched"
+            idn["reused"] = True
+            idn["stitch_score"] = round(best_sim, 4)
+            if idn.get("score") is None:
+                idn["score"] = round(best_sim, 4)
+            # 并入代表，便于后续断片接力
+            members[best_sid].append(track_emb[tid])
+            reps[best_sid] = _norm(np.mean(members[best_sid], axis=0))
 
 
 def _split_windows(

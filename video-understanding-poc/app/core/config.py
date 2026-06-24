@@ -125,6 +125,11 @@ class Settings:
     # 时长上限是给"长连续事件"准备的：超过则冲刷开新窗，否则长事件被压成单窗、关键帧严重欠采样。
     event_window_max_seconds: float = float(_get("EVENT_WINDOW_MAX_SECONDS", "30"))
 
+    # 同视频内"轨迹缝合"（Phase 4 · Step 27）：把灰区孤立 track 并进最相近的已建主体。
+    # 同一段视频里 ByteTrack 把一个连续的人断成几段，先验强，可比 gallery 跨摄像头阈值更大胆地并。
+    # 设 0 关闭缝合。阈值越低越敢并（省"一人两条"），但过低会误并不同人。
+    event_stitch_thresh: float = float(_get("EVENT_STITCH_THRESH", "0.45"))
+
     # 智能抽帧（Phase 2 · Step 7）：场景突变 OR 定时兜底
     smart_frames: bool = _get("SMART_FRAMES", "true").strip().lower() in {"1", "true", "yes", "on"}
     scene_threshold: float = float(_get("SCENE_THRESHOLD", "0.4"))

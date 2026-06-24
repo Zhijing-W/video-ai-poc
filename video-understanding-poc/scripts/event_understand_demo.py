@@ -46,6 +46,8 @@ def main() -> int:
                     help="喂 LLM 的关键帧上限（默认 settings.keyframe_max=24）。低配额/撞 429 时调小，如 8")
     ap.add_argument("--max-window-seconds", type=float, default=None,
                     help="单个事件窗时长上限（秒），超过则切新窗、多调一次 LLM（默认 30）。长连续视频调小可拿到更细叙述")
+    ap.add_argument("--stitch-thresh", type=float, default=None,
+                    help="同视频内轨迹缝合余弦阈值（默认 0.45）。灰区孤立 track 与主体相似度≥此值即并入；设 0 关闭")
     ap.add_argument("--face", action="store_true", help="启用人脸分支（InsightFace，较慢）")
     ap.add_argument("--objective", default=None, help="给事件理解的关注点提示")
     ap.add_argument("--dry-run", action="store_true", help="只跑到 LLM 边界，不真调模型（不花额度）")
@@ -68,6 +70,7 @@ def main() -> int:
             run_llm=not args.dry_run, with_face=args.face,
             objective=args.objective, max_keyframes=args.max_keyframes,
             max_window_seconds=args.max_window_seconds,
+            stitch_thresh=args.stitch_thresh,
         )
     except Exception as exc:  # noqa: BLE001
         print(f"[X] 处理失败：{exc}")
