@@ -134,6 +134,18 @@ class Settings:
     # 串成整段视频的连贯事件故事（靠 ReID 身份跨窗关联同一人）。纯文本调用、便宜；dry-run 跳过。
     event_overall_summary: bool = _get("EVENT_OVERALL_SUMMARY", "true").strip().lower() in {"1", "true", "yes", "on"}
 
+    # 步态识别分支（Phase 4 · Step 27）：SkeletonGait++（OpenGait，GREW 权重）。本机纯 CPU 跑（慢，
+    # 效果与 GPU 相同）；上云换 device='cuda'。OpenGait 仓库与 726MB 权重在 git 仓库外，路径可配。
+    gait_enabled: bool = _get("GAIT_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+    gait_opengait_root: str = _get("GAIT_OPENGAIT_ROOT", r"C:\Users\t-zhijingwu\Desktop\microsoft\OpenGait")
+    gait_ckpt: str = _get(
+        "GAIT_CKPT",
+        r"C:\Users\t-zhijingwu\Desktop\microsoft\OpenGait\checkpoints\GREW\SkeletonGaitPP\SkeletonGaitPP\checkpoints\SkeletonGaitPP-180000.pt",
+    )
+    gait_seg_model: str = _get("GAIT_SEG_MODEL", "yolov8m-seg.pt")   # 剪影分割（ultralytics 实例分割）
+    gait_min_frames: int = int(_get("GAIT_MIN_FRAMES", "10"))        # 一条 track 至少几帧才算步态（帧太少不可靠）
+    gait_device: str = _get("GAIT_DEVICE", "cpu")                    # 本地 cpu；上云改 cuda
+
     # 智能抽帧（Phase 2 · Step 7）：场景突变 OR 定时兜底
     smart_frames: bool = _get("SMART_FRAMES", "true").strip().lower() in {"1", "true", "yes", "on"}
     scene_threshold: float = float(_get("SCENE_THRESHOLD", "0.4"))
