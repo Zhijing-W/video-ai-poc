@@ -56,6 +56,7 @@ class PersonIdentity:
     reid: dict | None = None
     face: dict | None = None
     gait: dict | None = None
+    fused: dict | None = None
     color: str | None = None
     attributes: list[str] = field(default_factory=list)
 
@@ -72,6 +73,7 @@ class PersonIdentity:
             reid=d.get("reid"),
             face=d.get("face"),
             gait=d.get("gait"),
+            fused=d.get("fused"),
             color=d.get("color"),
             attributes=list(d.get("attributes") or []),
         )
@@ -111,6 +113,17 @@ class PersonIdentity:
         seg = " → ".join(f"({round(p[0], 2)},{round(p[1], 2)})" for p in show)
         return f"  轨迹: {seg}"
 
+    def _fused_text(self) -> str:
+        """三路融合身份置信度（让 LLM 知道这个身份有多可靠、靠哪几路撑住）。"""
+        if not self.fused:
+            return ""
+        conf = self.fused.get("confidence")
+        srcs = "+".join(s.get("cue") for s in (self.fused.get("sources") or []))
+        tag = "已确认" if self.fused.get("resolved") else "待定"
+        agree = "·多路一致" if self.fused.get("agreed") else ""
+        band = confidence_band(conf)
+        return f"融合身份·{band}({conf}){agree}" + (f"·来源:{srcs}" if srcs else "")
+
     def to_line(self, idx: int) -> str:
         """格式化成 prompt 里的一行（仿 _format_detections 的 grounding 风格）。"""
         box_str = ", ".join(str(round(v, 1)) for v in self.box)
@@ -119,6 +132,9 @@ class PersonIdentity:
             head += " ♻回头客"
         head += f"  box=[{box_str}]"
         extra = []
+        fused = self._fused_text()
+        if fused:
+            extra.append(fused)
         cues = self._cues_text()
         if cues:
             extra.append(cues)

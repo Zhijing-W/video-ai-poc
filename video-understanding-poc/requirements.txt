@@ -44,6 +44,13 @@ boxmot
 insightface
 onnxruntime
 
+# Phase 4 · Step 27b：攻"人脸模糊"的进阶武器（可插拔，默认开，测试可关）。
+# gfpgan：人脸超分（识别前把糊脸拉清），首次自动下 ~330MB GFPGANv1.3 权重。
+#   注意：其依赖 basicsr 引用了新版 torchvision 已删除的 functional_tensor —— app/face.py 内置
+#   运行时 monkeypatch（_patch_basicsr）兜底，无需手改 venv。
+# 3D-68 几何 cue 复用 insightface buffalo_l 自带的 1k3d68（无需额外装）。
+gfpgan
+
 # 仅文档用（生成架构图，App 运行时不需要，部署可不装）：
 #   pip install matplotlib
 #   python scripts/make_arch_diagram.py

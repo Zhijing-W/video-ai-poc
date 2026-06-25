@@ -13,7 +13,8 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
-from ..core.config import ALLOWED_VIDEO_SUFFIXES, BASE_DIR, DATA_DIR
+from .. import reid as reid_mod
+from ..core.config import ALLOWED_VIDEO_SUFFIXES, BASE_DIR, DATA_DIR, settings
 from ..event_pipeline import analyze_event_stream
 
 router = APIRouter(tags=["eventmonitor"])
@@ -41,9 +42,20 @@ async def understand(
     max_keyframes: int = Form(8),
     objective: str | None = Form(None),
     with_face: bool = Form(False),
+    with_gait: bool = Form(False),
     dry_run: bool = Form(False),
+    # ---- 本次请求覆盖的可插拔开关（设置面板传来；留空=用默认，仅本次生效不持久）----
+    face_rec_backend: str | None = Form(None),   # arcface | adaface
+    face_superres: str | None = Form(None),      # off | gfpgan
+    face_3d_cue: bool | None = Form(None),
+    reid_backend: str | None = Form(None),       # auto | osnet | resnet50 | coarse
+    max_window_seconds: float | None = Form(None),
+    stitch_thresh: float | None = Form(None),
 ) -> dict:
-    """对"样片或上传视频"跑端到端事件理解，返回事件窗时间线。"""
+    """对"样片或上传视频"跑端到端事件理解，返回事件窗时间线。
+
+    设置面板的模型/能力开关随本请求传入，用 settings.override 临时覆盖、仅本次生效。
+    """
     # 解析视频来源：上传优先，否则用样片名
     if file is not None and file.filename:
         suffix = Path(file.filename).suffix.lower()
@@ -60,18 +72,42 @@ async def understand(
     else:
         raise HTTPException(400, "请选择样片或上传视频")
 
+    overrides = {
+        "face_rec_backend": (face_rec_backend or None),
+        "face_superres": (face_superres or None),
+        "face_3d_cue": face_3d_cue,
+        "reid_backend": (reid_backend or None),
+    }
     try:
-        payload = analyze_event_stream(
-            video_path,
-            OUT_DIR,
-            fps=fps,
-            run_llm=not dry_run,
-            with_face=with_face,
-            objective=objective or None,
-            max_keyframes=max_keyframes,
-            include_keyframe_images=True,
-            session_id="eventmonitor",
-        )
+        with settings.override(**overrides):
+            if reid_backend:  # ReID 后端缓存死，切换需重置后重载
+                reid_mod.reset_backend()
+            payload = analyze_event_stream(
+                video_path,
+                OUT_DIR,
+                fps=fps,
+                run_llm=not dry_run,
+                with_face=with_face,
+                with_gait=with_gait,
+                objective=objective or None,
+                max_keyframes=max_keyframes,
+                max_window_seconds=max_window_seconds,
+                stitch_thresh=stitch_thresh,
+                include_keyframe_images=True,
+                session_id="eventmonitor",
+            )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(500, f"事件理解失败：{exc}") from exc
+    finally:
+        if reid_backend:
+            reid_mod.reset_backend()  # 恢复后清缓存，下次按默认重载
+    # 回显本次实际生效的配置（前端展示"这次用了什么"）
+    payload["config_used"] = {
+        "with_face": with_face, "with_gait": with_gait,
+        "face_rec_backend": settings.face_rec_backend,
+        "face_superres": settings.face_superres,
+        "face_3d_cue": settings.face_3d_cue,
+        "reid_backend": reid_backend or settings.reid_backend,
+    }
+    return payload
     return payload

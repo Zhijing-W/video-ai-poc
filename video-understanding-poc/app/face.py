@@ -25,18 +25,160 @@ from .config import settings
 
 _lock = threading.Lock()
 _state: dict = {"backend": None, "model": None}
+_sr_state: dict = {"ready": False, "model": None, "error": None}
 
 FACE_DIM = 512  # ArcFace 输出维度
 
 
+# ---------------- 武器②：人脸超分（GFP-GAN，识别前预处理把糊脸拉清）----------------
+def _patch_basicsr() -> None:
+    """兜底修 basicsr 引用已被新版 torchvision 删除的 functional_tensor（保证可移植，不靠手改 venv）。"""
+    try:
+        import torchvision.transforms.functional as _F
+        import torchvision.transforms as _T
+
+        if not hasattr(_T, "functional_tensor"):
+            import types
+            import sys as _sys
+
+            mod = types.ModuleType("torchvision.transforms.functional_tensor")
+            mod.rgb_to_grayscale = _F.rgb_to_grayscale
+            _sys.modules["torchvision.transforms.functional_tensor"] = mod
+    except Exception:
+        pass
+
+
+def _ensure_superres():
+    """懒加载 GFP-GAN 人脸增强器（首次会下权重）。失败记录 error 并降级为 no-op。"""
+    if _sr_state["ready"] or _sr_state["error"] is not None:
+        return _sr_state["model"]
+    with _lock:
+        if _sr_state["ready"] or _sr_state["error"] is not None:
+            return _sr_state["model"]
+        try:
+            _patch_basicsr()
+            from gfpgan import GFPGANer
+
+            weights = settings.face_gfpgan_weights or "https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.3.pth"
+            _sr_state["model"] = GFPGANer(
+                model_path=weights, upscale=2, arch="clean", channel_multiplier=2, bg_upsampler=None
+            )
+            _sr_state["ready"] = True
+        except Exception as exc:  # noqa: BLE001
+            _sr_state["error"] = f"{type(exc).__name__}: {exc}"
+        return _sr_state["model"]
+
+
+def superres_error() -> str | None:
+    return _sr_state.get("error")
+
+
+# ---------------- 武器③：AdaFace 识别后端（质量自适应，低清脸更强）----------------
+_ada_state: dict = {"ready": False, "model": None, "error": None}
+
+
+def _ensure_adaface():
+    """懒加载 AdaFace（IR-101 WebFace12M）到 CPU。失败记录 error 并降级回 ArcFace。"""
+    if _ada_state["ready"] or _ada_state["error"] is not None:
+        return _ada_state["model"]
+    with _lock:
+        if _ada_state["ready"] or _ada_state["error"] is not None:
+            return _ada_state["model"]
+        try:
+            import sys
+
+            import torch
+
+            root = settings.face_adaface_root
+            if root not in sys.path:
+                sys.path.insert(0, root)
+            import net as _adanet  # AdaFace 仓库的 net.py
+
+            model = _adanet.build_model(settings.face_adaface_arch)
+            sd = torch.load(settings.face_adaface_weights, map_location="cpu", weights_only=False)
+            if isinstance(sd, dict) and "state_dict" in sd:
+                sd = sd["state_dict"]
+            # 兼容两种前缀：CVLface 封装是 'net.'，原版 AdaFace 是 'model.'
+            if any(k.startswith("net.") for k in sd):
+                sd = {k[4:]: v for k, v in sd.items() if k.startswith("net.")}
+            elif any(k.startswith("model.") for k in sd):
+                sd = {k[6:]: v for k, v in sd.items() if k.startswith("model.")}
+            model.load_state_dict(sd, strict=False)
+            model.eval()
+            _ada_state["torch"] = torch
+            _ada_state["model"] = model
+            _ada_state["ready"] = True
+        except Exception as exc:  # noqa: BLE001
+            _ada_state["error"] = f"{type(exc).__name__}: {exc}"
+        return _ada_state["model"]
+
+
+def adaface_error() -> str | None:
+    return _ada_state.get("error")
+
+
+def _adaface_embed(bgr_face: np.ndarray) -> np.ndarray | None:
+    """AdaFace 对一张已对齐人脸 BGR 图提 512 维归一化 embedding。"""
+    m = _ensure_adaface()
+    if m is None:
+        return None
+    try:
+        import cv2
+
+        torch = _ada_state["torch"]
+        bgr = cv2.resize(bgr_face, (112, 112)) if bgr_face.shape[:2] != (112, 112) else bgr_face
+        x = ((bgr.astype(np.float32) / 255.0) - 0.5) / 0.5  # BGR, [-1,1]（AdaFace 约定）
+        t = torch.from_numpy(x.transpose(2, 0, 1)[None]).float()
+        with torch.no_grad():
+            out = m(t)
+        feat = (out[0] if isinstance(out, (tuple, list)) else out).reshape(-1).cpu().numpy().astype(np.float32)
+        n = float(np.linalg.norm(feat))
+        return feat / n if n > 0 else feat
+    except Exception as exc:  # noqa: BLE001
+        _ada_state.setdefault("embed_error", str(exc))
+        return None
+
+
+def enhance(image):
+    """把一张（糊）人脸图增强/拉清（PIL→PIL）。供识别前预处理；不可用时原样返回。
+
+    仅对"够糊/够小"的脸触发（settings.face_superres_min_size），避免对清晰脸白跑、甚至过度锐化。
+    """
+    from PIL import Image
+
+    if settings.face_superres in {"off", "none", ""}:
+        return image
+    pil = image if isinstance(image, Image.Image) else None
+    if pil is None:
+        return image
+    if min(pil.size) >= settings.face_superres_min_size:
+        return image  # 已经够清晰/够大，不超分
+    sr = _ensure_superres()
+    if sr is None:
+        return image
+    try:
+        bgr = np.asarray(pil.convert("RGB"))[:, :, ::-1]
+        _, _, restored = sr.enhance(bgr, has_aligned=False, only_center_face=True, paste_back=True)
+        if restored is None:
+            return image
+        rgb = np.asarray(restored)[:, :, ::-1]
+        return Image.fromarray(rgb)
+    except Exception as exc:  # noqa: BLE001
+        _sr_state.setdefault("enhance_error", str(exc))
+        return image
+
+
 # ---------------- 后端：InsightFace ----------------
 def _load_insightface():
-    """懒加载 InsightFace，只启用 detection + recognition（提速、省内存）。"""
+    """懒加载 InsightFace：detection + recognition，并按配置可选启用 3D-68 几何 cue。"""
     from insightface.app import FaceAnalysis
 
+    modules = ["detection", "recognition"]
+    if settings.face_3d_cue:
+        modules.insert(1, "landmark_3d_68")  # 武器①：3D 面部几何（糊脸兜底）
     app = FaceAnalysis(
         name=settings.face_model,
-        allowed_modules=["detection", "recognition"],
+        allowed_modules=modules,
         providers=["CPUExecutionProvider"],
     )
     app.prepare(ctx_id=-1, det_size=(settings.face_det_size, settings.face_det_size))
@@ -162,21 +304,43 @@ def assess_quality(face: dict, bgr: np.ndarray | None = None) -> dict:
     }
 
 
-def detect(image, with_quality: bool = True) -> list[dict]:
+def _reembed(bgr_face: np.ndarray) -> np.ndarray | None:
+    """对一张已裁好的人脸 BGR 图，用 recognition 模型重提归一化 embedding（超分后重算用）。"""
+    app = _state["model"]["app"]
+    rec = None
+    for m in app.models.values():
+        if getattr(m, "taskname", "") == "recognition":
+            rec = m
+            break
+    if rec is None:
+        return None
+    try:
+        feat = rec.get_feat(bgr_face).reshape(-1).astype(np.float32)
+    except Exception:
+        return None
+    n = float(np.linalg.norm(feat))
+    return feat / n if n > 0 else feat
+
+
+def detect(image, with_quality: bool = True, enhance_blurry: bool | None = None) -> list[dict]:
     """检测一帧里的所有人脸，返回每张脸的 bbox / kps / det_score / 512维归一化 embedding / 质量。
 
     Args:
         image: data URI / base64 / bytes / PIL.Image / np(RGB)（整帧）。
         with_quality: 是否附带 assess_quality 结果。
+        enhance_blurry: 是否对糊脸做超分(武器②)后重提 embedding。None 时取 settings（超分非 off 即开）。
 
     Returns:
         list[dict]，每项：
-          {bbox:[x1,y1,x2,y2], kps:[[x,y]*5], det_score, embedding(np 512 normed), quality{...}}
+          {bbox:[x1,y1,x2,y2], kps, det_score, embedding(512 normed), geom3d?, enhanced?, quality{...}}
     """
+    from PIL import Image
+
     _ensure_backend()
     bgr = _to_bgr(image)
     app = _state["model"]["app"]
     faces = app.get(bgr)
+    use_sr = (settings.face_superres not in {"off", "none", ""}) if enhance_blurry is None else enhance_blurry
 
     out: list[dict] = []
     for f in faces:
@@ -187,10 +351,83 @@ def detect(image, with_quality: bool = True) -> list[dict]:
             "det_score": float(f.det_score),
             "embedding": emb,
         }
+        # 武器①：3D-68 几何描述子（糊脸时的额外身份线索；纹理糊但几何还在）
+        l3 = getattr(f, "landmark_3d_68", None)
+        if settings.face_3d_cue and l3 is not None:
+            geom = geometry_descriptor(np.asarray(l3, dtype=np.float32))
+            if geom is not None:
+                item["geom3d"] = geom
+        # 武器②：糊脸超分 —— 裁脸 → 够小才 enhance → 用增强图重提 embedding（替换原 emb）
+        if use_sr:
+            x1, y1, x2, y2 = [int(v) for v in f.bbox]
+            x1, y1 = max(0, x1), max(0, y1)
+            x2, y2 = min(bgr.shape[1], x2), min(bgr.shape[0], y2)
+            if x2 - x1 >= 8 and y2 - y1 >= 8 and min(x2 - x1, y2 - y1) < settings.face_superres_min_size:
+                crop_rgb = Image.fromarray(bgr[y1:y2, x1:x2][:, :, ::-1])
+                enh = enhance(crop_rgb)
+                if enh is not None and enh.size != crop_rgb.size:
+                    new_emb = _reembed(np.asarray(enh.convert("RGB"))[:, :, ::-1])
+                    if new_emb is not None:
+                        item["embedding"] = new_emb
+                        item["enhanced"] = True
+        # 武器③：AdaFace 后端 —— 用 5 点对齐脸提质量自适应 embedding，替换 ArcFace（低清脸更强）
+        if settings.face_rec_backend == "adaface" and getattr(f, "kps", None) is not None:
+            try:
+                from insightface.utils import face_align
+
+                aligned = face_align.norm_crop(bgr, np.asarray(f.kps), image_size=112)  # BGR 112×112
+                ada = _adaface_embed(aligned)
+                if ada is not None:
+                    item["embedding"] = ada
+                    item["rec_backend"] = "adaface"
+            except Exception:
+                pass
         if with_quality:
             item["quality"] = assess_quality(item, bgr)
         out.append(item)
     return out
+
+
+def geometry_descriptor(landmarks_3d: np.ndarray) -> np.ndarray | None:
+    """从 68 个 3D 关键点算一个**姿态/尺度不变**的面部几何描述子（L2 归一化）。
+
+    思路：把 3D 点云中心化、按尺度归一化，再用关键点对之间的归一化距离（脸的"骨架结构"——
+    颧骨宽、鼻梁高、下巴长等），这些在**纹理糊掉后依然稳定**，是攻人脸模糊的几何线索。
+    与 ArcFace 外观向量互补：糊脸时几何撑住身份。
+    """
+    if landmarks_3d is None or landmarks_3d.shape[0] < 68:
+        return None
+    pts = landmarks_3d.astype(np.float32).copy()
+    pts -= pts.mean(axis=0, keepdims=True)              # 中心化（平移不变）
+    scale = float(np.sqrt((pts ** 2).sum(axis=1).mean()))
+    if scale <= 1e-6:
+        return None
+    pts /= scale                                        # 尺度归一化
+    # 选若干结构性关键点对（轮廓/眼/鼻/嘴/下巴），用点对距离刻画几何结构
+    idx_pairs = [
+        (36, 45),  # 两眼外角（脸宽）
+        (39, 42),  # 两眼内角
+        (31, 35),  # 鼻翼宽
+        (27, 33),  # 鼻梁长
+        (48, 54),  # 嘴角宽
+        (51, 57),  # 上下唇
+        (0, 16),   # 颧骨/脸颊最宽
+        (8, 27),   # 下巴到鼻根（脸长）
+        (17, 26),  # 两眉外端
+        (21, 22),  # 两眉内端
+        (3, 13),   # 下颌宽
+        (30, 8),   # 鼻尖到下巴
+    ]
+    feats = []
+    for a, b in idx_pairs:
+        feats.append(float(np.linalg.norm(pts[a] - pts[b])))
+    # 再补几个深度差（Z 轴，体现立体度：鼻梁凸起、眼窝深度）
+    feats.append(float(pts[30, 2] - pts[27, 2]))        # 鼻尖 vs 鼻根 深度
+    feats.append(float(pts[8, 2] - pts[30, 2]))         # 下巴 vs 鼻尖 深度
+    feats.append(float(pts[0, 2] - pts[30, 2]))         # 脸颊 vs 鼻尖 深度（侧凸）
+    vec = np.asarray(feats, dtype=np.float32)
+    n = float(np.linalg.norm(vec))
+    return (vec / n).astype(np.float32) if n > 0 else vec
 
 
 def best_face(faces: list[dict]) -> dict | None:
@@ -262,9 +499,13 @@ def associate_to_persons(faces: list[dict], person_dets: list[dict]) -> dict[int
 __all__ = [
     "FACE_DIM",
     "active_backend",
+    "adaface_error",
     "assess_quality",
     "associate_to_persons",
     "best_face",
     "detect",
+    "enhance",
     "fuse_embeddings",
+    "geometry_descriptor",
+    "superres_error",
 ]

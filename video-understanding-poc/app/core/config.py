@@ -112,6 +112,23 @@ class Settings:
     face_hit_thresh: float = float(_get("FACE_HIT_THRESH", "0.45"))   # 同人 ArcFace 余弦通常 >0.4
     face_new_thresh: float = float(_get("FACE_NEW_THRESH", "0.30"))   # 陌生人通常 <0.3
 
+    # 攻"人脸模糊"的可插拔进阶武器（Phase 4 · §3.8 / Step 27b）。默认全开；测试对比时可逐个关。
+    # ① 3D-68 几何 cue：打开 buffalo_l 自带的 1k3d68 landmark，用 3D 面部几何（颧骨/鼻梁/下巴
+    #    等结构）做额外身份线索——纹理糊但几何还在，对姿态+中度模糊鲁棒。
+    face_3d_cue: bool = _get("FACE_3D_CUE", "true").strip().lower() in {"1", "true", "yes", "on"}
+    # ② 人脸超分：识别前把糊脸拉清作预处理（GFP-GAN / CodeFormer）。off/gfpgan/codeformer。
+    face_superres: str = _get("FACE_SUPERRES", "gfpgan").strip().lower()
+    face_superres_min_size: int = int(_get("FACE_SUPERRES_MIN_SIZE", "90"))  # 小于此边长才超分（省算力）
+    face_gfpgan_weights: str = _get("FACE_GFPGAN_WEIGHTS", "")               # 留空自动下载/默认路径
+    # ③ AdaFace：质量自适应人脸识别后端（低清脸更强）。arcface / adaface（默认 adaface，最强）。
+    face_rec_backend: str = _get("FACE_REC_BACKEND", "adaface").strip().lower()
+    face_adaface_root: str = _get("FACE_ADAFACE_ROOT", r"C:\Users\t-zhijingwu\Desktop\microsoft\AdaFace")
+    face_adaface_arch: str = _get("FACE_ADAFACE_ARCH", "ir_101")
+    face_adaface_weights: str = _get(
+        "FACE_ADAFACE_WEIGHTS",
+        r"C:\Users\t-zhijingwu\Desktop\microsoft\AdaFace\pretrained\pretrained_model\model.pt",
+    )
+
     # 多帧事件理解（Phase 4 · Step 23 / 3.4，本阶段灵魂）：多帧关键帧 + 身份上下文 → 跨帧事件叙述。
     # 模型名可配置：默认用现有 AZURE_OPENAI_DEPLOYMENT；以后指向 gpt-4.1/更强只改这一项。
     event_llm_deployment: str | None = _get("EVENT_LLM_DEPLOYMENT")   # 留空则回退主部署
@@ -128,14 +145,23 @@ class Settings:
     # 时长上限是给"长连续事件"准备的：超过则冲刷开新窗，否则长事件被压成单窗、关键帧严重欠采样。
     event_window_max_seconds: float = float(_get("EVENT_WINDOW_MAX_SECONDS", "30"))
 
+    # 跨窗整段事件总结（Phase 4 · Step E）：所有窗逐窗理解完后，再纯文本把多窗串成一段连贯故事。
+    # 便宜（仅文本一次调用）；dry-run 自动跳过。设 0/false 关闭。
+    event_overall_summary: bool = _get("EVENT_OVERALL_SUMMARY", "1") not in ("0", "false", "False", "")
+
     # 同视频内"轨迹缝合"（Phase 4 · Step 27）：把灰区孤立 track 并进最相近的已建主体。
     # 同一段视频里 ByteTrack 把一个连续的人断成几段，先验强，可比 gallery 跨摄像头阈值更大胆地并。
     # 设 0 关闭缝合。阈值越低越敢并（省"一人两条"），但过低会误并不同人。
     event_stitch_thresh: float = float(_get("EVENT_STITCH_THRESH", "0.45"))
 
-    # 跨窗整段事件总结（Phase 4 · E）：所有事件窗理解完后，把各窗叙述 + 身份名册做一次**纯文本**整合，
-    # 串成整段视频的连贯事件故事（靠 ReID 身份跨窗关联同一人）。纯文本调用、便宜；dry-run 跳过。
-    event_overall_summary: bool = _get("EVENT_OVERALL_SUMMARY", "true").strip().lower() in {"1", "true", "yes", "on"}
+    # 三路身份融合（Phase 4 · A 汇聚）：人脸 + 人形 ReID + 步态 按质量加权 → 一个统一身份置信度。
+    # 质量自适应：清晰脸权重高、糊脸降权退人形/步态；多路一致再加成。设为各路的相对权重。
+    identity_w_face: float = float(_get("IDENTITY_W_FACE", "0.5"))    # 人脸（清晰时最强）
+    identity_w_body: float = float(_get("IDENTITY_W_BODY", "0.3"))    # 人形 ReID
+    identity_w_gait: float = float(_get("IDENTITY_W_GAIT", "0.2"))    # 步态（无脸/背身兜底）
+    identity_face_blurry_factor: float = float(_get("IDENTITY_FACE_BLURRY_FACTOR", "0.35"))  # 糊脸权重折扣
+    identity_agree_bonus: float = float(_get("IDENTITY_AGREE_BONUS", "0.15"))  # 多路一致命中的加成
+    identity_resolve_thresh: float = float(_get("IDENTITY_RESOLVE_THRESH", "0.5"))  # ≥此置信视为"已确认"
 
     # 步态识别分支（Phase 4 · Step 27）：SkeletonGait++（OpenGait，GREW 权重）。本机纯 CPU 跑（慢，
     # 效果与 GPU 相同）；上云换 device='cuda'。OpenGait 仓库与 726MB 权重在 git 仓库外，路径可配。
@@ -163,6 +189,29 @@ class Settings:
 
     def gate_key_class_set(self) -> set[str]:
         return {item.strip() for item in self.gate_key_classes.split(",") if item.strip()}
+
+    def override(self, **kwargs):
+        """临时覆盖若干配置项（请求期内生效，退出即恢复）。供"本次请求覆盖"的轻量设置面板用。
+
+        只接受 Settings 已有的属性；None 值忽略（表示前端没传、用默认）。返回一个上下文管理器。
+        """
+        import contextlib
+
+        @contextlib.contextmanager
+        def _ctx():
+            saved = {}
+            try:
+                for k, v in kwargs.items():
+                    if v is None or not hasattr(self, k):
+                        continue
+                    saved[k] = getattr(self, k)
+                    setattr(self, k, v)
+                yield self
+            finally:
+                for k, v in saved.items():
+                    setattr(self, k, v)
+
+        return _ctx()
 
     def require_openai(self) -> None:
         missing = [

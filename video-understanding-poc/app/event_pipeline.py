@@ -37,6 +37,7 @@ from .core.config import settings
 from .keyframe import FrameMeta, select_keyframes
 from .services.event_understanding import summarize_event_windows, understand_event
 from .services.identity_context import format_identity_context
+from .services.identity_fusion import fuse_identity
 from .utils.image_utils import image_to_data_uri, seconds_to_timestamp
 from .video_processor import Frame, extract_frames
 
@@ -293,6 +294,14 @@ def analyze_event_stream(
             except Exception as exc:  # 步态认人失败不致命
                 identities[tid].setdefault("gait_error", str(exc))
 
+    # ---- 跨 track 三路合并：人脸库/人形库/步态库 任一路认出同一人 → 并成一个 subject ----
+    if identities:
+        _merge_tracks_cross_route(identities)
+
+    # ---- A 汇聚：三路身份融合（人脸 + 人形 + 步态 按质量加权 → 统一身份置信度）----
+    for tid in identities:
+        fuse_identity(identities[tid])
+
     # ---- 流式分窗：把帧序列按"活动段 + 时长上限"切成事件窗 ----
     win_secs = settings.event_window_max_seconds if max_window_seconds is None else max_window_seconds
     max_window_frames = int(round(win_secs * fps)) if win_secs and win_secs > 0 else None
@@ -431,6 +440,10 @@ def _person_record(tid: int, t: dict, ident: dict, win_idx: list[int], img_w: in
         "reid": {"score": ident.get("score")} if ident.get("score") is not None else None,
         "face": ident.get("face"),
         "gait": ident.get("gait"),
+        "fused": ident.get("fused"),
+        "merge_routes": ident.get("merge_routes"),
+        "merge_agree": ident.get("merge_agree"),
+        "cross_track_merged": ident.get("cross_track_merged", False),
     }
 
 
@@ -469,6 +482,17 @@ def _group_people(
         rep_box = tracks[rep]["boxes"].get(win_idx[-1]) or tracks[rep].get("best_box") or []
         face = next((identities[t].get("face") for t in tids if identities[t].get("face")), None)
         gait = next((identities[t].get("gait") for t in tids if identities[t].get("gait")), None)
+        # 融合：取置信度最高的那条 track 的融合结果作代表
+        fused = max(
+            (identities[t].get("fused") for t in tids if identities[t].get("fused")),
+            key=lambda fz: (fz or {}).get("confidence", 0.0), default=None,
+        )
+        # 跨 track 合并用到了哪几路证据（人脸/人形/步态），并到代表里
+        merge_routes = sorted({r for t in tids for r in (identities[t].get("merge_routes") or [])})
+        route_cn = {"face": "人脸库", "body": "人形库", "gait": "步态库"}
+        attrs = [f"由{len(tids)}条轨迹合并(同一人)"]
+        if merge_routes:
+            attrs.append("跨track印证：" + "+".join(route_cn.get(r, r) for r in merge_routes))
         people.append({
             "track_id": rep,
             "box": rep_box,
@@ -479,7 +503,10 @@ def _group_people(
             "reid": {"score": round(best_score, 4)} if best_score > 0 else None,
             "face": face,
             "gait": gait,
-            "attributes": [f"由{len(tids)}条轨迹合并(同一人)"],
+            "fused": fused,
+            "merge_routes": merge_routes or None,
+            "merge_agree": len(merge_routes) or None,
+            "attributes": attrs,
         })
     return people
 
@@ -534,6 +561,107 @@ def _stitch_orphans(
             # 并入代表，便于后续断片接力
             members[best_sid].append(track_emb[tid])
             reps[best_sid] = _norm(np.mean(members[best_sid], axis=0))
+
+
+def _merge_tracks_cross_route(identities: dict[int, dict]) -> None:
+    """跨 track 三路合并：人脸库 / 人形库 / 步态库 **任一路**认出同一人 → 并成一个 subject。
+
+    动机：人形缝合(_stitch_orphans)只用人形 ReID 一路；但同一个人在不同 track 里，可能人形
+    糊了却**人脸命中同号**、或人脸糊了却**步态命中同号**。这里用并查集，把"任意一路库编号相同"
+    的 track 并成同一人——多路同时印证则置信更高（写进每条 track 的 merge_routes/merge_agree）。
+
+    实现：三路各自把 track 按各自库编号分组，同组内两两 union；并完后每个连通分量=一个人，
+    统一改写 identities[tid]['subject_id'] 为该分量的规范主体号（优先沿用分量内已有人形主体号，
+    取最小；若整分量都没有人形主体号则新铸一个），下游 _group_people 即可自然按统一 subject 归并。
+    """
+    tids = list(identities.keys())
+    if len(tids) < 2:
+        return
+
+    parent = {t: t for t in tids}
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a: int, b: int) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[max(ra, rb)] = min(ra, rb)
+
+    def _route_id(idn: dict, route: str):
+        if route == "body":
+            return idn.get("subject_id")
+        if route == "face":
+            fc = idn.get("face") or {}
+            # 仅清晰且命中库内主体才算"认出同一人"（糊脸只查不建，不足以做跨 track 锚点）
+            if fc.get("matched") and fc.get("quality") == "clear":
+                return fc.get("face_subject_id")
+            return None
+        if route == "gait":
+            gt = idn.get("gait") or {}
+            if gt.get("decision") == "hit":
+                return gt.get("subject_id")
+        return None
+
+    # 三路分别按库编号分组 → 组内两两并；记录每条 track 触发合并用到了哪几路
+    routes = ("body", "face", "gait")
+    route_of_edge: dict[frozenset, set] = {}
+    for route in routes:
+        buckets: dict = {}
+        for t in tids:
+            gid = _route_id(identities[t], route)
+            if gid is not None:
+                buckets.setdefault(gid, []).append(t)
+        for members in buckets.values():
+            if len(members) < 2:
+                continue
+            base = members[0]
+            for other in members[1:]:
+                union(base, other)
+            for i in range(len(members)):
+                for j in range(i + 1, len(members)):
+                    route_of_edge.setdefault(frozenset((members[i], members[j])), set()).add(route)
+
+    # 连通分量 → 统一主体号
+    comps: dict[int, list[int]] = {}
+    for t in tids:
+        comps.setdefault(find(t), []).append(t)
+
+    existing_body = [idn.get("subject_id") for idn in identities.values()
+                     if idn.get("subject_id") is not None]
+    next_synth = (max(existing_body) + 1) if existing_body else 1
+
+    for members in comps.values():
+        if len(members) < 2:
+            continue
+        body_ids = [identities[t].get("subject_id") for t in members
+                    if identities[t].get("subject_id") is not None]
+        if body_ids:
+            canonical = min(body_ids)
+        else:
+            canonical = next_synth
+            next_synth += 1
+        # 该分量里实际用到了哪几路证据（用于置信标注）
+        comp_routes: set = set()
+        mset = set(members)
+        for edge, rs in route_of_edge.items():
+            if edge <= mset:
+                comp_routes |= rs
+        agree = len(comp_routes)
+        for t in members:
+            idn = identities[t]
+            prev = idn.get("subject_id")
+            idn["subject_id"] = canonical
+            idn["merge_routes"] = sorted(comp_routes)
+            idn["merge_agree"] = agree
+            if prev != canonical:
+                idn["cross_track_merged"] = True
+                idn["reused"] = True
+                if idn.get("decision") not in ("hit", "stitched"):
+                    idn["decision"] = "merged"
 
 
 def _split_windows(

@@ -54,7 +54,15 @@
     fd.append("max_keyframes", $("maxKeyframes").value || "8");
     if ($("objective").value.trim()) fd.append("objective", $("objective").value.trim());
     fd.append("with_face", $("withFace").checked ? "true" : "false");
+    fd.append("with_gait", $("withGait").checked ? "true" : "false");
     fd.append("dry_run", $("dryRun").checked ? "true" : "false");
+    // 模型/能力开关（本次生效；留空=用默认）
+    if ($("faceRecBackend").value) fd.append("face_rec_backend", $("faceRecBackend").value);
+    if ($("faceSuperres").value) fd.append("face_superres", $("faceSuperres").value);
+    if ($("reidBackend").value) fd.append("reid_backend", $("reidBackend").value);
+    fd.append("face_3d_cue", $("face3d").checked ? "true" : "false");
+    if ($("maxWindowSeconds").value) fd.append("max_window_seconds", $("maxWindowSeconds").value);
+    if ($("stitchThresh").value) fd.append("stitch_thresh", $("stitchThresh").value);
 
     $("btnRun").disabled = true;
     $("empty").style.display = "none";
@@ -98,10 +106,17 @@
     $("btnToggleJson").textContent = "查看原始 JSON";
     renderOverall(data.overall);
     // 元信息
+    const cu = data.config_used || {};
+    const cfgLine = cu.with_face
+      ? ` · 人脸<b>${esc(cu.face_rec_backend)}</b>` +
+        `${cu.face_superres && cu.face_superres !== "off" ? "+超分" : ""}` +
+        `${cu.face_3d_cue ? "+3D" : ""}`
+      : "";
+    const gaitLine = cu.with_gait ? " · 步态<b>on</b>" : "";
     $("meta").innerHTML =
       `视频 <b>${esc(baseName(data.video))}</b> · ${data.frames_total} 帧 @ ${data.fps}fps · ` +
       `${(data.windows || []).length} 个事件窗 · ReID <b>${esc(data.reid_backend)}</b>(${data.reid_dim}d) · ` +
-      `模型 <b>${esc(data.model)}</b>${data.dry_run ? " · <b>dry-run</b>" : ""} · ${data.elapsed_seconds}s`;
+      `模型 <b>${esc(data.model)}</b>${data.dry_run ? " · <b>dry-run</b>" : ""}${cfgLine}${gaitLine} · ${data.elapsed_seconds}s`;
 
     // 主体记忆 chips（按 subject 聚合）
     const subjMap = {};
@@ -252,9 +267,23 @@
     }
   }
 
+  // ---- 设置抽屉 ----
+  function openSettings() {
+    $("settingsDrawer").hidden = false;
+    $("settingsOverlay").hidden = false;
+  }
+  function closeSettings() {
+    $("settingsDrawer").hidden = true;
+    $("settingsOverlay").hidden = true;
+  }
+
   // ---- 初始化 ----
   $("btnRun").addEventListener("click", run);
   $("btnDownloadJson").addEventListener("click", downloadJson);
   $("btnToggleJson").addEventListener("click", toggleJson);
+  $("btnSettings").addEventListener("click", openSettings);
+  $("btnCloseSettings").addEventListener("click", closeSettings);
+  $("btnApplySettings").addEventListener("click", closeSettings);
+  $("settingsOverlay").addEventListener("click", closeSettings);
   loadSamples();
 })();

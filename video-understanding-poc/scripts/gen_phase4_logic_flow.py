@@ -37,18 +37,21 @@ CIRCLED_CJK_FONT = (
     else FontProperties(family="Noto Sans SC")
 )
 
-# Compact readable canvas: bigger text on a tighter diagram for fit-to-width viewing.
-FIG_W, FIG_H = 24, 47.7
-XMAX, YMAX = 1600, 3180
+# Wide readable canvas: preserve large text while giving the identity tree room.
+FIG_W, FIG_H = 30, 47.7
+XMAX, YMAX = 2000, 3180
 FONT_SCALE = 2.25
 BADGE_FS = 12.5
 NODE_MIN_FS = 13.5
+NODE_TITLE_MIN_FS = 14.8
+NODE_DETAIL_MIN_FS = 11.8
 LABEL_MIN_FS = 12.5
 TITLE_FS = 26.0
 LEGEND_FS = 15.5
 PANEL_TITLE_FS = 16.0
 PANEL_BODY_FS = 13.0
 ANCHOR_FS = 13.0
+POINT_TO_DATA_Y = YMAX / (FIG_H * 0.97 * 72.0)
 
 
 def scaled_font_size(fs: float, minimum: float) -> float:
@@ -57,6 +60,14 @@ def scaled_font_size(fs: float, minimum: float) -> float:
 
 def badge_font_size(fs: float) -> float:
     return max(fs, BADGE_FS)
+
+
+def node_title_font_size(fs: float) -> float:
+    return max(fs * FONT_SCALE * 1.08, NODE_TITLE_MIN_FS)
+
+
+def node_detail_font_size(fs: float) -> float:
+    return max(fs * FONT_SCALE * 0.82, NODE_DETAIL_MIN_FS)
 
 
 fig, ax = plt.subplots(figsize=(FIG_W, FIG_H))
@@ -68,7 +79,7 @@ ax.axis("off")
 
 BOXES: list[tuple[str, float, float, float, float]] = []
 CONNECTORS: list[tuple[str, tuple[float, float], tuple[float, float]]] = []
-TEXT_AREAS: list[tuple[str, object, float, float, float, float]] = []
+TEXT_AREAS: list[tuple[str, list[object], float, float, float, float]] = []
 
 
 def badge(cx: float, cy: float, text: str, color=ORANGE, fs: float = BADGE_FS) -> None:
@@ -89,6 +100,76 @@ def badge(cx: float, cy: float, text: str, color=ORANGE, fs: float = BADGE_FS) -
     )
 
 
+def node_text(
+    cx: float,
+    cy: float,
+    w: float,
+    h: float,
+    text: str,
+    fs: float,
+    *,
+    reserved: bool = False,
+    fontproperties: FontProperties | None = None,
+) -> list[object]:
+    """Draw a node title line plus smaller detail lines."""
+    lines = text.splitlines()
+    title = lines[0] if lines else ""
+    details = "\n".join(lines[1:])
+    title_fs = node_title_font_size(fs)
+    detail_fs = node_detail_font_size(fs)
+    title_color = "#4A4A4A" if reserved else "#111111"
+    detail_color = "#666666" if reserved else "#333333"
+    if not details:
+        return [
+            ax.text(
+                cx,
+                cy,
+                title,
+                ha="center",
+                va="center",
+                fontsize=title_fs,
+                fontweight="bold",
+                color=title_color,
+                fontproperties=fontproperties,
+                zorder=4,
+            )
+        ]
+
+    detail_lines = len(details.splitlines())
+    title_line_pt = title_fs * 1.08
+    gap_pt = max(2.0, detail_fs * 0.18)
+    detail_block_pt = detail_lines * detail_fs * 1.15
+    total_data_h = (title_line_pt + gap_pt + detail_block_pt) * POINT_TO_DATA_Y
+    top_y = cy - total_data_h / 2
+    detail_y = top_y + (title_line_pt + gap_pt) * POINT_TO_DATA_Y
+    return [
+        ax.text(
+            cx,
+            top_y,
+            title,
+            ha="center",
+            va="top",
+            fontsize=title_fs,
+            fontweight="bold",
+            color=title_color,
+            fontproperties=fontproperties,
+            zorder=4,
+        ),
+        ax.text(
+            cx,
+            detail_y,
+            details,
+            ha="center",
+            va="top",
+            fontsize=detail_fs,
+            color=detail_color,
+            linespacing=1.15,
+            fontproperties=fontproperties,
+            zorder=4,
+        ),
+    ]
+
+
 def rbox(
     cx: float,
     cy: float,
@@ -106,7 +187,7 @@ def rbox(
     name: str | None = None,
     fontproperties: FontProperties | None = None,
 ) -> None:
-    """Rounded box with centered multiline text."""
+    """Rounded box with title/detail text hierarchy."""
     fc, ec = RESERVED if reserved else col
     ax.add_patch(
         FancyBboxPatch(
@@ -121,21 +202,10 @@ def rbox(
             zorder=3,
         )
     )
-    text_obj = ax.text(
-        cx,
-        cy,
-        text,
-        ha="center",
-        va="center",
-        fontsize=scaled_font_size(fs, NODE_MIN_FS),
-        color="#4A4A4A" if reserved else "#111111",
-        linespacing=1.18,
-        fontproperties=fontproperties,
-        zorder=4,
-    )
+    text_objs = node_text(cx, cy, w, h, text, fs, reserved=reserved, fontproperties=fontproperties)
     if name:
         BOXES.append((name, cx, cy, w, h))
-        TEXT_AREAS.append((name, text_obj, cx, cy, w, h))
+        TEXT_AREAS.append((name, text_objs, cx, cy, w, h))
     if badge_text:
         badge(cx + w / 2 - 36, cy - h / 2 - 8, badge_text, badge_color, fs=BADGE_FS)
 
@@ -168,24 +238,14 @@ def diamond(
     badge_text: str | None = None,
     name: str | None = None,
 ) -> None:
-    """Diamond decision node."""
+    """Diamond decision node with title/detail text hierarchy."""
     fc, ec = RESERVED if reserved else col
     pts = [(cx, cy - h / 2), (cx + w / 2, cy), (cx, cy + h / 2), (cx - w / 2, cy)]
     ax.add_patch(Polygon(pts, closed=True, fc=fc, ec=ec, lw=1.8, ls="--" if reserved else "-", zorder=3))
-    text_obj = ax.text(
-        cx,
-        cy,
-        text,
-        ha="center",
-        va="center",
-        fontsize=scaled_font_size(fs, NODE_MIN_FS),
-        color="#4A4A4A" if reserved else "#111111",
-        linespacing=1.12,
-        zorder=4,
-    )
+    text_objs = node_text(cx, cy, w, h, text, fs, reserved=reserved)
     if name:
         BOXES.append((name, cx, cy, w, h))
-        TEXT_AREAS.append((name, text_obj, cx, cy, w, h))
+        TEXT_AREAS.append((name, text_objs, cx, cy, w, h))
     if badge_text:
         badge(cx + w / 2 - 30, cy - h / 2 - 8, badge_text, P1 if badge_text == "P1" else P2, fs=BADGE_FS)
 
@@ -297,9 +357,38 @@ def side_panel(x: float, y: float, w: float, h: float, title: str, lines: list[s
     BOXES.append((f"panel:{title}", x + w / 2, y + h / 2, w, h))
 
 
+def identity_container(x: float, y: float, w: float, h: float, title: str) -> None:
+    """Large non-semantic grouping container for the person-identity provider cluster."""
+    ax.add_patch(
+        FancyBboxPatch(
+            (x, y),
+            w,
+            h,
+            boxstyle="round,pad=0.6,rounding_size=10.0",
+            fc=(0.92, 0.84, 0.96, 0.16),
+            ec=PURPLE[1],
+            lw=2.4,
+            ls="-",
+            zorder=0.4,
+        )
+    )
+    ax.text(
+        x + w / 2,
+        y + 28,
+        title,
+        ha="center",
+        va="center",
+        fontsize=17.0,
+        fontweight="bold",
+        color=PURPLE[1],
+        bbox=dict(boxstyle="round,pad=0.24", fc="white", ec=PURPLE[1], lw=1.0, alpha=0.92),
+        zorder=2.6,
+    )
+
+
 # Title / legend
 ax.text(
-    800,
+    XMAX / 2,
     35,
     "Phase 4 · 身份感知 · 多帧事件理解 logic flow（沿计划的决策树 · 实线=已实现 / 虚线灰=预留未实现）",
     ha="center",
@@ -308,7 +397,7 @@ ax.text(
     fontweight="bold",
 )
 ax.text(
-    800,
+    XMAX / 2,
     68,
     "蓝=输入/选帧  橙=判定/分窗  绿=核心CV  紫=认人/身份  青=输出  红=gpt-4o(贵)  | 实线=已实现  虚线+灰=预留(标 P1/P2)",
     ha="center",
@@ -319,8 +408,8 @@ ax.text(
 
 CX = 800
 MAIN_W = 680
-LEFT_BUS_X = 220
-RIGHT_BUS_X = 1380
+LEFT_BUS_X = 205
+RIGHT_BUS_X = 1810
 
 # ---------------- Spine: input -> local CV -> provider registry ----------------
 rbox(CX, 130, MAIN_W, 62, "① 输入：视频流 / 视频文件\n本地把视频当“流”逐帧处理", BLUE, 8.1, name="S1")
@@ -367,10 +456,10 @@ arrow(CX, 467, CX, 517, "主线", fs=6.1)
 reserved_box(90, 565, 170, 70, "LANE B\n宠物 provider\n宠物脸→宠物档案", "P2", 6.0, name="B")
 reserved_box(90, 680, 170, 96, "LANE D\n包裹/物品 + OCR\n投递/被取/移动\n车牌/单号", "P2", 5.7, name="D")
 reserved_box(90, 795, 170, 70, "LANE F\n异常事件\n跌倒/火焰/玻璃破碎", "可选", 5.9, name="F")
-reserved_box(1510, 565, 170, 70, "LANE C\n车辆 provider\n驶入 / 离开", "可选", 6.0, name="C")
-reserved_box(1510, 680, 170, 70, "LANE E\n区域/越界/徘徊", "可选", 6.0, name="E")
-reserved_box(1510, 795, 170, 78, "LANE G\n目标级轨迹 +\n手物交互坐标", "P2", 5.8, name="G")
-reserved_box(1510, 910, 170, 78, "LANE H\n＋预留槽\n新事件类型即插即用", "可选", 5.7, name="H")
+reserved_box(1910, 565, 170, 70, "LANE C\n车辆 provider\n驶入 / 离开", "可选", 6.0, name="C")
+reserved_box(1910, 680, 170, 70, "LANE E\n区域/越界/徘徊", "可选", 6.0, name="E")
+reserved_box(1910, 795, 170, 78, "LANE G\n目标级轨迹 +\n手物交互坐标", "P2", 5.8, name="G")
+reserved_box(1910, 910, 170, 78, "LANE H\n＋预留槽\n新事件类型即插即用", "可选", 5.7, name="H")
 # Reserved provider fan-out uses wide side buses to keep the main person tree readable.
 ax.plot([LEFT_BUS_X, LEFT_BUS_X], [490, 830], color="#9AA0A6", lw=1.0, ls="--", zorder=1)
 ax.plot([RIGHT_BUS_X, RIGHT_BUS_X], [490, 950], color="#9AA0A6", lw=1.0, ls="--", zorder=1)
@@ -385,14 +474,15 @@ arrow(CX + MAIN_W / 2, 435, RIGHT_BUS_X, 490, "预留 providers", fs=5.5, ls="--
 for y in [565, 680, 795]:
     arrow(LEFT_BUS_X, y, 176, y, ls="--", color="#9AA0A6", lw=1.0)
 for y in [565, 680, 795, 910]:
-    arrow(RIGHT_BUS_X, y, 1424, y, ls="--", color="#9AA0A6", lw=1.0)
+    arrow(RIGHT_BUS_X, y, 1824, y, ls="--", color="#9AA0A6", lw=1.0)
 
 # Person provider branches: face / body / gait.
-rbox(450, 665, 270, 78, "A1 人脸 face.py\nInsightFace检测+对齐\nArcFace 512d + 质量评估", PURPLE, 6.5, name="A1")
-rbox(800, 665, 270, 78, "A2 人形 ReID body\nOSNet 512d →\n主体记忆库 gallery", PURPLE, 6.5, name="A2")
+identity_container(220, 600, 1510, 1020, "人物身份 provider（人脸 + 人形 ReID + 步态 → subject_id）")
+rbox(450, 700, 270, 78, "A1 人脸 face.py\nInsightFace检测+对齐\nArcFace 512d + 质量评估", PURPLE, 6.5, name="A1")
+rbox(1000, 700, 270, 78, "A2 人形 ReID body\nOSNet 512d →\n主体记忆库 gallery", PURPLE, 6.5, name="A2")
 rbox(
-    1165,
-    665,
+    1450,
+    700,
     350,
     104,
     "A3 步态 gait.py：SkeletonGait++\n(OpenGait, GREW 权重) 已实现\n第三路身份信号(无脸/背身兜底)",
@@ -400,40 +490,80 @@ rbox(
     6.1,
     name="A3",
 )
-reserved_box(1230, 805, 260, 56, "可选预留\nLiDAR → LidarGait++", "可选", 5.8, name="LidarGait")
-arrow(CX - 115, 570, 450, 624)
-arrow(CX, 570, 800, 624)
-arrow(CX + 115, 570, 1165, 613, color=PURPLE[1], lw=1.55)
-arrow(1165, 717, 1230, 777, ls="--", color="#9AA0A6", lw=1.05)
+reserved_box(1580, 830, 260, 56, "可选预留\nLiDAR → LidarGait++", "可选", 5.8, name="LidarGait")
+arrow(CX - 115, 570, 450, 659)
+arrow(CX, 570, 1000, 659)
+arrow(CX + 115, 570, 1450, 648, color=PURPLE[1], lw=1.55)
+arrow(1450, 752, 1580, 802, ls="--", color="#9AA0A6", lw=1.05)
 
 # A1: face quality fork + blurry-face arsenal.
-diamond(450, 805, 190, 84, "人脸质量？", ORANGE, 6.8, name="A1Q")
-arrow(450, 704, 450, 761)
-rbox(330, 955, 210, 58, "清晰正脸\n→ 强身份信号", PURPLE, 6.5, name="A1clear")
-rbox(590, 955, 230, 58, "糊脸/侧脸/小脸\n→ 降权", PURPLE, 6.5, name="A1blur")
-arrow(405, 842, 330, 925, "清晰", fs=5.8)
-arrow(495, 842, 590, 925, "糊/侧/小", fs=5.8)
-rbox(450, 1100, 330, 58, "多帧脸聚合 fuse_embeddings\n质量加权融合（已实现）", PURPLE, 6.1, name="A1fuse")
-arrow(590, 984, 450, 1071)
-reserved_box(270, 1260, 200, 60, "AdaFace / MagFace\n低质量脸升级", "P1", 5.6, name="AdaFace")
-reserved_box(510, 1260, 240, 74, "3D-68 几何 cue\nbuffalo_l 1k3d68 /\nMICA·Deep3DFaceRecon", "P1", 5.2, name="3D")
-reserved_box(740, 1260, 200, 60, "人脸超分\nGFP-GAN / CodeFormer", "P1", 5.4, name="SR")
-reserved_box(500, 1400, 360, 58, "人脸库比对\nface → 人员库（接口对齐/未接）", "可选", 5.7, name="FaceGallery")
-route_arrow([(590, 984), (1270, 1030), (1270, 1190), (270, 1190), (270, 1230)], ls="--", color="#9AA0A6", lw=1.05)
-route_arrow([(590, 984), (1270, 1030), (1270, 1190), (510, 1190), (510, 1223)], ls="--", color="#9AA0A6", lw=1.05)
-route_arrow([(590, 984), (1270, 1030), (1270, 1190), (740, 1190), (740, 1230)], ls="--", color="#9AA0A6", lw=1.05)
-route_arrow([(450, 1129), (450, 1175), (900, 1175), (900, 1371), (500, 1371)], ls="--", color="#9AA0A6", lw=1.05)
-
-# A2: gallery decision + stitching/fusion.
-diamond(850, 805, 190, 84, "gallery\n裁决", ORANGE, 6.6, name="A2Q")
-arrow(800, 704, 850, 761)
-rbox(830, 955, 210, 58, "hit 命中复用\nnew 新建档", PURPLE, 6.2, name="HitNew")
-rbox(1110, 955, 220, 58, "grey 灰区\n待会话内裁决", PURPLE, 6.3, name="Grey")
-arrow(810, 842, 830, 925, "hit/new", fs=5.8)
-arrow(895, 842, 1110, 925, "grey", fs=5.8)
+diamond(450, 850, 190, 84, "人脸质量？", ORANGE, 6.8, name="A1Q")
+arrow(450, 739, 450, 806)
+rbox(350, 1015, 230, 62, "清晰正脸\n强身份 / 入库", PURPLE, 6.2, name="A1clear")
+rbox(680, 1015, 240, 62, "糊脸/侧脸/小脸\n降权 / 只查不建", PURPLE, 6.1, name="A1blur")
+arrow(405, 887, 350, 984, "清晰正脸", fs=5.8)
+arrow(495, 887, 680, 984, "糊/侧/小", fs=5.8)
+rbox(365, 1190, 260, 68, "多帧脸聚合 fuse_embeddings\n质量加权融合（已实现）", PURPLE, 5.4, name="A1fuse")
+arrow(350, 1046, 365, 1156, "多帧聚合", fs=5.4, color=PURPLE[1], lw=1.1)
 rbox(
-    850,
+    760,
     1120,
+    270,
+    72,
+    "AdaFace 识别后端\nIR-101 WebFace12M，质量自适应\n低清脸更强（替代 ArcFace，可切换）",
+    PURPLE,
+    5.5,
+    name="AdaFace",
+)
+rbox(
+    760,
+    1240,
+    270,
+    82,
+    "3D-68 几何 cue\nbuffalo_l 1k3d68 → 15维姿态/尺度不变\n面部几何，糊脸兜底",
+    PURPLE,
+    5.0,
+    name="3D",
+)
+rbox(
+    760,
+    1345,
+    270,
+    62,
+    "人脸超分\nGFP-GAN，识别前把糊小脸拉清再提 embedding",
+    PURPLE,
+    5.4,
+    name="SR",
+)
+rbox(
+    620,
+    1440,
+    660,
+    80,
+    "人脸库比对\n"
+    "face → 人脸 gallery：清晰脸入库+高置信命中(matched)，糊脸只查不建(防污染)\n"
+    "ArcFace 阈值独立(FACE_HIT/NEW_THRESH)",
+    PURPLE,
+    5.6,
+    name="FaceGallery",
+)
+route_arrow([(350, 1046), (225, 1085), (225, 1388), (430, 1400)], "强身份/入库", label_xy=(228, 1290), fs=5.5, color=PURPLE[1], lw=1.1)
+route_arrow([(365, 1224), (365, 1385), (430, 1400)], color=PURPLE[1], lw=1.1)
+arrow(680, 1046, 760, 1084, "降权", fs=5.8, color=PURPLE[1], lw=1.2)
+arrow(760, 1156, 760, 1199, "P1增强", fs=5.2, ls="--", color="#9AA0A6", lw=1.05)
+arrow(760, 1281, 760, 1314, ls="--", color="#9AA0A6", lw=1.05)
+arrow(760, 1376, 760, 1400, "查库(不入库)", fs=5.4, ls="--", color="#9AA0A6", lw=1.05)
+
+# A2: gallery decision + stitching/cross-route merge/fusion.
+diamond(1025, 850, 190, 84, "gallery\n裁决", ORANGE, 6.6, name="A2Q")
+arrow(1000, 739, 1025, 806)
+rbox(1000, 1015, 210, 58, "hit 命中复用\nnew 新建档", PURPLE, 6.2, name="HitNew")
+rbox(1300, 1015, 220, 58, "grey 灰区\n待会话内裁决", PURPLE, 6.3, name="Grey")
+arrow(985, 887, 1000, 986, "hit/new", fs=5.8)
+arrow(1070, 887, 1300, 986, "grey", fs=5.8)
+rbox(
+    1110,
+    1180,
     300,
     72,
     "灰区轨迹缝合 _stitch_orphans\nReID余弦≥0.45 → 并入最相近主体",
@@ -443,32 +573,64 @@ rbox(
     badge_color=GREEN,
     name="Stitch",
 )
-rbox(1100, 1260, 260, 66, "多帧融合 track_fusion\n最佳帧 + 投票 + 多线索", PURPLE, 5.9, name="Fusion")
-arrow(1110, 984, 850, 1084)
-arrow(1110, 984, 1100, 1227)
+rbox(1320, 1320, 260, 66, "多帧融合 track_fusion\n最佳帧 + 投票 + 多线索", PURPLE, 5.9, name="Fusion")
+arrow(1300, 1044, 1110, 1144)
+arrow(1300, 1044, 1320, 1287)
+rbox(
+    1320,
+    1430,
+    560,
+    108,
+    "跨track三路合并 _merge_tracks_cross_route\n"
+    "人脸库/人形库/步态库 任一路认出同一人即合并\n"
+    "清晰命中脸/命中步态才当锚点(糊脸不锚)；多路印证→高置信\n"
+    "统一 subject_id → 下游 _group_people 自然归并",
+    PURPLE,
+    5.55,
+    badge_text="本会话新增",
+    badge_color=GREEN,
+    name="CrossRouteMerge",
+)
 
 # Person convergence.
 rbox(
     CX,
-    1535,
-    MAIN_W,
+    1555,
+    1100,
     72,
-    "A 汇聚：三路多线索融合 → 稳定 subject_id\nface + body + gait 已实线；LiDAR gait 可选预留",
+    "A 汇聚：三路身份融合 → subject_id\nidentity_fusion.fuse_identity：人脸+人形+步态 质量加权（清晰脸主导/糊脸退人形步态/多路一致加成）→ 统一身份置信度（已实现）",
     PURPLE,
     6.5,
+    badge_text="已实现",
+    badge_color=GREEN,
     name="AConv",
 )
-route_arrow([(330, 984), (330, 1005), (1315, 1005), (1315, 1485), (1060, 1505)], "face强信号", label_xy=(1120, 1005), fs=5.8)
-arrow(500, 1429, 610, 1499, ls="--", color="#9AA0A6", lw=1.05)
-route_arrow([(850, 1156), (930, 1165), (930, 1485), (760, 1499)])
-arrow(1100, 1293, 930, 1499)
-route_arrow([(1165, 717), (1365, 760), (1365, 1488), (1035, 1502)], "gait cue", label_xy=(1275, 755), fs=5.8, color=PURPLE[1], lw=1.45)
+arrow(950, 1440, 1040, 1440, color=PURPLE[1], lw=1.35)
+route_arrow(
+    [(1000, 1044), (930, 1085), (930, 1370), (1040, 1415)],
+    "人形库 subject_id",
+    label_xy=(925, 1260),
+    fs=5.4,
+    color=PURPLE[1],
+    lw=1.2,
+)
+route_arrow([(1110, 1216), (1110, 1338), (1105, 1376)], "灰区缝合", label_xy=(1080, 1298), fs=5.4, color=PURPLE[1], lw=1.2)
+arrow(1320, 1353, 1320, 1376, color=PURPLE[1], lw=1.25)
+route_arrow(
+    [(1450, 752), (1745, 760), (1745, 1430), (1600, 1430)],
+    "gait hit",
+    label_xy=(1670, 760),
+    fs=5.8,
+    color=PURPLE[1],
+    lw=1.45,
+)
+arrow(1320, 1484, 1000, 1519, "统一 subject_id", fs=5.5, color=PURPLE[1], lw=1.45)
 
 # Provider lanes converge back to spine through outer gutters, below the person tree.
 rbox(CX, 1660, MAIN_W, 60, "⑤ 语义事件标注\n事件=语义信号，非像素/ffmpeg场景变化：new_track / track_left / count_change / identity_hit", ORANGE, 6.8, name="S5")
-arrow(CX, 1571, CX, 1630)
+arrow(CX, 1591, CX, 1630)
 route_arrow([(LEFT_BUS_X, 830), (20, 870), (20, 1630), (540, 1630)], "预留信号汇入", label_xy=(135, 1620), fs=5.5, ls="--", color="#9AA0A6", lw=1.0)
-route_arrow([(RIGHT_BUS_X, 950), (1580, 990), (1580, 1630), (1060, 1630)], "预留信号汇入", label_xy=(1465, 1620), fs=5.5, ls="--", color="#9AA0A6", lw=1.0)
+route_arrow([(RIGHT_BUS_X, 950), (1980, 990), (1980, 1630), (1060, 1630)], "预留信号汇入", label_xy=(1845, 1620), fs=5.5, ls="--", color="#9AA0A6", lw=1.0)
 
 # ---------------- Spine after provider convergence ----------------
 rbox(CX, 1775, MAIN_W, 64, "⑥ 结构化事件信号\n全部帧·文本紧凑 → 可全量带给LLM", TEAL, 7.0, name="S6")
@@ -510,7 +672,7 @@ rbox(
     2325,
     MAIN_W,
     75,
-    "⑨ 身份打包 _group_people + format_identity_context\n按subject合并：同一人多track只列一个人，防误导LLM计数\n约定身份外部给定；糊脸退人形ReID·步态",
+    "⑨ 身份打包 _group_people + format_identity_context\n按统一subject合并：跨route合并后同一人多track只列一个人\n约定身份外部给定；糊脸退人形ReID·步态，防误导LLM计数",
     PURPLE,
     6.3,
     name="S9",
@@ -618,8 +780,14 @@ def _warn_text_fit() -> None:
     renderer = fig.canvas.get_renderer()
     warnings: list[str] = []
     pad = 8.0
-    for name, text_obj, cx, cy, w, h in TEXT_AREAS:
-        text_bbox = text_obj.get_window_extent(renderer=renderer)
+    for name, text_objs, cx, cy, w, h in TEXT_AREAS:
+        bboxes = [obj.get_window_extent(renderer=renderer) for obj in text_objs]
+        text_bbox = bboxes[0]
+        for bbox in bboxes[1:]:
+            text_bbox.x0 = min(text_bbox.x0, bbox.x0)
+            text_bbox.x1 = max(text_bbox.x1, bbox.x1)
+            text_bbox.y0 = min(text_bbox.y0, bbox.y0)
+            text_bbox.y1 = max(text_bbox.y1, bbox.y1)
         p0 = ax.transData.transform((cx - w / 2 + pad, cy - h / 2 + pad))
         p1 = ax.transData.transform((cx + w / 2 - pad, cy + h / 2 - pad))
         xmin, xmax = sorted((p0[0], p1[0]))

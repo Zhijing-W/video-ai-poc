@@ -14,6 +14,9 @@ data/
 *.jpg
 *.jpeg
 
+# GFP-GAN 运行期自动下载的权重（detection_Resnet50 / parsing_parsenet，~280MB，勿入库）
+gfpgan/
+
 # IDE
 .vscode/
 .idea/

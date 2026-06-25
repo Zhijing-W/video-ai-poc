@@ -150,6 +150,17 @@ def active_backend() -> str:
     return _state["backend"]
 
 
+def reset_backend() -> None:
+    """清空已选 backend，下次调用按当前 settings.reid_backend 重新择优加载。
+
+    供"本次请求覆盖"的设置面板切 ReID 后端用（backend 是首次加载后缓存死的，切了需重置）。
+    """
+    with _lock:
+        _state["backend"] = None
+        _state["model"] = None
+        _state["dim"] = None
+
+
 def embed_dim() -> int:
     _ensure_backend()
     return int(_state["dim"])
