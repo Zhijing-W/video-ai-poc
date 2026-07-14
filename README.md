@@ -1,6 +1,6 @@
 # Event Monitor
 
-Identity-aware multi-frame video event understanding with detection, tracking, face/body/gait recognition, OCR, and multimodal LLMs.
+Turns surveillance videos into event timelines, alerts, and structured reports that explain who appeared, what happened, and when.
 
 [English](#english) | [中文](#中文)
 
