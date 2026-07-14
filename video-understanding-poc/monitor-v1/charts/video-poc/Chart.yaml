@@ -1,6 +1,0 @@
-apiVersion: v2
-name: video-poc
-description: 视频理解 POC — FastAPI + YOLO + Face/Gait/ReID + LLM 事件理解
-type: application
-version: 0.1.0
-appVersion: "0.3.0"
