@@ -1,0 +1,492 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "copilot",
+  "elements": [
+    {
+      "type": "text",
+      "id": "title",
+      "x": 300,
+      "y": 30,
+      "width": 1200,
+      "height": 80,
+      "text": "当前人脸质量门控：信号、阈值、总体等级与子标签",
+      "fontSize": 30,
+      "fontFamily": 2,
+      "strokeColor": "#000000",
+      "textAlign": "center",
+      "verticalAlign": "top"
+    },
+    {
+      "type": "rectangle",
+      "id": "det",
+      "x": 50,
+      "y": 150,
+      "width": 260,
+      "height": 250,
+      "strokeColor": "#0078D4",
+      "backgroundColor": "#CFE4FA",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "boundElements": [
+        {
+          "type": "text",
+          "id": "det_text"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "det_text",
+      "x": 62,
+      "y": 162,
+      "width": 236,
+      "height": 226,
+      "text": "检测可信度\n无脸→none\ndet<0.5→poor信号",
+      "fontSize": 16,
+      "fontFamily": 2,
+      "strokeColor": "#000000",
+      "textAlign": "center",
+      "verticalAlign": "middle",
+      "containerId": "det"
+    },
+    {
+      "type": "rectangle",
+      "id": "size",
+      "x": 345,
+      "y": 150,
+      "width": 260,
+      "height": 250,
+      "strokeColor": "#F7630C",
+      "backgroundColor": "#FFF4CE",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "boundElements": [
+        {
+          "type": "text",
+          "id": "size_text"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "size_text",
+      "x": 357,
+      "y": 162,
+      "width": 236,
+      "height": 226,
+      "text": "尺寸\n最小边<28→poor\ntoo_small",
+      "fontSize": 16,
+      "fontFamily": 2,
+      "strokeColor": "#000000",
+      "textAlign": "center",
+      "verticalAlign": "middle",
+      "containerId": "size"
+    },
+    {
+      "type": "rectangle",
+      "id": "yaw",
+      "x": 640,
+      "y": 150,
+      "width": 260,
+      "height": 250,
+      "strokeColor": "#F7630C",
+      "backgroundColor": "#FFF4CE",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "boundElements": [
+        {
+          "type": "text",
+          "id": "yaw_text"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "yaw_text",
+      "x": 652,
+      "y": 162,
+      "width": 236,
+      "height": 226,
+      "text": "yaw\n≤25°清晰\n25°～80°中间\n≥80° poor",
+      "fontSize": 16,
+      "fontFamily": 2,
+      "strokeColor": "#000000",
+      "textAlign": "center",
+      "verticalAlign": "middle",
+      "containerId": "yaw"
+    },
+    {
+      "type": "rectangle",
+      "id": "pitch",
+      "x": 935,
+      "y": 150,
+      "width": 260,
+      "height": 250,
+      "strokeColor": "#F7630C",
+      "backgroundColor": "#FFF4CE",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "boundElements": [
+        {
+          "type": "text",
+          "id": "pitch_text"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "pitch_text",
+      "x": 947,
+      "y": 162,
+      "width": 236,
+      "height": 226,
+      "text": "pitch\n≤20°清晰\n低头≤-35° poor\n抬头≥50° poor",
+      "fontSize": 16,
+      "fontFamily": 2,
+      "strokeColor": "#000000",
+      "textAlign": "center",
+      "verticalAlign": "middle",
+      "containerId": "pitch"
+    },
+    {
+      "type": "rectangle",
+      "id": "lap",
+      "x": 1230,
+      "y": 150,
+      "width": 260,
+      "height": 250,
+      "strokeColor": "#0C8599",
+      "backgroundColor": "#C5F0F5",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "boundElements": [
+        {
+          "type": "text",
+          "id": "lap_text"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "lap_text",
+      "x": 1242,
+      "y": 162,
+      "width": 236,
+      "height": 226,
+      "text": "拉普拉斯\n<15 poor\n15～60中间\n≥60清晰",
+      "fontSize": 16,
+      "fontFamily": 2,
+      "strokeColor": "#000000",
+      "textAlign": "center",
+      "verticalAlign": "middle",
+      "containerId": "lap"
+    },
+    {
+      "type": "rectangle",
+      "id": "fiqa",
+      "x": 1525,
+      "y": 150,
+      "width": 260,
+      "height": 250,
+      "strokeColor": "#5C2D91",
+      "backgroundColor": "#E8DAEF",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "boundElements": [
+        {
+          "type": "text",
+          "id": "fiqa_text"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "fiqa_text",
+      "x": 1537,
+      "y": 162,
+      "width": 236,
+      "height": 226,
+      "text": "FIQA（计划）\n<0.3 poor\n0.3～0.6中间\n≥0.6清晰",
+      "fontSize": 16,
+      "fontFamily": 2,
+      "strokeColor": "#000000",
+      "textAlign": "center",
+      "verticalAlign": "middle",
+      "containerId": "fiqa"
+    },
+    {
+      "type": "rectangle",
+      "id": "poor",
+      "x": 120,
+      "y": 500,
+      "width": 480,
+      "height": 120,
+      "strokeColor": "#D13438",
+      "backgroundColor": "#FDE7E9",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "boundElements": [
+        {
+          "type": "text",
+          "id": "poor_text"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "poor_text",
+      "x": 132,
+      "y": 512,
+      "width": 456,
+      "height": 96,
+      "text": "poor\n任一硬失败：yaw / pitch / blur / size",
+      "fontSize": 16,
+      "fontFamily": 2,
+      "strokeColor": "#000000",
+      "textAlign": "center",
+      "verticalAlign": "middle",
+      "containerId": "poor"
+    },
+    {
+      "type": "rectangle",
+      "id": "clear",
+      "x": 710,
+      "y": 500,
+      "width": 480,
+      "height": 120,
+      "strokeColor": "#107C10",
+      "backgroundColor": "#DFF6DD",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "boundElements": [
+        {
+          "type": "text",
+          "id": "clear_text"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "clear_text",
+      "x": 722,
+      "y": 512,
+      "width": 456,
+      "height": 96,
+      "text": "clear\n角度清晰 + 清晰度清晰 + 尺寸通过",
+      "fontSize": 16,
+      "fontFamily": 2,
+      "strokeColor": "#000000",
+      "textAlign": "center",
+      "verticalAlign": "middle",
+      "containerId": "clear"
+    },
+    {
+      "type": "rectangle",
+      "id": "marginal",
+      "x": 1300,
+      "y": 500,
+      "width": 480,
+      "height": 120,
+      "strokeColor": "#F7630C",
+      "backgroundColor": "#FFF4CE",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "boundElements": [
+        {
+          "type": "text",
+          "id": "marginal_text"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "marginal_text",
+      "x": 1312,
+      "y": 512,
+      "width": 456,
+      "height": 96,
+      "text": "marginal\n没有硬失败，但至少一项未达到clear",
+      "fontSize": 16,
+      "fontFamily": 2,
+      "strokeColor": "#000000",
+      "textAlign": "center",
+      "verticalAlign": "middle",
+      "containerId": "marginal"
+    },
+    {
+      "type": "rectangle",
+      "id": "c1",
+      "x": 70,
+      "y": 760,
+      "width": 390,
+      "height": 260,
+      "strokeColor": "#107C10",
+      "backgroundColor": "#DFF6DD",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "boundElements": [
+        {
+          "type": "text",
+          "id": "c1_text"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "c1_text",
+      "x": 82,
+      "y": 772,
+      "width": 366,
+      "height": 236,
+      "text": "clear\n可建档、可匹配\n不需要超分",
+      "fontSize": 16,
+      "fontFamily": 2,
+      "strokeColor": "#000000",
+      "textAlign": "center",
+      "verticalAlign": "middle",
+      "containerId": "c1"
+    },
+    {
+      "type": "rectangle",
+      "id": "c2",
+      "x": 510,
+      "y": 760,
+      "width": 390,
+      "height": 260,
+      "strokeColor": "#F7630C",
+      "backgroundColor": "#FFF4CE",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "boundElements": [
+        {
+          "type": "text",
+          "id": "c2_text"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "c2_text",
+      "x": 522,
+      "y": 772,
+      "width": 366,
+      "height": 236,
+      "text": "marginal\n无硬失败但非全清晰\n匹配时降权",
+      "fontSize": 16,
+      "fontFamily": 2,
+      "strokeColor": "#000000",
+      "textAlign": "center",
+      "verticalAlign": "middle",
+      "containerId": "c2"
+    },
+    {
+      "type": "rectangle",
+      "id": "c3",
+      "x": 950,
+      "y": 760,
+      "width": 390,
+      "height": 260,
+      "strokeColor": "#D13438",
+      "backgroundColor": "#FDE7E9",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "boundElements": [
+        {
+          "type": "text",
+          "id": "c3_text"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "c3_text",
+      "x": 962,
+      "y": 772,
+      "width": 366,
+      "height": 236,
+      "text": "poor + defects\n小脸 / 极端姿态\n模糊 / 低检测分\n标签允许同时存在",
+      "fontSize": 16,
+      "fontFamily": 2,
+      "strokeColor": "#000000",
+      "textAlign": "center",
+      "verticalAlign": "middle",
+      "containerId": "c3"
+    },
+    {
+      "type": "rectangle",
+      "id": "c4",
+      "x": 1390,
+      "y": 760,
+      "width": 390,
+      "height": 260,
+      "strokeColor": "#605E5C",
+      "backgroundColor": "#F3F2F1",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "roundness": {
+        "type": 3
+      },
+      "boundElements": [
+        {
+          "type": "text",
+          "id": "c4_text"
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "id": "c4_text",
+      "x": 1402,
+      "y": 772,
+      "width": 366,
+      "height": 236,
+      "text": "none\n没有检测到脸\n只关闭人脸路线\n其他模态继续",
+      "fontSize": 16,
+      "fontFamily": 2,
+      "strokeColor": "#000000",
+      "textAlign": "center",
+      "verticalAlign": "middle",
+      "containerId": "c4"
+    }
+  ],
+  "appState": {
+    "viewBackgroundColor": "#ffffff"
+  }
+}

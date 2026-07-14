@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>事件监控台 · 身份感知多帧事件理解</title>
+  <link rel="stylesheet" href="/static/css/variables.css" />
+  <link rel="stylesheet" href="/static/css/layout.css" />
+  <link rel="stylesheet" href="/static/css/components.css" />
+  <link rel="stylesheet" href="/static/css/event-monitor.css" />
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">
+      <span class="logo">◉</span>
+      <span class="brand-text">
+        <span class="brand-title">事件监控台</span>
+        <span class="brand-sub">身份感知 · 多帧事件理解</span>
+      </span>
+    </div>
+    <span id="backendStatus" class="em-svc" title="后端服务状态"><span class="dot"></span>连接中…</span>
+    <button id="btnSettings" class="em-gear" title="设置">⚙️ 设置</button>
+    <div class="clock" id="clock">--:--:--</div>
+  </div>
+
+  <!-- ===== 设置抽屉（独立分页，可持续扩展可插拔开关）===== -->
+  <div id="settingsOverlay" class="em-overlay" hidden></div>
+  <aside id="settingsDrawer" class="em-drawer" hidden>
+    <div class="em-drawer-head">
+      <h3>⚙️ 设置 <span class="em-once">本次生效（不持久）</span></h3>
+      <button id="btnCloseSettings" class="em-x">✕</button>
+    </div>
+    <div class="em-drawer-body">
+
+      <div class="em-group">
+        <div class="em-group-title">🧍 身份提供器（人物三路）</div>
+        <label class="em-check"><input type="checkbox" id="withFace" /> 人脸分支 <span class="em-cost">较慢</span></label>
+        <label class="em-check"><input type="checkbox" id="withGait" /> 步态分支 SkeletonGait++ <span class="em-cost slow">最慢</span></label>
+        <div class="em-hint">人形 ReID 默认始终启用。开启人脸/步态会明显增加耗时（本地 CPU 上步态最重）；<b>实际耗时以结果区「实测各阶段耗时」为准</b>，上 GPU 可数倍加速。</div>
+      </div>
+
+      <div class="em-group">
+        <div class="em-group-title">🔤 场景提供器（LANE D · 不代表身份）</div>
+        <label class="em-check"><input type="checkbox" id="withOcr" /> 场景文字 OCR（时间戳/车牌/单号）<span class="em-cost">按关键帧 · 少量</span></label>
+        <label class="em-check"><input type="checkbox" id="withObjects" /> 物体/包裹检测（行李/车辆+轨迹；含品牌/logo 提示）<span class="em-cost fast">≈0 · 复用检测</span></label>
+        <div class="em-hint">读画面文字/物体汇成 scene/object_context，与人物身份并列喂 LLM；不进 subject_id。</div>
+      </div>
+
+      <div class="em-group">
+        <div class="em-group-title">🎯 多目标跟踪（track_id）</div>
+        <label class="em-label">Tracker 后端</label>
+        <select id="trackBackend" class="em-input">
+          <option value="">默认（BoT-SORT + ReID）</option>
+          <option value="botsort_reid">BoT-SORT + ReID（推荐，遮挡/交叉更稳）</option>
+          <option value="botsort">BoT-SORT（无外观 ReID）</option>
+          <option value="bytetrack">ByteTrack（快速 baseline）</option>
+        </select>
+        <div class="em-hint">track_id 是临时轨迹编号；最终身份仍由人脸/人形/步态合成 subject_id。</div>
+      </div>
+
+      <div class="em-group">
+        <div class="em-group-title">😶 人脸 · 攻糊脸武器</div>
+        <label class="em-label">识别后端</label>
+        <select id="faceRecBackend" class="em-input">
+          <option value="">默认（AdaFace）</option>
+          <option value="adaface">AdaFace（低清更强）</option>
+          <option value="arcface">ArcFace</option>
+        </select>
+        <label class="em-label" style="margin-top:8px">人脸超分</label>
+        <select id="faceSuperres" class="em-input">
+          <option value="">默认（GFP-GAN）</option>
+          <option value="gfpgan">GFP-GAN</option>
+          <option value="off">关闭</option>
+        </select>
+        <label class="em-check" style="margin-top:8px"><input type="checkbox" id="face3d" checked /> 3D-68 几何 cue</label>
+      </div>
+
+      <div class="em-group">
+        <div class="em-group-title">🧥 人形 ReID</div>
+        <label class="em-label">后端 <span class="em-info" title="选择人形 ReID 特征提取模型。auto 会优先使用 OSNet，失败时回退到 ResNet50 / 颜色直方图。">ⓘ</span></label>
+        <select id="reidBackend" class="em-input">
+          <option value="">默认（auto）</option>
+          <option value="osnet">OSNet-AIN</option>
+          <option value="resnet50">ResNet50</option>
+          <option value="coarse">颜色直方图</option>
+        </select>
+        <div class="em-row" style="margin-top:8px">
+          <div>
+            <label class="em-label">Top-K 候选 <span class="em-info" title="从 gallery 中取多少个相似候选参与决策。值越大越能做一致性检查，但会稍微增加检索和决策开销。">ⓘ</span></label>
+            <input id="reidTopK" type="number" class="em-input" placeholder="默认30" min="1" max="100" step="1" />
+          </div>
+          <div>
+            <label class="em-label">Top-1 margin <span class="em-info" title="Top-1 与第二名分数差距太小时判为 grey，避免 top-1 噪声导致误匹配。值越大越保守。">ⓘ</span></label>
+            <input id="reidTop1Margin" type="number" class="em-input" placeholder="默认0.03" min="0" max="1" step="0.01" />
+          </div>
+        </div>
+        <div class="em-row" style="margin-top:8px">
+          <div>
+            <label class="em-label">投票阈值 <span class="em-info" title="只有相似度高于该阈值的候选才参与 top-k 投票。阈值越高，参与投票的候选越少但更可信。">ⓘ</span></label>
+            <input id="reidVoteThresh" type="number" class="em-input" placeholder="默认0.55" min="0" max="1" step="0.05" />
+          </div>
+          <div>
+            <label class="em-label">一致性比例 <span class="em-info" title="Top subject 在高相似候选中的票数占比下限。低于该比例则认为候选不一致，判为 grey。">ⓘ</span></label>
+            <input id="reidConsistencyRatio" type="number" class="em-input" placeholder="默认0.5" min="0" max="1" step="0.05" />
+          </div>
+        </div>
+        <label class="em-check" style="margin-top:8px"><input type="checkbox" id="reidConsistency" checked /> 开启 top-k 一致性 / 投票决策 <span class="em-info" title="开启后不只看 top-1，还会结合 top-k 候选投票、runner-up margin 和一致性比例；关闭后更接近传统 top-1 baseline。">ⓘ</span></label>
+        <div class="em-hint">用于对比 top-1 baseline vs top-k consistency，留空则使用后端默认值。</div>
+      </div>
+
+      <div class="em-group">
+        <div class="em-group-title">🎞 选帧 / 分窗</div>
+        <div class="em-row">
+          <div>
+            <label class="em-label">采样 fps</label>
+            <input id="fps" type="number" class="em-input" value="2" min="0.5" max="8" step="0.5" />
+          </div>
+          <div>
+            <label class="em-label">关键帧上限</label>
+            <input id="maxKeyframes" type="number" class="em-input" value="8" min="2" max="24" step="1" />
+          </div>
+        </div>
+        <div class="em-row" style="margin-top:8px">
+          <div>
+            <label class="em-label">窗时长上限(s)</label>
+            <input id="maxWindowSeconds" type="number" class="em-input" placeholder="默认30" min="2" step="1" />
+          </div>
+          <div>
+            <label class="em-label">缝合阈值</label>
+            <input id="stitchThresh" type="number" class="em-input" placeholder="默认0.45" min="0" max="1" step="0.05" />
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <div class="em-drawer-foot">
+      <button id="btnApplySettings" class="em-btn">完成</button>
+    </div>
+  </aside>
+
+  <div class="em-wrap">
+    <!-- ===== 左：控制面板 ===== -->
+    <aside class="em-panel">
+      <h3 class="em-heading">📹 输入源</h3>
+      <label class="em-label">选择样片 <span id="sampleCount" class="em-label-badge"></span></label>
+      <select id="sampleSelect" class="em-input"></select>
+
+      <div class="em-or"><span>或</span></div>
+
+      <label for="fileInput" id="dropZone" class="em-drop">
+        <span class="em-drop-icon">⬆</span>
+        <span class="em-drop-main" id="dropMain">拖拽视频到此，或点击选择</span>
+        <span class="em-drop-sub" id="dropSub">mp4 / mov / avi / mkv</span>
+        <input id="fileInput" type="file" accept="video/*" hidden />
+      </label>
+
+      <label class="em-label" style="margin-top:16px">关注点（可选）</label>
+      <input id="objective" type="text" class="em-input" placeholder="如：留意陌生人闯入、拿走物品" />
+
+      <label class="em-check em-dryrun" style="margin-top:12px">
+        <input type="checkbox" id="dryRun" />
+        <span>Dry-run <span class="em-cost fast">更快</span></span>
+        <span class="em-dryrun-hint">只跑 CV 链路、不调 LLM，用于快速验证与省额度</span>
+      </label>
+
+      <button id="btnRun" class="em-btn em-btn-cta"><span class="em-btn-ico">▶</span> 分析事件</button>
+      <div id="status" class="em-status"></div>
+
+      <div class="em-note">
+        <b>处理流程：</b><br/>
+        ① 抽帧 → ② YOLO 检测+BoT-SORT 跟踪 → ③ 人形 ReID 认人
+        <span class="em-note-opt">[可选 +人脸 +步态]</span>
+        → ④ 流式分窗 → ⑤ 选帧②（事件驱动）→ ⑥ 三路融合+身份打包
+        → ⑦ gpt-4o 跨帧事件理解<br/>
+        <span class="em-note-hint">↑ 各阶段实际耗时见结果区「实测各阶段耗时」；步态最重，上 GPU 可数倍加速。</span>
+      </div>
+    </aside>
+
+    <!-- ===== 右：结果 ===== -->
+    <main class="em-main">
+      <div id="progress" class="em-progress" hidden>
+        <div class="em-progress-head">
+          <span id="progressStage" class="em-progress-stage">⏳ 处理中…</span>
+          <span id="progressTimer" class="em-progress-timer">0.0s</span>
+        </div>
+        <div class="em-progress-track"><div id="progressBar" class="em-progress-bar"></div></div>
+        <div class="em-progress-steps" id="progressSteps"></div>
+      </div>
+      <div id="meta" class="em-meta"></div>
+      <div id="cfgSummary" class="em-cfgsummary" hidden></div>
+      <div id="timings" class="em-timings" hidden></div>
+      <div id="resultTools" class="em-tools" hidden>
+        <button id="btnSendLlm" class="em-tool-btn" hidden>✨ 用当前 dry-run 结果调用大模型</button>
+        <button id="btnDownloadJson" class="em-tool-btn">⬇ 下载 JSON</button>
+        <button id="btnToggleJson" class="em-tool-btn">查看原始 JSON</button>
+        <span class="em-tool-hint">本地模型最终输出（含/不含 LLM 事件，取决于是否 dry-run）</span>
+      </div>
+      <pre id="jsonView" class="em-json" hidden></pre>
+      <div id="overall" class="em-overall" hidden></div>
+      <div id="tracks" class="em-tracks"></div>
+      <div id="timeline" class="em-timeline"></div>
+      <div id="empty" class="em-empty">
+        <div class="em-empty-icon">🎬</div>
+        <div class="em-empty-title">身份感知 · 多帧事件理解</div>
+        <div class="em-empty-sub">选择左侧样片或拖拽上传视频，点击「分析事件」即可生成事件时间线。<br/>想快速看链路，先勾选 <b>Dry-run</b>（不调 LLM）。</div>
+        <div class="em-empty-tags">
+          <span class="em-empty-tag">🧍 人脸 / 人形 / 步态 三路身份</span>
+          <span class="em-empty-tag">🕐 事件窗时间线</span>
+          <span class="em-empty-tag">🔤 OCR / 物体场景理解</span>
+          <span class="em-empty-tag">🧠 gpt-4o 跨帧叙述</span>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ===== 关键帧放大灯箱 ===== -->
+  <div id="lightbox" class="em-lightbox" hidden>
+    <button id="lightboxClose" class="em-lightbox-x" title="关闭">✕</button>
+    <figure class="em-lightbox-fig">
+      <div id="lightboxStage" class="em-lightbox-stage"></div>
+      <figcaption id="lightboxCap" class="em-lightbox-cap"></figcaption>
+    </figure>
+  </div>
+
+  <script src="/static/js/event-monitor/main.js?v=20260714-split"></script>
+</body>
+</html>
