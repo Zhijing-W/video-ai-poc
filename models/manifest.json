@@ -1,0 +1,36 @@
+{
+  "required": [
+    {
+      "name": "yolov8m.pt",
+      "provider": "ultralytics",
+      "environment": "YOLO_MODEL"
+    }
+  ],
+  "optional": [
+    {
+      "name": "yolov8n-pose.pt",
+      "provider": "ultralytics",
+      "environment": "POSE_MODEL"
+    },
+    {
+      "name": "yolov8m-seg.pt",
+      "provider": "ultralytics",
+      "environment": "GAIT_SEG_MODEL"
+    },
+    {
+      "name": "buffalo_l",
+      "provider": "insightface",
+      "environment": "FACE_MODEL"
+    },
+    {
+      "name": "AdaFace model.pt",
+      "provider": "AdaFace",
+      "environment": "FACE_ADAFACE_WEIGHTS"
+    },
+    {
+      "name": "SkeletonGaitPP-180000.pt",
+      "provider": "OpenGait",
+      "environment": "GAIT_CKPT"
+    }
+  ]
+}

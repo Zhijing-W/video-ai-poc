@@ -1,4 +1,43 @@
-/*
-!/.gitignore
-!/event-monitor/
-!/event-monitor/**
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Secrets
+.env
+
+# Runtime output
+out/
+tmp/
+gallery/
+*.log
+*.err
+*.bak
+*.backup-refactor
+
+# Local datasets: keep only repository guidance.
+data/*
+!data/README.md
+!data/samples/
+data/samples/*
+!data/samples/.gitkeep
+
+# Model binaries: keep only manifests and instructions.
+models/*
+!models/README.md
+!models/manifest.json
+*.pt
+*.pth
+*.onnx
+*.pkl
+*.engine
+
+# Local tooling and archives
+.vscode/
+.idea/
+*.zip
+video-understanding-poc/
+
+# Experiment-local raw datasets stay outside Git; keep manifests and reports.
+experiment/**/dataset/**/probe_by_bin/
