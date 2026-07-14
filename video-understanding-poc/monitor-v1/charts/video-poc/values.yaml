@@ -1,0 +1,111 @@
+# =============================================================
+# video-poc Helm values
+# =============================================================
+image:
+  repository: REPLACE_ME/video-poc-cpu   # deploy.ps1 用 --set 覆盖
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# ---------------- CPU 主服务（FastAPI + YOLO + OCR） ----------------
+webapi:
+  enabled: true
+  replicaCount: 2
+  resources:
+    requests: { cpu: '500m', memory: '2Gi' }
+    limits:   { cpu: '2000m', memory: '6Gi' }
+  service:
+    type: ClusterIP
+    port: 80
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPU: 70
+  nodeSelector:
+    workload: app                    # 落到 cpupool
+
+# ---------------- GPU 推理服务（Face/Gait/ReID/GFPGAN） ----------------
+# 默认关。GPU 配额批下来 & GPU pool 加好后打开：
+#   helm upgrade video-poc . -n video-poc \
+#     --set gpu.enabled=true \
+#     --set gpu.image.repository=<acr>/video-poc-gpu \
+#     --set gpu.image.tag=<tag> --reuse-values
+gpu:
+  enabled: false
+  image:
+    repository: REPLACE_ME/video-poc-gpu
+    tag: latest
+  replicaCount: 1
+  resources:
+    requests: { cpu: '1', memory: '4Gi' }
+    limits:   { cpu: '4', memory: '16Gi', nvidia.com/gpu: 1 }
+  nodeSelector:
+    workload: gpu                    # 只落到 gpupool
+  tolerations:
+    - key: sku
+      operator: Equal
+      value: gpu
+      effect: NoSchedule
+  autoscaling:
+    enabled: true
+    minReplicas: 0                   # 空闲缩到 0（省钱关键，需 KEDA）
+    maxReplicas: 3
+    targetCPU: 80
+
+# ---------------- 存储：Azure Blob(models/data/results) + Files(gallery) ----------------
+storage:
+  blobAccount: REPLACE_ME            # deploy.ps1 用 --set 覆盖
+  filesAccount: REPLACE_ME
+  # Blob CSI Driver 静态挂载（container 已由 Bicep 建好）
+  models:
+    container: models
+    mountPath: /models
+    readOnly: true
+  datasets:
+    container: datasets
+    mountPath: /data
+    readOnly: true
+  results:
+    container: results
+    mountPath: /results
+    readOnly: false
+  gallery:
+    share: gallery
+    mountPath: /gallery
+    readOnly: false
+
+# ---------------- 应用配置（透传到容器 env） ----------------
+config:
+  # LLM
+  azureOpenAI:
+    endpoint: ""                     # 建议在 K8s Secret 里配，这里留空
+    deployment: "gpt-4o"
+  # 各模块 device：GPU 未启用时全 cpu；启用后由 gpu.deployment 覆盖为 cuda
+  faceDevice: cpu
+  reidDevice: cpu
+  gaitDevice: cpu
+  # FIQA / 超分 / OCR 开关
+  faceSuperres: gfpgan
+  faceFiqaBackend: "off"
+  ocrEnabled: "true"
+
+# ---------------- Ingress（HTTP 入口） ----------------
+ingress:
+  enabled: true
+  className: webapprouting.kubernetes.azure.com   # AKS 内置 App Routing addon；换 nginx-ingress 也行
+  host: ""                           # 留空 → 用 ingress 分配的 IP；有域名后填
+  tls: false
+  path: /
+
+# ---------------- App Insights ----------------
+appInsights:
+  connectionString: ""               # deploy.ps1 用 --set 覆盖
+
+# ---------------- 服务账号 & Workload Identity ----------------
+serviceAccount:
+  create: true
+  name: video-poc-sa
+
+# ---------------- 通用 ----------------
+podLabels: {}
+imagePullSecrets: []

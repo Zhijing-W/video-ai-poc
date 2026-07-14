@@ -1,0 +1,48 @@
+# 构建镜像时排除这些（减小镜像 + 防止泄密）
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# 密钥绝不进镜像！部署时用 K8s Secret / 环境变量注入
+.env
+.env.*
+!.env.example
+
+# 运行产物 / 本地数据（Azure Blob 挂 /data，镜像内不带）
+out/
+data/
+tmp/
+*.jpg
+*.jpeg
+*.mp4
+*.avi
+
+# 大模型权重（K8s 通过 Blob CSI 挂 /models，镜像不带）
+gfpgan/
+models/
+*.pt
+*.onnx
+*.pth
+*.pkl
+
+# 文档 / 脚本 / 资产（运行时不需要）
+assets/
+docs/
+scripts/
+experiment/
+README.md
+*.md
+
+# git / IDE / infra 元数据（镜像不需要）
+.git/
+.gitignore
+.vscode/
+.idea/
+infra/
+charts/
+
+# 实验产物
+本周进展*.txt
+REFACTOR_PLAN.md

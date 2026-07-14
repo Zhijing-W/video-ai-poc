@@ -1,0 +1,18 @@
+C:\Users\t-zhijingwu\Desktop\microsoft\Demo推进\video-understanding-poc\.venv\Lib\site-packages\insightface\utils\face_align.py:23: FutureWarning: `estimate` is deprecated since version 0.26 and will be removed in version 2.2. Please use `SimilarityTransform.from_estimate` class constructor instead.
+  tform.estimate(lmk, dst)
+INFO     BoxMOT v19.0.0 🚀 Python-3.12.10 torch-2.12.0+cpuCPU                  
+INFO     C:\Users\t-zhijingwu\Desktop\microsoft\Demo推进\video-understanding-po
+         c\.venv\Lib\site-packages\models\osnet_ain_x1_0_msmt17.pt             
+INFO     [PID 15440] Found existing ReID weights at                            
+         C:\Users\t-zhijingwu\Desktop\microsoft\Demo推进\video-understanding-po
+         c\.venv\Lib\site-packages\models\osnet_ain_x1_0_msmt17.pt; skipping   
+         download.                                                             
+INFO     Loaded pretrained weights from                                        
+         C:\Users\t-zhijingwu\Desktop\microsoft\Demo推进\video-understanding-po
+         c\.venv\Lib\site-packages\models\osnet_ain_x1_0_msmt17.pt             
+C:\Users\t-zhijingwu\Desktop\microsoft\Demo推进\video-understanding-poc\.venv\Lib\site-packages\insightface\utils\face_align.py:23: FutureWarning: `estimate` is deprecated since version 0.26 and will be removed in version 2.2. Please use `SimilarityTransform.from_estimate` class constructor instead.
+  tform.estimate(lmk, dst)
+C:\Users\t-zhijingwu\Desktop\microsoft\Demo推进\video-understanding-poc\.venv\Lib\site-packages\torchvision\models\_utils.py:208: UserWarning: The parameter 'pretrained' is deprecated since 0.13 and may be removed in the future, please use 'weights' instead.
+  warnings.warn(
+C:\Users\t-zhijingwu\Desktop\microsoft\Demo推进\video-understanding-poc\.venv\Lib\site-packages\torchvision\models\_utils.py:223: UserWarning: Arguments other than a weight enum or `None` for 'weights' are deprecated since 0.13 and may be removed in the future. The current behavior is equivalent to passing `weights=None`.
+  warnings.warn(msg)

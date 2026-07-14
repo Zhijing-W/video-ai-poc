@@ -1,0 +1,60 @@
+# =========================================================
+# 视频理解 POC — CPU 生产镜像（AKS CPU node pool 用）
+#
+# 设计要点：
+#   1. slim 基底 + 系统 ffmpeg + libGL（YOLO/insightface 依赖）
+#   2. 依赖层与代码层分离，改代码不重装 pip
+#   3. 静态资源 static/ + templates/ 一并打入
+#   4. 非 root 用户 appuser 运行（安全 + K8s PSA 兼容）
+#   5. HEALTHCHECK 走 /docs（FastAPI 内建），K8s liveness/readiness 复用
+#   6. 模型权重「运行时挂载」而非打进镜像：Azure Blob CSI 挂 /models（多 pod 共享，重启不重下）
+# =========================================================
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# 系统依赖：
+#   ffmpeg      = 抽帧
+#   libgl1      = ultralytics / opencv-headless 底层
+#   libglib2.0-0= insightface / opencv
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ffmpeg libgl1 libglib2.0-0 curl \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 先装依赖（层缓存友好）
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+# 拷代码 + 前端资源（templates/static 缺一都会 404）
+COPY app        ./app
+COPY templates  ./templates
+COPY static     ./static
+
+# 非 root 用户
+RUN useradd -m -u 10001 appuser \
+ && mkdir -p /models /data /gallery /tmp/videos \
+ && chown -R appuser:appuser /app /models /data /gallery /tmp/videos
+USER appuser
+
+# 模型/数据/gallery 位置（K8s 用 PVC / Blob CSI 挂在这三个路径）
+ENV INSIGHTFACE_HOME=/models/insightface \
+    TORCH_HOME=/models/torch \
+    HF_HOME=/models/hf \
+    ULTRALYTICS_HOME=/models/ultralytics \
+    GALLERY_DIR=/gallery \
+    DATA_DIR=/data \
+    PORT=8000
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+  CMD curl -fsS http://localhost:${PORT}/docs > /dev/null || exit 1
+
+# 单 worker：任务状态在进程内存，多 pod 靠 K8s replica 横向扩，不用 gunicorn workers。
+CMD ["sh", "-c", "gunicorn app.main:app -k uvicorn.workers.UvicornWorker -b 0.0.0.0:${PORT} --workers 1 --timeout 300"]

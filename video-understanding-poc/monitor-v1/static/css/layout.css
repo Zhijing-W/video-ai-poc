@@ -1,0 +1,188 @@
+/* ========================================
+   Layout - 页面布局和结构
+   顶栏、容器、响应式布局
+   ======================================== */
+
+/* ========================================
+   顶栏（原始风格 - 已废弃但保留兼容）
+   ======================================== */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(250,249,244,.86);
+  backdrop-filter: blur(10px);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.brand {
+  font-weight: 600;
+  letter-spacing: .1px;
+  font-size: 1.02rem;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: var(--fg);
+  font-family: var(--serif);
+}
+
+.brand .logo {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 16px;
+  box-shadow: 0 2px 8px rgba(204,120,92,.35);
+}
+
+.live {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .82rem;
+  color: var(--muted);
+}
+
+.led {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--idle);
+}
+
+.led.on {
+  background: var(--ok);
+  animation: pulse 1.6s infinite;
+}
+
+.led.cooldown {
+  background: var(--warn);
+  animation: pulse 1s infinite;
+}
+
+/* ========================================
+   新顶栏（双模式）
+   ======================================== */
+
+.topbar-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 24px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar-title h2 {
+  font-size: 1.3rem;
+  color: var(--fg);
+  margin: 0;
+}
+
+.mode-switcher {
+  display: flex;
+  gap: 8px;
+}
+
+.mode-btn {
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--muted);
+  font-size: .88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: .18s;
+}
+
+.mode-btn:hover {
+  border-color: var(--accent);
+  color: var(--fg);
+}
+
+.mode-btn.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(204,120,92,.3);
+}
+
+/* ========================================
+   视图容器
+   ======================================== */
+
+.view-container {
+  min-height: calc(100vh - 80px);
+}
+
+/* ========================================
+   网格布局（原始风格 - 已废弃但保留兼容）
+   ======================================== */
+
+.grid {
+  display: grid;
+  grid-template-columns: 1.7fr 1fr;
+  gap: 16px;
+  padding: 16px;
+  max-width: 1500px;
+  margin: 0 auto;
+}
+
+@media (max-width: 1000px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: var(--shadow);
+}
+
+.panel h2 {
+  margin: 0 0 12px;
+  font-size: .72rem;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* ========================================
+   控件容器
+   ======================================== */
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+/* ========================================
+   页脚
+   ======================================== */
+
+.footer {
+  color: #a39e8e;
+  font-size: .72rem;
+  text-align: center;
+  padding: 8px 0 18px;
+}
+
+a {
+  color: var(--accent2);
+}

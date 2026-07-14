@@ -1,0 +1,65 @@
+# =========================================================
+# 视频理解 POC — GPU 推理镜像（AKS GPU node pool 用）
+#
+# 使用场景：GPU 配额批下来后 build & push，helm --set gpu.enabled=true 拉起
+# 基底：NVIDIA CUDA 12.1 + cuDNN8 + Ubuntu 22.04
+#   - torch/onnxruntime-gpu/insightface/gfpgan 都能吃 CUDA
+#   - 与 A10 (Ampere, sm_86) 和 T4 (Turing, sm_75) 都兼容
+#
+# 与 Dockerfile.cpu 的差别：
+#   1. 基底换 CUDA runtime（不是 devel，省 3GB）
+#   2. onnxruntime → onnxruntime-gpu（覆盖装）
+#   3. torch/torchvision 走 CUDA wheel（+cu121）
+#   4. K8s 侧 pod spec 要加 `resources.limits: nvidia.com/gpu: 1`
+# =========================================================
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      python3.11 python3.11-venv python3-pip \
+      ffmpeg libgl1 libglib2.0-0 curl \
+ && rm -rf /var/lib/apt/lists/* \
+ && ln -sf /usr/bin/python3.11 /usr/local/bin/python \
+ && ln -sf /usr/bin/python3.11 /usr/local/bin/python3
+
+WORKDIR /app
+
+# 依赖：先装 CUDA 版 torch，再走 requirements.txt（onnxruntime → onnxruntime-gpu 覆盖）
+COPY requirements.txt .
+RUN pip install --extra-index-url https://download.pytorch.org/whl/cu121 \
+      torch==2.3.1+cu121 torchvision==0.18.1+cu121 \
+ && pip install -r requirements.txt \
+ && pip install --force-reinstall onnxruntime-gpu
+
+COPY app        ./app
+COPY templates  ./templates
+COPY static     ./static
+
+RUN useradd -m -u 10001 appuser \
+ && mkdir -p /models /data /gallery /tmp/videos \
+ && chown -R appuser:appuser /app /models /data /gallery /tmp/videos
+USER appuser
+
+ENV INSIGHTFACE_HOME=/models/insightface \
+    TORCH_HOME=/models/torch \
+    HF_HOME=/models/hf \
+    ULTRALYTICS_HOME=/models/ultralytics \
+    GALLERY_DIR=/gallery \
+    DATA_DIR=/data \
+    FACE_DEVICE=cuda \
+    REID_DEVICE=cuda \
+    GAIT_DEVICE=cuda \
+    PORT=8000
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
+  CMD curl -fsS http://localhost:${PORT}/docs > /dev/null || exit 1
+
+CMD ["sh", "-c", "gunicorn app.main:app -k uvicorn.workers.UvicornWorker -b 0.0.0.0:${PORT} --workers 1 --timeout 300"]

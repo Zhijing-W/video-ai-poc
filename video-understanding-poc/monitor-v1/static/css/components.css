@@ -1,0 +1,345 @@
+/* ========================================
+   Components - 通用组件样式
+   按钮、输入框、标签、卡片等基础组件
+   ======================================== */
+
+/* ========================================
+   按钮系统
+   ======================================== */
+
+button {
+  background: #fff;
+  color: var(--fg);
+  border: 1px solid var(--line);
+  padding: 8px 14px;
+  border-radius: 9px;
+  font-weight: 500;
+  cursor: pointer;
+  font-size: .84rem;
+  font-family: inherit;
+  transition: .15s;
+  box-shadow: 0 1px 1.5px rgba(50,46,38,.04);
+}
+
+button:hover:not(:disabled) {
+  border-color: #d8c3b4;
+  background: #fbf7f3;
+}
+
+button:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(204,120,92,.28);
+}
+
+button.primary:hover:not(:disabled) {
+  background: var(--accent2);
+  border-color: var(--accent2);
+}
+
+button.danger {
+  background: transparent;
+  border-color: rgba(192,57,43,.4);
+  color: var(--alert);
+  box-shadow: none;
+}
+
+button.danger:hover:not(:disabled) {
+  background: rgba(192,57,43,.08);
+  border-color: var(--alert);
+}
+
+button.pmini {
+  font-size: .76rem;
+  padding: 5px 10px;
+}
+
+/* ========================================
+   输入框系统
+   ======================================== */
+
+.field {
+  margin-top: 14px;
+}
+
+.field label {
+  display: block;
+  font-size: .76rem;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.field input[type=text],
+.field input[type=number],
+.field select,
+select,
+input[type=text],
+input[type=number] {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--fg);
+  font-size: .84rem;
+  font-family: inherit;
+  transition: .15s;
+}
+
+input:focus, select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(204,120,92,.16);
+}
+
+input::placeholder {
+  color: #aaa597;
+}
+
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button {
+  opacity: .6;
+}
+
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  background-image: 
+    linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 16px) center, calc(100% - 11px) center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 28px;
+}
+
+option {
+  background: #fff;
+  color: var(--fg);
+}
+
+/* ========================================
+   标签系统
+   ======================================== */
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.tag {
+  font-size: .74rem;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  color: #54514a;
+}
+
+/* ========================================
+   统计卡片
+   ======================================== */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.stat {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 10px;
+  text-align: center;
+}
+
+.stat .n {
+  font-size: 1.3rem;
+  font-weight: 700;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat .l {
+  font-size: .68rem;
+  color: var(--muted);
+  letter-spacing: .3px;
+  margin-top: 2px;
+}
+
+/* ========================================
+   比对匹配卡片
+   ======================================== */
+
+.matchcard {
+  border-radius: 13px;
+  padding: 16px;
+  text-align: center;
+  border: 1px solid var(--line);
+  background: var(--card);
+  transition: .2s;
+}
+
+.matchcard.match {
+  border-color: var(--ok);
+  background: rgba(42,144,103,.09);
+}
+
+.matchcard.nomatch {
+  border-color: var(--line);
+}
+
+.matchcard.alert {
+  border-color: var(--alert);
+  background: rgba(192,57,43,.07);
+}
+
+.matchcard .big {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: .5px;
+  margin: 2px 0;
+}
+
+.matchcard .conf {
+  font-size: .78rem;
+  color: var(--muted);
+}
+
+.matchcard .reason {
+  font-size: .82rem;
+  color: #54514a;
+  margin-top: 8px;
+  line-height: 1.45;
+  text-align: left;
+}
+
+/* ========================================
+   辅助工具类
+   ======================================== */
+
+.row {
+  display: flex;
+  gap: 10px;
+}
+
+.row > * {
+  flex: 1;
+}
+
+.ref {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.ref img {
+  width: 54px;
+  height: 54px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #f1efe7;
+}
+
+.hint {
+  font-size: .74rem;
+  color: var(--muted);
+  margin-top: 6px;
+}
+
+.scene {
+  font-size: .86rem;
+  color: #54514a;
+  line-height: 1.5;
+  margin-top: 6px;
+  min-height: 1.2em;
+}
+
+/* ========================================
+   开关和单选框
+   ======================================== */
+
+.modes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: .84rem;
+  color: #54514a;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+
+.mode input {
+  accent-color: var(--accent);
+}
+
+.compareState.on {
+  color: var(--ok);
+}
+
+/* ========================================
+   HUD 芯片
+   ======================================== */
+
+.chip {
+  font-size: .72rem;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(0,0,0,.45);
+  border: 1px solid rgba(255,255,255,.18);
+  color: #f3efe6;
+  backdrop-filter: blur(4px);
+}
+
+.chip.src {
+  border-color: var(--accent);
+  color: #f3c9b8;
+}
+
+/* ========================================
+   空状态提示
+   ======================================== */
+
+.empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #9b968a;
+  font-size: .9rem;
+  text-align: center;
+}
+
+/* ========================================
+   时钟显示
+   ======================================== */
+
+.clock {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-size: .82rem;
+}
