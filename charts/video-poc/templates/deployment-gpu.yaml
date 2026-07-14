@@ -52,6 +52,10 @@ spec:
           value: /models/hf
         - name: GALLERY_DIR
           value: /gallery
+        - name: YOLO_MODEL
+          value: /models/yolov8m.pt
+        - name: POSE_MODEL
+          value: /models/yolov8n-pose.pt
         {{- if .Values.appInsights.connectionString }}
         - name: APPLICATIONINSIGHTS_CONNECTION_STRING
           value: "{{ .Values.appInsights.connectionString }}"

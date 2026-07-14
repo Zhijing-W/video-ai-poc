@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parents[2]
 load_dotenv(BASE_DIR / ".env")
 
-DATA_DIR = BASE_DIR / "data"
+DATA_DIR = Path(os.getenv("DATA_DIR") or BASE_DIR / "data").expanduser()
 JOBS_DIR = DATA_DIR / "jobs"
 MONITOR_DIR = DATA_DIR / "monitor_sessions"
 TEMPLATES_DIR = BASE_DIR / "templates"
@@ -19,7 +19,7 @@ ALLOWED_VIDEO_SUFFIXES = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
 
 
 def _shared_asset(name: str) -> str:
-    candidate = BASE_DIR.parent / name
+    candidate = BASE_DIR / "models" / name
     return str(candidate) if candidate.exists() else name
 
 
@@ -150,11 +150,11 @@ class Settings:
     face_gfpgan_weights: str = _get("FACE_GFPGAN_WEIGHTS", "")               # 留空自动下载/默认路径
     # ③ AdaFace：质量自适应人脸识别后端（低清脸更强）。arcface / adaface（默认 adaface，最强）。
     face_rec_backend: str = _get("FACE_REC_BACKEND", "adaface").strip().lower()
-    face_adaface_root: str = _get("FACE_ADAFACE_ROOT", r"C:\Users\t-zhijingwu\Desktop\microsoft\AdaFace")
+    face_adaface_root: str = _get("FACE_ADAFACE_ROOT", str(BASE_DIR / "models" / "AdaFace"))
     face_adaface_arch: str = _get("FACE_ADAFACE_ARCH", "ir_101")
     face_adaface_weights: str = _get(
         "FACE_ADAFACE_WEIGHTS",
-        r"C:\Users\t-zhijingwu\Desktop\microsoft\AdaFace\pretrained\pretrained_model\model.pt",
+        str(BASE_DIR / "models" / "AdaFace" / "pretrained" / "pretrained_model" / "model.pt"),
     )
 
     # 多帧事件理解（Phase 4 · Step 23 / 3.4，本阶段灵魂）：多帧关键帧 + 身份上下文 → 跨帧事件叙述。
@@ -205,10 +205,20 @@ class Settings:
     # 步态识别分支（Phase 4 · Step 27）：SkeletonGait++（OpenGait，GREW 权重）。本机纯 CPU 跑（慢，
     # 效果与 GPU 相同）；上云换 device='cuda'。OpenGait 仓库与 726MB 权重在 git 仓库外，路径可配。
     gait_enabled: bool = _get("GAIT_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
-    gait_opengait_root: str = _get("GAIT_OPENGAIT_ROOT", r"C:\Users\t-zhijingwu\Desktop\microsoft\OpenGait")
+    gait_opengait_root: str = _get("GAIT_OPENGAIT_ROOT", str(BASE_DIR / "models" / "OpenGait"))
     gait_ckpt: str = _get(
         "GAIT_CKPT",
-        r"C:\Users\t-zhijingwu\Desktop\microsoft\OpenGait\checkpoints\GREW\SkeletonGaitPP\SkeletonGaitPP\checkpoints\SkeletonGaitPP-180000.pt",
+        str(
+            BASE_DIR
+            / "models"
+            / "OpenGait"
+            / "checkpoints"
+            / "GREW"
+            / "SkeletonGaitPP"
+            / "SkeletonGaitPP"
+            / "checkpoints"
+            / "SkeletonGaitPP-180000.pt"
+        ),
     )
     gait_seg_model: str = _get("GAIT_SEG_MODEL", _shared_asset("yolov8m-seg.pt"))   # 剪影分割（ultralytics 实例分割）
     gait_min_frames: int = int(_get("GAIT_MIN_FRAMES", "10"))        # 一条 track 至少几帧才算步态（帧太少不可靠）

@@ -1,0 +1,21 @@
+{
+  "required": [
+    {
+      "name": "yolov8m.pt",
+      "provider": "ultralytics",
+      "environment": "YOLO_MODEL"
+    }
+  ],
+  "optional": [
+    {
+      "name": "yolov8n-pose.pt",
+      "provider": "ultralytics",
+      "environment": "POSE_MODEL"
+    },
+    {
+      "name": "osnet_ain_x1_0_msmt17.pt",
+      "provider": "boxmot",
+      "environment": "REID_OSNET_WEIGHTS"
+    }
+  ]
+}

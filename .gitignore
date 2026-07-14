@@ -1,4 +1,40 @@
-/*
-!/.gitignore
-!/monitor-v1/
-!/monitor-v1/**
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Secrets
+.env
+
+# Runtime output
+out/
+tmp/
+gallery/
+*.log
+*.err
+*.bak
+*.backup-refactor
+
+# Local datasets
+data/*
+!data/README.md
+!data/samples/
+data/samples/*
+!data/samples/.gitkeep
+
+# Model binaries
+models/*
+!models/README.md
+!models/manifest.json
+*.pt
+*.pth
+*.onnx
+*.pkl
+*.engine
+
+# Local tooling and archives
+.vscode/
+.idea/
+*.zip
+video-understanding-poc/

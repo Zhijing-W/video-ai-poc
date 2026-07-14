@@ -7,9 +7,13 @@
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+copy .env.example .env
+.\.venv\Scripts\python.exe scripts\download_models.py --include-pose
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --port 8000
 ```
 
 访问 `http://127.0.0.1:8000/monitor`。
 
-本应用不再包含 Event Monitor 和 Phase 4 事件窗分析。新功能统一开发在 `../event-monitor/`。
+本分支冻结保存旧版功能，不再包含 Event Monitor 和 Phase 4 事件窗分析。
+
+模型文件统一放在 `models/`，本地视频与会话数据统一放在 `data/`。二进制权重和大型数据不进入 Git。

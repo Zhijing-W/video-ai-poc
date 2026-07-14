@@ -65,6 +65,10 @@ spec:
           value: /gallery
         - name: DATA_DIR
           value: /data
+        - name: YOLO_MODEL
+          value: /models/yolov8m.pt
+        - name: POSE_MODEL
+          value: /models/yolov8n-pose.pt
         resources: {{ toYaml .Values.webapi.resources | nindent 10 }}
         livenessProbe:
           httpGet: { path: /docs, port: http }
