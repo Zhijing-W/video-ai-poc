@@ -5,7 +5,9 @@
 ## 启动
 
 ```powershell
-..\.venv\Scripts\python.exe -m uvicorn app.main:app --port 8000
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --port 8000
 ```
 
 访问 `http://127.0.0.1:8000/monitor`。

@@ -1,37 +1,4 @@
-# ===== 密钥 / 环境变量（绝不提交）=====
-.env
-**/.env
-*.key
-*.pem
-*.pfx
-*.p12
-
-# ===== Python =====
-__pycache__/
-**/__pycache__/
-*.pyc
-.venv/
-**/.venv/
-venv/
-
-# ===== Node =====
-node_modules/
-**/node_modules/
-
-# ===== 运行产物 =====
-**/data/
-**/out/
-**/tmp/
-
-# ===== 模型权重（可重新下载，体积大）=====
-*.pt
-*.onnx
-
-# ===== 构建/部署产物 =====
-vu-deploy.zip
-*.zip
-
-# ===== IDE =====
-.vscode/
-.idea/
-.DS_Store
+/*
+!/.gitignore
+!/monitor-v1/
+!/monitor-v1/**
