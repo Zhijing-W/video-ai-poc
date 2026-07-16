@@ -56,8 +56,7 @@ jobs:
           echo "image=$image" >> "$GITHUB_OUTPUT"
           echo "Deploying $image"
 
-      - name: Record VM state and start it when needed
-        id: vm_state
+      - name: Start VM when needed
         shell: bash
         run: |
           set -euo pipefail
@@ -72,8 +71,7 @@ jobs:
             echo "Unable to determine VM power state." >&2
             exit 1
           fi
-          echo "original_state=$state" >> "$GITHUB_OUTPUT"
-          echo "Original VM state: $state"
+          echo "Current VM state: $state"
           if [[ "$state" != "PowerState/running" ]]; then
             az vm start \
               --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
@@ -112,31 +110,3 @@ jobs:
             echo "VM deployment script did not report success." >&2
             exit 1
           fi
-
-      - name: Restore the original VM power state
-        if: ${{ always() && steps.vm_state.outcome == 'success' }}
-        shell: bash
-        env:
-          ORIGINAL_STATE: ${{ steps.vm_state.outputs.original_state }}
-        run: |
-          set -euo pipefail
-          case "$ORIGINAL_STATE" in
-            PowerState/deallocated)
-              az vm deallocate \
-                --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
-                --name "${{ vars.AZURE_VM_NAME }}" \
-                --output none
-              ;;
-            PowerState/stopped)
-              az vm stop \
-                --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
-                --name "${{ vars.AZURE_VM_NAME }}" \
-                --output none
-              ;;
-            PowerState/running)
-              echo "VM was already running; leaving it running."
-              ;;
-            *)
-              echo "VM originally had state '$ORIGINAL_STATE'; leaving its current state unchanged."
-              ;;
-          esac
