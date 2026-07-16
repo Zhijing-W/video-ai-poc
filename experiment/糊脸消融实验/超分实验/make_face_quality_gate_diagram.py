@@ -1,4 +1,4 @@
-"""生成当前人脸质量门控分类规则图，而非处理流程图。"""
+"""生成人脸质量判定与身份匹配的自上而下学术架构图。"""
 from __future__ import annotations
 
 import html
@@ -13,16 +13,16 @@ SVG = HERE / "当前人脸质量门控分类规则.svg"
 PNG = HERE / "当前人脸质量门控分类规则.png"
 EXCALIDRAW = HERE / "当前人脸质量门控分类规则.excalidraw"
 
-W, H = 1900, 1360
+W, H = 1700, 2520
 
-COLORS = {
-    "blue": ("#0078D4", "#CFE4FA"),
+COLOR = {
+    "blue": ("#0078D4", "#EAF4FC"),
+    "purple": ("#5C2D91", "#F4ECFA"),
     "orange": ("#F7630C", "#FFF4CE"),
-    "purple": ("#5C2D91", "#E8DAEF"),
-    "green": ("#107C10", "#DFF6DD"),
+    "green": ("#107C10", "#EAF6EA"),
+    "teal": ("#0C8599", "#E6F7F9"),
     "red": ("#D13438", "#FDE7E9"),
     "gray": ("#605E5C", "#F3F2F1"),
-    "teal": ("#0C8599", "#C5F0F5"),
 }
 
 
@@ -30,7 +30,7 @@ def esc(value: str) -> str:
     return html.escape(value)
 
 
-def rect(x, y, w, h, stroke, fill="transparent", sw=2, rx=16, dash=None):
+def rect(x, y, w, h, stroke, fill, sw=2, rx=12, dash=None):
     dash_attr = f' stroke-dasharray="{dash}"' if dash else ""
     return (
         f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{rx}" '
@@ -38,7 +38,7 @@ def rect(x, y, w, h, stroke, fill="transparent", sw=2, rx=16, dash=None):
     )
 
 
-def text(x, y, values, size=16, weight=400, anchor="start", gap=25, color="#111111"):
+def txt(x, y, values, size=16, weight=400, anchor="middle", gap=24, color="#111111"):
     spans = []
     for index, value in enumerate(values):
         spans.append(f'<tspan x="{x}" dy="{0 if index == 0 else gap}">{esc(value)}</tspan>')
@@ -48,193 +48,224 @@ def text(x, y, values, size=16, weight=400, anchor="start", gap=25, color="#1111
     )
 
 
-def card(x, y, w, h, family, title, rows, dash=None, title_size=19, row_size=14):
-    stroke, fill = COLORS[family]
-    out = [rect(x, y, w, h, stroke, fill, 2, 14, dash)]
-    out.append(text(x + w / 2, y + 31, [title], title_size, 700, "middle"))
-    if rows:
-        out.append(text(x + 15, y + 62, rows, row_size, 400, "start", 23))
-    return "".join(out)
+def box(x, y, w, h, family, title, details=(), title_size=21, detail_size=15, dash=None):
+    stroke, fill = COLOR[family]
+    result = [rect(x, y, w, h, stroke, fill, 2.2, 14, dash)]
+    result.append(txt(x + w / 2, y + 34, [title], title_size, 700))
+    if details:
+        result.append(txt(x + w / 2, y + 67, list(details), detail_size, 400, "middle", 23))
+    return "".join(result)
 
 
-def section(x, y, w, h, family, title, subtitle):
-    stroke, _ = COLORS[family]
+def container(x, y, w, h, family, title, subtitle):
+    stroke, _ = COLOR[family]
     return (
-        rect(x, y, w, h, stroke, "transparent", 3, 20)
-        + text(x + 22, y + 35, [title], 22, 700)
-        + text(x + 22, y + 61, [subtitle], 13, 400, color="#444444")
+        rect(x, y, w, h, stroke, "transparent", 2.8, 20)
+        + txt(x + w / 2, y + 36, [title], 22, 700)
+        + txt(x + w / 2, y + 64, [subtitle], 14, 400, "middle", color="#444444")
     )
 
 
-parts = [
+def diamond(cx, cy, w, h, family, lines):
+    stroke, fill = COLOR[family]
+    points = f"{cx},{cy-h/2} {cx+w/2},{cy} {cx},{cy+h/2} {cx-w/2},{cy}"
+    return (
+        f'<polygon points="{points}" fill="{fill}" stroke="{stroke}" stroke-width="2.2"/>'
+        + txt(cx, cy - 8, lines, 16, 700, "middle", 21)
+    )
+
+
+def connector(points, color="#605E5C", dash=None):
+    dash_attr = f' stroke-dasharray="{dash}"' if dash else ""
+    coords = " ".join(f"{x},{y}" for x, y in points)
+    return (
+        f'<polyline points="{coords}" fill="none" stroke="{color}" '
+        f'stroke-width="2.2"{dash_attr}/>'
+    )
+
+
+def arrow(points, label=None, label_xy=None, color="#605E5C", dash=None):
+    dash_attr = f' stroke-dasharray="{dash}"' if dash else ""
+    coords = " ".join(f"{x},{y}" for x, y in points)
+    result = (
+        f'<polyline points="{coords}" fill="none" stroke="{color}" stroke-width="2.4" '
+        f'marker-end="url(#arrow)"{dash_attr}/>'
+    )
+    if label:
+        x, y = label_xy or points[len(points) // 2]
+        result += txt(x, y, [label], 14, 600, "middle", color="#333333")
+    return result
+
+
+def curve_arrow(x1, y1, c1x, c1y, c2x, c2y, x2, y2, color="#605E5C", dash=None):
+    dash_attr = f' stroke-dasharray="{dash}"' if dash else ""
+    return (
+        f'<path d="M {x1} {y1} C {c1x} {c1y}, {c2x} {c2y}, {x2} {y2}" '
+        f'fill="none" stroke="{color}" stroke-width="2.4" '
+        f'marker-end="url(#arrow)"{dash_attr}/>'
+    )
+
+
+def junction(x, y, family="gray"):
+    stroke, fill = COLOR[family]
+    return f'<circle cx="{x}" cy="{y}" r="6" fill="{fill}" stroke="{stroke}" stroke-width="2"/>'
+
+
+svg = [
     f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">',
     """
-    <rect width="100%" height="100%" fill="#FFFFFF"/>
+    <defs>
+      <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3"
+              orient="auto" markerUnits="strokeWidth">
+        <path d="M0,0 L0,6 L9,3 z" fill="#605E5C"/>
+      </marker>
+    </defs>
+    <rect width="100%" height="100%" fill="#ffffff"/>
     <style>text { font-family: "Microsoft YaHei", "Segoe UI", sans-serif; }</style>
     """,
-    text(W / 2, 48, ["当前人脸质量门控：输入信号、阈值、总体等级与子标签"], 31, 700, "middle"),
-    text(
+    txt(W / 2, 48, ["人脸质量判定与身份匹配目标架构"], 32, 700),
+    txt(
         W / 2,
         82,
-        ["依据 event-monitor/app/face.py 与 app/core/config.py 当前实现；虚线紫框表示已预留但尚未生效"],
-        14,
+        ["质量先于身份：完成质量分类后，才决定是否调用产品ArcFace / AdaFace"],
+        16,
         400,
         "middle",
         color="#444444",
     ),
 ]
 
-# Signals
-parts.append(section(35, 115, 1830, 455, "blue", "① 质量判定输入维度", "同一张检测到的人脸同时计算；每个维度独立产生状态或问题标签"))
+# Main detection spine
+svg.append(box(610, 125, 480, 100, "blue", "① 人物轨迹采样帧", ["输入：RGB人物图像"]))
+svg.append(arrow([(850, 225), (850, 270)]))
+svg.append(box(555, 270, 590, 145, "blue", "② SCRFD人脸检测", [
+    "输出：人脸框bbox、5点关键点、检测分数det_score",
+    "当前确认阈值：det_score ≥ 0.5",
+]))
+svg.append(arrow([(850, 415), (850, 455)]))
+svg.append(diamond(850, 515, 220, 120, "blue", ["检测到", "人脸？"]))
 
-xs = [60, 355, 650, 945, 1240, 1535]
-width = 270
-height = 360
-parts.append(card(xs[0], 185, width, height, "blue", "人脸检测可信度", [
-    "没有检测到脸",
-    "→ 总体等级 none",
-    "",
-    "det_score < 0.5",
-    "→ blur_bad = true",
-    "→ poor候选",
-    "",
-    "det_score ≥ 0.5",
-    "→ 检测可信",
-]))
-parts.append(card(xs[1], 185, width, height, "orange", "人脸尺寸", [
-    "最小边 < 28像素",
-    "→ size_bad = true",
-    "→ poor",
-    "→ 子标签 too_small",
-    "",
-    "最小边 ≥ 28像素",
-    "→ 尺寸通过",
-    "",
-    "面积还参与quality_score",
-]))
-parts.append(card(xs[2], 185, width, height, "orange", "水平转头 yaw", [
-    "|yaw| ≤ 25°",
-    "→ 角度清晰",
-    "",
-    "25° < |yaw| < 80°",
-    "→ 非清晰但未硬失败",
-    "→ 可能进入 marginal",
-    "",
-    "|yaw| ≥ 80°",
-    "→ poor / yaw_extreme",
-]))
-parts.append(card(xs[3], 185, width, height, "orange", "抬头低头 pitch", [
-    "|pitch| ≤ 20°",
-    "→ 角度清晰",
-    "",
-    "-35° < pitch < -20°",
-    "或 20° < pitch < 50°",
-    "→ 可能进入 marginal",
-    "",
-    "pitch ≤ -35° → pitch_down",
-    "pitch ≥ 50° → pitch_up",
-]))
-parts.append(card(xs[4], 185, width, height, "teal", "拉普拉斯清晰度", [
-    "blur_var < 15",
-    "→ blur_bad = true",
-    "→ poor / too_blurry",
-    "",
-    "15 ≤ blur_var < 60",
-    "→ 不算硬失败",
-    "→ 但不满足清晰条件",
-    "",
-    "blur_var ≥ 60",
-    "→ 清晰度通过",
-]))
-parts.append(card(xs[5], 185, width, height, "purple", "公开FIQA（未生效）", [
-    "配置：FACE_FIQA_BACKEND",
-    "当前默认 off",
-    "_deep_fiqa_score返回None",
-    "",
-    "计划阈值：",
-    "FIQA < 0.3 → poor信号",
-    "0.3～0.6 → 非清晰",
-    "FIQA ≥ 0.6 → 清晰",
-    "",
-    "应在5点对齐脸上推理",
-], dash="9 6"))
-
-# Combination rule
-parts.append(section(35, 600, 1830, 220, "orange", "② 总体等级组合规则", "总体等级是单值；具体问题应保留为可同时存在的子标签"))
-parts.append(card(70, 670, 510, 115, "red", "poor：任一硬失败", [
-    "yaw_bad OR pitch_bad OR blur_bad OR size_bad",
-], title_size=18))
-parts.append(card(695, 670, 510, 115, "green", "clear：全部清晰", [
-    "angle_clear AND blur_clear AND NOT size_bad",
-], title_size=18))
-parts.append(card(1320, 670, 510, 115, "orange", "marginal：其余情况", [
-    "没有硬失败，但至少一个维度未达到clear",
-], title_size=18))
-
-# Categories and labels
-parts.append(section(35, 850, 1830, 360, "green", "③ 最终四类输出与子标签", "当前category只有一个值；建议defects保留所有同时存在的问题"))
-category_x = [65, 505, 945, 1385]
-category_w = 410
-parts.append(card(category_x[0], 920, category_w, 245, "green", "clear", [
-    "检测到脸",
-    "尺寸 ≥ 28像素",
-    "|yaw| ≤ 25°",
-    "|pitch| ≤ 20°",
-    "blur_var ≥ 60",
-    "若FIQA启用：FIQA ≥ 0.6",
-    "",
-    "当前动作：可建档、可匹配",
-]))
-parts.append(card(category_x[1], 920, category_w, 245, "orange", "marginal", [
-    "没有触发任何poor硬条件",
-    "但角度或清晰度未达到clear",
-    "",
-    "典型示例：",
-    "yaw=40°，其他条件正常",
-    "blur_var=35，其他条件正常",
-    "",
-    "当前动作：匹配时降权",
-]))
-parts.append(card(category_x[2], 920, category_w, 245, "red", "poor + 子标签", [
-    "任意硬条件失败即进入poor",
-    "",
-    "建议子标签可同时存在：",
-    "too_small",
-    "yaw_extreme",
-    "pitch_down / pitch_up",
-    "too_blurry / low_detection",
-    "fiqa_low（接入后）",
-]))
-parts.append(card(category_x[3], 920, category_w, 245, "gray", "none", [
-    "人脸检测结果为空",
-    "",
-    "不代表人物不存在",
-    "只表示人脸路线不可用",
-    "",
-    "人物轨迹、人形ReID、步态",
-    "和事件理解继续运行",
+# None branch
+svg.append(arrow([(960, 515), (1230, 515)], "否", (1090, 494), COLOR["red"][0]))
+svg.append(box(1230, 440, 390, 155, "gray", "none：人脸路线不可用", [
+    "不运行CR-FIQA和产品ArcFace",
+    "人物轨迹仍然保留",
+    "转人形、步态和事件理解",
 ]))
 
-# Notes
-parts.append(card(35, 1240, 890, 85, "gray", "当前实现限制", [
-    "reason只按优先级保留一个：too_small → yaw → pitch → blur，会隐藏同时存在的问题。",
-], title_size=16, row_size=13))
-parts.append(card(975, 1240, 890, 85, "teal", "连续quality_score的用途", [
-    "det_score × 正脸度 × 尺寸项 × 清晰度项；用于最佳脸选择和融合降权，不直接替代category。",
-], title_size=16, row_size=13))
-parts.append("</svg>")
+# Alignment
+svg.append(arrow([(850, 575), (850, 620)], "是", (875, 602)))
+svg.append(box(620, 620, 460, 125, "blue", "③ 五点关键点对齐", [
+    "输出同一张112×112对齐人脸",
+    "供质量分支与身份分支共用",
+]))
 
-svg_text = "".join(parts)
+# Parallel quality block
+svg.append(container(70, 800, 1560, 390, "purple", "④ 并行质量评估", "相同输入、独立计算；两条分支在质量合成前汇合"))
+svg.append(box(140, 875, 620, 245, "purple", "CR-FIQA质量分支", [
+    "112×112对齐人脸 → 独立iResNet50 CNN",
+    "→ 512维内部质量embedding → 质量回归头",
+    "→ 连续身份识别可用性分数q",
+    "质量embedding在产品中丢弃，不进入人脸库",
+]))
+svg.append(box(940, 875, 620, 245, "orange", "显式规则分支", [
+    "检测可信度：det_score    尺寸：最小边 / 面积",
+    "姿态：yaw / pitch        清晰度：拉普拉斯方差",
+    "输出：small_face / blur / extreme_pose等子标签",
+]))
+svg.append(curve_arrow(850, 745, 800, 815, 560, 825, 450, 875))
+svg.append(curve_arrow(850, 745, 900, 815, 1140, 825, 1250, 875))
+
+# Quality merge
+svg.append(box(500, 1210, 700, 190, "green", "⑤ 质量合成与动作生成", [
+    "规则硬失败或q < 0.3 → poor",
+    "规则全部清晰且q ≥ 0.6 → clear；其余 → marginal",
+    "同时输出：defects、can_enroll、can_match、can_superres",
+]))
+svg.append(curve_arrow(450, 1120, 500, 1165, 610, 1180, 700, 1210))
+svg.append(curve_arrow(1250, 1120, 1200, 1165, 1090, 1180, 1000, 1210))
+
+# Category block
+svg.append(container(70, 1450, 1560, 390, "green", "⑥ 检测到人脸后的分类结果", "none已在SCRFD失败分支结束；三类结果统一进入动作字段"))
+category_centers = [330, 850, 1370]
+svg.append(box(125, 1550, 410, 190, "green", "clear", [
+    "can_enroll=true",
+    "can_match=true",
+    "can_superres=false",
+]))
+svg.append(box(645, 1550, 410, 190, "orange", "marginal", [
+    "can_match=true，按q降低身份权重",
+    "有模糊 / 小脸标签时可超分",
+]))
+svg.append(box(1165, 1550, 410, 190, "red", "poor + defects", [
+    "模糊 / 小脸：可低权重匹配或超分",
+    "极端姿态：can_match=false",
+]))
+svg.append(curve_arrow(850, 1400, 730, 1450, 470, 1485, 330, 1550))
+svg.append(arrow([(850, 1400), (850, 1550)]))
+svg.append(curve_arrow(850, 1400, 970, 1450, 1230, 1485, 1370, 1550))
+svg.append(box(260, 1770, 1180, 80, "green", "统一动作字段", [
+    "分类结果 + defects → can_enroll / can_match / can_superres / match_weight",
+], 19, 15))
+for center in category_centers:
+    svg.append(arrow([(center, 1740), (center, 1770)]))
+
+# Match gate
+svg.append(arrow([(850, 1850), (850, 1890)]))
+svg.append(diamond(850, 1950, 240, 125, "green", ["can_match", "= true？"]))
+svg.append(arrow([(730, 1950), (410, 1950)], "否", (570, 1928), COLOR["red"][0]))
+svg.append(box(85, 1880, 325, 150, "gray", "停止人脸身份匹配", [
+    "不调用产品ArcFace / AdaFace",
+    "保留人物与事件信息",
+    "转人形 / 步态路线",
+]))
+
+# Super-resolution decision
+svg.append(arrow([(850, 2012), (850, 2050)], "是", (875, 2035)))
+svg.append(diamond(850, 2110, 270, 120, "purple", ["can_superres", "= true？"]))
+svg.append(arrow([(715, 2110), (470, 2110)], "否：使用原图", (595, 2088)))
+svg.append(box(155, 2050, 315, 125, "teal", "原始对齐人脸", [
+    "不执行超分",
+]))
+svg.append(arrow([(985, 2110), (1170, 2110)], "是", (1080, 2088), COLOR["purple"][0]))
+svg.append(box(1170, 2025, 390, 175, "purple", "可选超分与复评", [
+    "GFPGAN / CodeFormer",
+    "修复后重新计算CR-FIQA",
+    "检查身份embedding漂移",
+], dash="8 5"))
+
+# Identity merge and matching
+svg.append(connector([(312, 2175), (312, 2240), (850, 2240)]))
+svg.append(connector([(1365, 2200), (1365, 2240), (850, 2240)]))
+svg.append(junction(850, 2240, "teal"))
+svg.append(arrow([(850, 2240), (850, 2280)]))
+svg.append(box(520, 2280, 660, 130, "teal", "⑦ 产品ArcFace / AdaFace身份分支", [
+    "输出512维身份embedding → 与人脸库计算余弦相似度 → 固定阈值决定是否复用身份",
+]))
+
+svg.append(txt(
+    W / 2,
+    2475,
+    ["CR-FIQA的512维内部特征只服务质量回归；产品ArcFace / AdaFace的512维特征只服务身份匹配，两者不可混用。"],
+    15,
+    600,
+    "middle",
+    color="#444444",
+))
+
+svg.append("</svg>")
+svg_text = "".join(svg)
 SVG.write_text(svg_text, encoding="utf-8")
 cairosvg.svg2png(bytestring=svg_text.encode("utf-8"), write_to=str(PNG), output_width=W, output_height=H)
 
 
-# Simplified editable source
+# Editable Excalidraw source with centered text and vertical order.
 elements = []
 
 
-def ex_box(eid, x, y, w, h, stroke, fill, value, font=16):
+def ex_box(eid, x, y, w, h, family, value, font=17):
     tid = f"{eid}_text"
+    stroke, fill = COLOR[family]
     elements.append(
         {
             "type": "rectangle",
@@ -251,15 +282,14 @@ def ex_box(eid, x, y, w, h, stroke, fill, value, font=16):
             "boundElements": [{"type": "text", "id": tid}],
         }
     )
-    count = value.count("\n") + 1
     elements.append(
         {
             "type": "text",
             "id": tid,
-            "x": x + 12,
-            "y": y + 12,
-            "width": w - 24,
-            "height": max(h - 24, font * 2.5 * count),
+            "x": x + 10,
+            "y": y + 10,
+            "width": w - 20,
+            "height": max(h - 20, font * 2.5 * (value.count("\n") + 1)),
             "text": value,
             "fontSize": font,
             "fontFamily": 2,
@@ -271,15 +301,31 @@ def ex_box(eid, x, y, w, h, stroke, fill, value, font=16):
     )
 
 
+def ex_arrow(eid, x1, y1, x2, y2):
+    elements.append(
+        {
+            "type": "arrow",
+            "id": eid,
+            "x": x1,
+            "y": y1,
+            "width": x2 - x1,
+            "height": y2 - y1,
+            "strokeColor": "#605E5C",
+            "strokeWidth": 2,
+            "points": [[0, 0], [x2 - x1, y2 - y1]],
+        }
+    )
+
+
 elements.append(
     {
         "type": "text",
         "id": "title",
-        "x": 300,
-        "y": 30,
+        "x": 250,
+        "y": 20,
         "width": 1200,
         "height": 80,
-        "text": "当前人脸质量门控：信号、阈值、总体等级与子标签",
+        "text": "人脸质量判定与身份匹配目标架构",
         "fontSize": 30,
         "fontFamily": 2,
         "strokeColor": "#000000",
@@ -287,27 +333,32 @@ elements.append(
         "verticalAlign": "top",
     }
 )
+ex_box("input", 600, 120, 500, 100, "blue", "人物轨迹采样帧")
+ex_box("scrfd", 550, 280, 600, 130, "blue", "SCRFD检测\nbbox / 5点关键点 / det_score")
+ex_box("align", 620, 500, 460, 110, "blue", "5点对齐\n112×112人脸")
+ex_box("fiqa", 140, 760, 620, 210, "purple", "CR-FIQA质量分支\niResNet50 → 质量embedding → q")
+ex_box("rules", 940, 760, 620, 210, "orange", "规则分支\ndet / size / yaw / pitch / Laplacian / defects")
+ex_box("fusion", 500, 1080, 700, 170, "green", "质量合成\nclear / marginal / poor\n输出can_enroll / can_match / can_superres")
+ex_box("categories", 250, 1390, 1200, 180, "green", "分类结果\nclear：建档+匹配\nmarginal：降权匹配\npoor：按defects决定")
+ex_box("actions", 300, 1630, 1100, 100, "green", "统一动作字段\ncan_enroll / can_match / can_superres / match_weight")
+ex_box("gate", 600, 1810, 500, 130, "green", "can_match=true？")
+ex_box("stop", 80, 1810, 360, 130, "gray", "否：停止人脸匹配\n转人形/步态")
+ex_box("sr", 970, 2020, 460, 160, "purple", "can_superres=true\n→ 超分并重新FIQA")
+ex_box("arc", 520, 2260, 660, 140, "teal", "产品ArcFace / AdaFace\n→ 身份embedding → 查询人脸库")
 
-signal_texts = [
-    ("det", "检测可信度\n无脸→none\ndet<0.5→poor信号", "blue"),
-    ("size", "尺寸\n最小边<28→poor\ntoo_small", "orange"),
-    ("yaw", "yaw\n≤25°清晰\n25°～80°中间\n≥80° poor", "orange"),
-    ("pitch", "pitch\n≤20°清晰\n低头≤-35° poor\n抬头≥50° poor", "orange"),
-    ("lap", "拉普拉斯\n<15 poor\n15～60中间\n≥60清晰", "teal"),
-    ("fiqa", "FIQA（计划）\n<0.3 poor\n0.3～0.6中间\n≥0.6清晰", "purple"),
-]
-for idx, (eid, value, family) in enumerate(signal_texts):
-    stroke, fill = COLORS[family]
-    ex_box(eid, 50 + idx * 295, 150, 260, 250, stroke, fill, value)
-
-ex_box("poor", 120, 500, 480, 120, COLORS["red"][0], COLORS["red"][1], "poor\n任一硬失败：yaw / pitch / blur / size")
-ex_box("clear", 710, 500, 480, 120, COLORS["green"][0], COLORS["green"][1], "clear\n角度清晰 + 清晰度清晰 + 尺寸通过")
-ex_box("marginal", 1300, 500, 480, 120, COLORS["orange"][0], COLORS["orange"][1], "marginal\n没有硬失败，但至少一项未达到clear")
-
-ex_box("c1", 70, 760, 390, 260, COLORS["green"][0], COLORS["green"][1], "clear\n可建档、可匹配\n不需要超分")
-ex_box("c2", 510, 760, 390, 260, COLORS["orange"][0], COLORS["orange"][1], "marginal\n无硬失败但非全清晰\n匹配时降权")
-ex_box("c3", 950, 760, 390, 260, COLORS["red"][0], COLORS["red"][1], "poor + defects\n小脸 / 极端姿态\n模糊 / 低检测分\n标签允许同时存在")
-ex_box("c4", 1390, 760, 390, 260, COLORS["gray"][0], COLORS["gray"][1], "none\n没有检测到脸\n只关闭人脸路线\n其他模态继续")
+ex_arrow("a1", 850, 220, 850, 280)
+ex_arrow("a2", 850, 410, 850, 500)
+ex_arrow("a3", 850, 610, 450, 760)
+ex_arrow("a4", 850, 610, 1250, 760)
+ex_arrow("a5", 450, 970, 700, 1080)
+ex_arrow("a6", 1250, 970, 1000, 1080)
+ex_arrow("a7", 850, 1250, 850, 1390)
+ex_arrow("a8", 850, 1570, 850, 1630)
+ex_arrow("a9", 850, 1730, 850, 1810)
+ex_arrow("a10", 600, 1875, 440, 1875)
+ex_arrow("a11", 850, 1940, 850, 2260)
+ex_arrow("a12", 1100, 1940, 1200, 2020)
+ex_arrow("a13", 1200, 2180, 950, 2260)
 
 EXCALIDRAW.write_text(
     json.dumps(

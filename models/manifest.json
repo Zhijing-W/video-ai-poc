@@ -28,6 +28,11 @@
       "environment": "FACE_ADAFACE_WEIGHTS"
     },
     {
+      "name": "CR-FIQA 32572backbone.pth + official source",
+      "provider": "CR-FIQA",
+      "environment": "FACE_FIQA_WEIGHTS"
+    },
+    {
       "name": "SkeletonGaitPP-180000.pt",
       "provider": "OpenGait",
       "environment": "GAIT_CKPT"

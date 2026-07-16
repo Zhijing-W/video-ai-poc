@@ -63,6 +63,8 @@ spec:
           value: /models/hf
         - name: GALLERY_DIR
           value: /gallery
+        - name: OUTPUT_DIR
+          value: /results
         - name: DATA_DIR
           value: /data
         - name: YOLO_MODEL

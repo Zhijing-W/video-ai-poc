@@ -1,11 +1,11 @@
 """Event analysis application services."""
-from .event_understanding import summarize_event_windows, understand_event
-from .identity_grounding import (
+from .event_reporter import summarize_event_windows, understand_event
+from ..identity.identity_context import (
     PersonIdentity,
     build_identity_records,
     format_identity_grounding,
 )
-from .multimodal_identity_fusion import fuse_multimodal_identity
+from ..identity.identity_confidence import fuse_multimodal_identity
 
 __all__ = [
     "PersonIdentity",

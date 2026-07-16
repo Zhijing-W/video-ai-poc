@@ -1,0 +1,142 @@
+name: Deploy GPU VM
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: ACR image tag to deploy (main or a commit SHA)
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-gpu-vm
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Require the main branch
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Run this workflow from the main branch." >&2
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve image
+        id: image
+        shell: bash
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$IMAGE_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$ ]]; then
+            echo "Invalid Docker image tag: $IMAGE_TAG" >&2
+            exit 1
+          fi
+          image="${{ vars.ACR_NAME }}.azurecr.io/video-poc-gpu:${IMAGE_TAG}"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "Deploying $image"
+
+      - name: Record VM state and start it when needed
+        id: vm_state
+        shell: bash
+        run: |
+          set -euo pipefail
+          state="$(
+            az vm get-instance-view \
+              --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+              --name "${{ vars.AZURE_VM_NAME }}" \
+              --query "instanceView.statuses[?starts_with(code, 'PowerState/')].code | [0]" \
+              --output tsv
+          )"
+          if [[ -z "$state" ]]; then
+            echo "Unable to determine VM power state." >&2
+            exit 1
+          fi
+          echo "original_state=$state" >> "$GITHUB_OUTPUT"
+          echo "Original VM state: $state"
+          if [[ "$state" != "PowerState/running" ]]; then
+            az vm start \
+              --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+              --name "${{ vars.AZURE_VM_NAME }}" \
+              --output none
+          fi
+
+      - name: Deploy container and verify health
+        shell: bash
+        env:
+          DEPLOY_IMAGE: ${{ steps.image.outputs.image }}
+        run: |
+          set -euo pipefail
+          remote_script="$(mktemp)"
+          result_file="$(mktemp)"
+          trap 'rm -f "$remote_script" "$result_file"' EXIT
+
+          sed "s|__DEPLOY_IMAGE__|${DEPLOY_IMAGE}|g" \
+            infra/deploy-single-vm-container.sh > "$remote_script"
+
+          az vm run-command invoke \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --name "${{ vars.AZURE_VM_NAME }}" \
+            --command-id RunShellScript \
+            --scripts "@${remote_script}" \
+            --output json > "$result_file"
+
+          message="$(jq -r '.value[].message' "$result_file")"
+          printf '%s\n' "$message"
+          code="$(jq -r '.value[0].code' "$result_file")"
+          if [[ "$code" != "ProvisioningState/succeeded" ]]; then
+            echo "VM deployment command failed with code: $code" >&2
+            exit 1
+          fi
+          if [[ "$message" != *"DEPLOYMENT_RESULT=success"* ]]; then
+            echo "VM deployment script did not report success." >&2
+            exit 1
+          fi
+
+      - name: Restore the original VM power state
+        if: ${{ always() && steps.vm_state.outcome == 'success' }}
+        shell: bash
+        env:
+          ORIGINAL_STATE: ${{ steps.vm_state.outputs.original_state }}
+        run: |
+          set -euo pipefail
+          case "$ORIGINAL_STATE" in
+            PowerState/deallocated)
+              az vm deallocate \
+                --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+                --name "${{ vars.AZURE_VM_NAME }}" \
+                --output none
+              ;;
+            PowerState/stopped)
+              az vm stop \
+                --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+                --name "${{ vars.AZURE_VM_NAME }}" \
+                --output none
+              ;;
+            PowerState/running)
+              echo "VM was already running; leaving it running."
+              ;;
+            *)
+              echo "VM originally had state '$ORIGINAL_STATE'; leaving its current state unchanged."
+              ;;
+          esac

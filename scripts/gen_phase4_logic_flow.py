@@ -610,7 +610,7 @@ rbox(
     1435,
     1120,
     88,
-    "身份置信汇聚 fuse_multimodal_identity\n"
+    "身份置信汇聚 score_identity_confidence\n"
     "confidence=Σ(score×weight)/Σweight+agree_bonus；人脸权重=软性连续 0.5×(0.3+0.7×质量分)\n"
     "输出 fused{confidence,resolved,primary,sources}，给 LLM 解释身份可靠性",
     PURPLE,
