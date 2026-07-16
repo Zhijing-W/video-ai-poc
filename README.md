@@ -187,6 +187,7 @@ Install `requirements-dev.txt` when running the behavior-protection tests.
 - [`docs/cloud-deploy/`](docs/cloud-deploy/): cloud architecture documentation.
 
 Models and runtime data should be mounted into containers instead of baked into images.
+Runnable code under `experiment/` is included in CPU/GPU images; experiment datasets, outputs, and local papers remain excluded.
 
 ### Experiments and documentation
 
@@ -337,6 +338,7 @@ python scripts\download_models.py --include-optional-yolo
 - [`docs/AZURE_DEPLOY.md`](docs/AZURE_DEPLOY.md)：部署说明。
 
 模型和运行数据应通过云存储或 PVC 挂载，不应直接打进镜像。
+`experiment/` 下的可运行实验代码会进入 CPU/GPU 镜像；实验数据、输出和本地论文资料仍会排除。
 
 ### 实验与复现说明
 

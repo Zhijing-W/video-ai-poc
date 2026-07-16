@@ -27,13 +27,19 @@ models/
 *.pth
 *.pkl
 
-# 文档 / 脚本 / 资产（运行时不需要）
+# 文档 / 项目脚本 / 资产（运行时不需要）
 assets/
 docs/
 scripts/
-experiment/
 README.md
 *.md
+
+# 实验代码需要随镜像发布；只排除原始数据、结果与本地参考资料
+experiment/**/__pycache__/
+experiment/**/dataset/
+experiment/**/results/
+experiment/**/papers/
+experiment/**/*.pdf
 
 # git / IDE / infra 元数据（镜像不需要）
 .git/

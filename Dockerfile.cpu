@@ -31,10 +31,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-# 拷代码 + 前端资源（templates/static 缺一都会 404）
+# 拷产品代码、前端资源和可运行实验代码
 COPY app        ./app
 COPY templates  ./templates
 COPY static     ./static
+COPY experiment ./experiment
 
 # 非 root 用户
 RUN useradd -m -u 10001 appuser \
