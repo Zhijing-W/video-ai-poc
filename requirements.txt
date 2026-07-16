@@ -24,7 +24,7 @@ imageio-ffmpeg
 ultralytics
 
 # Phase 3 · Step 11 / Phase 4：多目标跟踪（MOT）。
-# 复用 ultralytics 内置 BYTETracker / BOTSORT；BoT-SORT+ReID 的外观特征复用 app/reid.py。
+# 复用 ultralytics 内置 BYTETracker / BOTSORT；BoT-SORT+ReID 的外观特征复用 app/body_reid.py。
 # 线性分配用 lap，Phase 4 起改用其维护分叉 lapx
 # （lapx 由下方 boxmot 带入，drop-in 兼容 `import lap`；不要再单独装 lap，二者会冲突覆盖）。
 
@@ -47,7 +47,7 @@ onnxruntime
 
 # Phase 4 · Step 27b：攻"人脸模糊"的进阶武器（可插拔，默认开，测试可关）。
 # gfpgan：人脸超分（识别前把糊脸拉清），首次自动下 ~330MB GFPGANv1.3 权重。
-#   注意：其依赖 basicsr 引用了新版 torchvision 已删除的 functional_tensor —— app/face.py 内置
+#   注意：其依赖 basicsr 引用了新版 torchvision 已删除的 functional_tensor —— super_resolution 模块内置
 #   运行时 monkeypatch（_patch_basicsr）兜底，无需手改 venv。
 # 3D-68 几何 cue 复用 insightface buffalo_l 自带的 1k3d68（无需额外装）。
 gfpgan

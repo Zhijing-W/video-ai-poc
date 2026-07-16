@@ -147,11 +147,13 @@ The web settings panel can override selected options for one run without permane
 ```text
 app/
 ├── main.py
-├── event_analysis_pipeline.py
+├── event_analysis_pipeline.py       # compatibility facade
+├── pipeline/                        # session, windowing, spatial/object context
+├── identity/                        # gallery, resolution, confidence, face quality
 ├── detector.py
 ├── tracker.py
 ├── body_reid.py
-├── body_gallery.py
+├── body_gallery.py                  # compatibility import
 ├── face.py
 ├── gait.py
 ├── ocr.py
@@ -159,8 +161,9 @@ app/
 ├── routers/
 └── services/
 
-static/            # Event Monitor frontend
+static/            # modular Event Monitor frontend
 templates/         # HTML entry
+tests/             # behavior and API contract tests
 scripts/           # demos, model setup, evaluation, and diagram generation
 experiment/        # experiment code, manifests, reports, and figures
 docs/              # architecture, deployment, and design documentation
@@ -171,6 +174,8 @@ data/              # documentation plus local ignored data
 ```
 
 See [`CODE_MAP.md`](CODE_MAP.md) for feature-to-file ownership.
+
+Install `requirements-dev.txt` when running the behavior-protection tests.
 
 ### Docker and Azure deployment
 
@@ -305,19 +310,23 @@ python scripts\download_models.py --include-optional-yolo
 
 ### 代码结构
 
-- `app/event_analysis_pipeline.py`：端到端事件管线。
+- `app/event_analysis_pipeline.py`：兼容入口；内部编排已拆到 `app/pipeline/`。
 - `app/detector.py`、`app/tracker.py`：检测与跟踪。
-- `app/body_reid.py`、`app/body_gallery.py`：人形身份。
-- `app/face.py`、`app/gait.py`：人脸和步态。
+- `app/body_reid.py`、`app/identity/embedding_gallery.py`：人形特征和通用向量库。
+- `app/identity/resolution.py`：轨迹缝合、跨路线合并和时间冲突拆分。
+- `app/face.py`、`app/identity/face/`、`app/gait.py`：人脸质量/识别和步态。
 - `app/ocr.py`：场景级文字。
-- `app/services/identity_grounding.py`：身份信息打包。
-- `app/services/event_understanding.py`：多帧事件 LLM。
-- `static/`、`templates/`：Event Monitor 前端。
+- `app/identity/identity_context.py`：身份信息打包。
+- `app/services/event_reporter.py`：逐窗事件报告和整段总结。
+- `static/js/event-monitor/`、`static/css/event-monitor/`：模块化 Event Monitor 前端。
+- `tests/`：分窗、身份、人脸质量、API 和输出契约测试。
 - `experiment/`：实验代码、清单、结果和图表。
 - `docs/`：架构、设计与部署文档。
 - `infra/`、`charts/`：Azure 和 Kubernetes 部署。
 
 功能与文件的完整映射见 [`CODE_MAP.md`](CODE_MAP.md)。
+
+需要运行行为保护测试时安装 `requirements-dev.txt`。
 
 ### 部署
 

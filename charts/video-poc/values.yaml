@@ -9,7 +9,7 @@ image:
 # ---------------- CPU 主服务（FastAPI + YOLO + OCR） ----------------
 webapi:
   enabled: true
-  replicaCount: 2
+  replicaCount: 1                   # tracker/gallery/settings 仍是进程内状态，默认单副本更安全
   resources:
     requests: { cpu: '500m', memory: '2Gi' }
     limits:   { cpu: '2000m', memory: '6Gi' }
@@ -17,8 +17,8 @@ webapi:
     type: ClusterIP
     port: 80
   autoscaling:
-    enabled: true
-    minReplicas: 2
+    enabled: false
+    minReplicas: 1
     maxReplicas: 10
     targetCPU: 70
   nodeSelector:
@@ -72,7 +72,7 @@ storage:
   gallery:
     share: gallery
     mountPath: /gallery
-    readOnly: false
+    readOnly: false                  # 当前代码仍使用进程内 gallery；此挂载仅预留，不代表已实现持久化
 
 # ---------------- 应用配置（透传到容器 env） ----------------
 config:

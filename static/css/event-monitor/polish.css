@@ -1,0 +1,184 @@
+/* ========================================================
+   Pro 美化包：品牌/状态、拖拽上传、空态、耗时、微交互
+   ======================================================== */
+
+/* ---------- 顶栏品牌 + 服务状态 ---------- */
+.brand { align-items: center; }
+.logo { font-size: 1.15rem; }
+.brand-text { display: flex; flex-direction: column; line-height: 1.15; }
+.brand-title { font-weight: 700; font-size: 1.02rem; color: var(--fg); }
+.brand-sub { font-weight: 400; font-size: .68rem; color: var(--muted); }
+
+.em-svc {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 14px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: .7rem;
+  color: var(--muted);
+  background: var(--panel2);
+  border: 1px solid var(--line);
+}
+.em-svc .dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--idle);
+  box-shadow: 0 0 0 0 rgba(90,138,74,.5);
+}
+.em-svc.online { color: var(--ok); border-color: rgba(90,138,74,.35); }
+.em-svc.online .dot { background: var(--ok); animation: em-pulse 2s infinite; }
+.em-svc.offline { color: var(--alert); border-color: rgba(181,72,47,.35); }
+.em-svc.offline .dot { background: var(--alert); }
+@keyframes em-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(90,138,74,.5); }
+  70% { box-shadow: 0 0 0 6px rgba(90,138,74,0); }
+  100% { box-shadow: 0 0 0 0 rgba(90,138,74,0); }
+}
+
+/* ---------- 输入面板：样片数量 / 分隔 / 拖拽区 ---------- */
+.em-label-badge {
+  font-size: .62rem;
+  color: var(--muted);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 7px;
+  margin-left: 4px;
+}
+.em-or {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  color: var(--muted);
+  font-size: .68rem;
+  margin: 12px 0;
+}
+.em-or::before, .em-or::after {
+  content: ""; flex: 1; height: 1px; background: var(--line);
+}
+.em-or span { padding: 0 10px; }
+
+.em-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 18px 12px;
+  border: 1.5px dashed var(--line);
+  border-radius: 10px;
+  background: var(--panel2);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color .15s, background .15s, transform .15s;
+}
+.em-drop:hover { border-color: var(--accent); background: var(--card); }
+.em-drop.dragover { border-color: var(--accent); background: rgba(200,112,60,.08); transform: scale(1.01); }
+.em-drop.has-file { border-style: solid; border-color: var(--ok); background: rgba(90,138,74,.06); }
+.em-drop-icon { font-size: 1.4rem; color: var(--accent); }
+.em-drop-main { font-size: .78rem; color: var(--fg); font-weight: 600; word-break: break-all; }
+.em-drop-sub { font-size: .66rem; color: var(--muted); }
+
+/* ---------- Dry-run 说明 ---------- */
+.em-dryrun { flex-wrap: wrap; align-items: baseline; }
+.em-dryrun-hint {
+  flex-basis: 100%;
+  margin-left: 22px;
+  font-size: .66rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* ---------- 主按钮 CTA 强化 ---------- */
+.em-btn-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: .92rem;
+  letter-spacing: .02em;
+  box-shadow: 0 4px 12px rgba(200,112,60,.28);
+  transition: transform .12s, box-shadow .12s, background .15s;
+}
+.em-btn-cta:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(200,112,60,.36); }
+.em-btn-cta:active { transform: translateY(0); }
+.em-btn-cta:disabled { box-shadow: none; transform: none; }
+.em-btn-ico { font-size: .8rem; }
+
+/* ---------- 耗时徽章（设置面板 + Dry-run）---------- */
+.em-cost {
+  font-size: .62rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 6px;
+  margin-left: 4px;
+  background: rgba(204,138,60,.16);
+  color: var(--warn);
+  white-space: nowrap;
+}
+.em-cost.slow { background: rgba(181,72,47,.15); color: var(--alert); }
+.em-cost.fast { background: rgba(90,138,74,.16); color: var(--ok); }
+
+/* ---------- 流程说明高亮 ---------- */
+.em-note b { color: var(--fg); }
+.em-note-opt { color: var(--accent2); font-weight: 600; }
+.em-note-hint { color: var(--muted); font-style: italic; }
+
+/* ---------- 实测各阶段耗时（demo 讲解用条形图）---------- */
+.em-timings {
+  margin: 0 0 14px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.em-timings-head { font-size: .8rem; font-weight: 700; color: var(--fg); margin-bottom: 10px; }
+.em-timings-head .tot { color: var(--muted); font-weight: 400; margin-left: 6px; font-size: .72rem; }
+.em-tbar { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
+.em-tbar-label { flex: 0 0 190px; font-size: .7rem; color: var(--fg); }
+.em-tbar-track { flex: 1; height: 12px; background: var(--panel2); border-radius: 999px; overflow: hidden; border: 1px solid var(--line); }
+.em-tbar-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .4s ease; }
+.em-tbar-val { flex: 0 0 74px; text-align: right; font-family: var(--mono); font-size: .68rem; color: var(--muted); }
+.em-tbar.top .em-tbar-fill { background: linear-gradient(90deg, var(--alert), var(--accent2)); }
+.em-tbar.top .em-tbar-label { font-weight: 700; }
+
+/* ---------- 精致空态 ---------- */
+.em-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 60px 40px;
+}
+.em-empty-icon {
+  font-size: 3rem;
+  opacity: .9;
+  filter: grayscale(.1);
+}
+.em-empty-title { font-size: 1.05rem; font-weight: 700; color: var(--fg); }
+.em-empty-sub { font-size: .82rem; color: var(--muted); line-height: 1.7; max-width: 440px; }
+.em-empty-sub b { color: var(--accent2); }
+.em-empty-tags { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 6px; }
+.em-empty-tag {
+  font-size: .72rem;
+  color: var(--fg);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 12px;
+}
+
+/* ---------- 全局微交互：focus ring / hover / 过渡 ---------- */
+.em-input, .em-btn, .em-gear, .em-tool-btn, .em-drop { transition: border-color .15s, box-shadow .15s, background .15s, color .15s; }
+.em-input:focus, .em-drop:focus-within {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(200,112,60,.15);
+}
+.em-panel { transition: box-shadow .2s; }
+.em-tool-btn:active { transform: translateY(1px); }
+.em-subcard { transition: transform .12s, box-shadow .12s; }
+.em-subcard:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+.em-window { transition: box-shadow .15s; }
+.em-window:hover { box-shadow: var(--shadow-lg); }

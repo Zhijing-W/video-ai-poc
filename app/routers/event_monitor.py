@@ -20,7 +20,7 @@ from starlette.concurrency import run_in_threadpool
 from .. import body_reid as reid_mod
 from ..core.config import ALLOWED_VIDEO_SUFFIXES, DATA_DIR, OUTPUT_DIR, settings
 from ..event_analysis_pipeline import analyze_event_stream
-from ..services.event_understanding import summarize_event_windows, understand_event
+from ..services.event_reporter import summarize_event_windows, understand_event
 
 router = APIRouter(prefix="/api/event-monitor", tags=["event-monitor"])
 

@@ -327,3 +327,7 @@ def summarize_events(events: list[dict]) -> dict:
         max_tokens=600,
     )
     return _parse_json(resp.choices[0].message.content or "{}")
+
+
+get_client = _client
+parse_json = _parse_json

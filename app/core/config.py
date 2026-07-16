@@ -137,8 +137,22 @@ class Settings:
     face_pitch_down_max: float = float(_get("FACE_PITCH_DOWN_MAX", "35"))  # 低头超此判不合格（严）
     face_pitch_up_max: float = float(_get("FACE_PITCH_UP_MAX", "50"))      # 抬头超此判不合格（宽）
     face_blur_clear_var: float = float(_get("FACE_BLUR_CLEAR_VAR", "60"))  # 拉普拉斯方差≥ 此值算清晰
-    # 模糊第②路信号：开源深度 FIQA 模型（如 OFIQ/CR-FIQA），可插拔；默认 off（本地不跑重模型）。
+    # 人脸识别可用性：CR-FIQA输出连续质量分，规则指标保留为硬门槛与具体问题标签。
+    # 官方CR-FIQA代码为CC BY-NC 4.0，商业使用前需完成许可确认。
     face_fiqa_backend: str = _get("FACE_FIQA_BACKEND", "off").strip().lower()
+    face_fiqa_root: str = _get(
+        "FACE_FIQA_ROOT",
+        str(BASE_DIR / "models" / "CR-FIQA" / "source"),
+    )
+    face_fiqa_weights: str = _get(
+        "FACE_FIQA_WEIGHTS",
+        str(BASE_DIR / "models" / "CR-FIQA" / "32572backbone.pth"),
+    )
+    face_fiqa_arch: str = _get("FACE_FIQA_ARCH", "iresnet50").strip().lower()
+    face_fiqa_device: str = _get("FACE_FIQA_DEVICE", "auto").strip().lower()
+    # CR-FIQA回归头输出不是通用概率；以下是原始分数阈值，必须用MEVID训练集与客户数据重新校准。
+    face_fiqa_poor_thresh: float = float(_get("FACE_FIQA_POOR_THRESH", "0.3"))
+    face_fiqa_clear_thresh: float = float(_get("FACE_FIQA_CLEAR_THRESH", "0.6"))
 
     # 攻"人脸模糊"的可插拔进阶武器（Phase 4 · §3.8 / Step 27b）。默认全开；测试对比时可逐个关。
     # ① 3D-68 几何 cue：打开 buffalo_l 自带的 1k3d68 landmark，用 3D 面部几何（颧骨/鼻梁/下巴

@@ -29,12 +29,31 @@
 
 ## 数据放哪（当前方案）
 
-看 `cloud-deploy-single-vm.svg` 里的挂载说明：
-- **模型权重**：Azure Blob `models/` 容器 → VM 里 blobfuse 挂 `/mnt/blob/models`（RO）
-- **数据集**：Azure Blob `datasets/` 容器 → `/mnt/blob/datasets`（RO）
-- **实验结果**：Azure Blob `results/` 容器 → `/mnt/blob/results`（RW）
-- **FAISS gallery**：VM 本地 SSD `/mnt/local/gallery`（不用 Blob，因为 blobfuse 一致性弱）
-- **Session 状态**：Docker 容器内存（重启即丢，POC OK）
+运行数据保存在 VM OS Disk，容器重建后仍然存在：
+
+| VM 目录 | 容器目录 | 内容 |
+|---|---|---|
+| `/home/azureuser/vp/models` | `/models` | 模型权重和 CR-FIQA 源码 |
+| `/home/azureuser/vp/data` | `/data` | 输入数据 |
+| `/home/azureuser/vp/gallery` | `/gallery` | FAISS gallery |
+| `/home/azureuser/vp/results` | `/results` | 实验与运行结果 |
+| `/home/azureuser/vp/apphome` | `/home/appuser` | 模型缓存和 Python 用户目录 |
+
+产品代码、HTML 和前端静态文件不再从 VM 目录绑定挂载，而是随 Docker 镜像发布，避免宿主机旧代码覆盖新镜像。
+
+## GitHub Actions 自动构建与手动部署
+
+- `.github/workflows/build-gpu-image.yml`
+  - 合并到 `main` 且运行时代码发生变化时，使用 Azure OIDC 登录。
+  - 在 ACR 云端构建 `video-poc-gpu:<commit SHA>` 和 `video-poc-gpu:main`。
+  - 构建镜像不需要启动 GPU VM。
+- `.github/workflows/deploy-gpu-vm.yml`
+  - 在 GitHub Actions 页面手动运行，可部署 `main` 或指定 commit SHA。
+  - VM 原本关闭时自动启动，部署和健康检查完成后重新 `deallocate`。
+  - VM 原本运行时部署后保持运行。
+  - 新容器启动失败时自动恢复旧容器。
+
+部署脚本使用 VM 托管身份从 ACR 拉取镜像，不依赖 SSH 端口，也不在 GitHub 或 VM 中保存 ACR 密码。`.env` 和模型权重继续保存在 VM，不进入 Git 仓库或镜像。
 
 ## 未来演进路径
 

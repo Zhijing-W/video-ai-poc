@@ -1,0 +1,50 @@
+name: Build GPU image
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - app/**
+      - templates/**
+      - static/**
+      - requirements.txt
+      - Dockerfile.gpu
+      - .dockerignore
+      - .github/workflows/build-gpu-image.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: build-gpu-image-main
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build and publish GPU image
+        shell: bash
+        run: |
+          set -euo pipefail
+          az acr build \
+            --registry "${{ vars.ACR_NAME }}" \
+            --file Dockerfile.gpu \
+            --image "video-poc-gpu:${GITHUB_SHA}" \
+            --image "video-poc-gpu:main" \
+            .
