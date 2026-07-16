@@ -49,8 +49,8 @@
   - 构建镜像不需要启动 GPU VM。
 - `.github/workflows/deploy-gpu-vm.yml`
   - 在 GitHub Actions 页面手动运行，可部署 `main` 或指定 commit SHA。
-  - VM 原本关闭时自动启动，部署和健康检查完成后重新 `deallocate`。
-  - VM 原本运行时部署后保持运行。
+  - VM 原本关闭时自动启动，部署和健康检查完成后保持运行。
+  - 实验或演示结束后手动执行 `az vm deallocate -g videopoc-rg -n videopoc-gpu-vm`。
   - 新容器启动失败时自动恢复旧容器。
 
 部署脚本使用 VM 托管身份从 ACR 拉取镜像，不依赖 SSH 端口，也不在 GitHub 或 VM 中保存 ACR 密码。`.env` 和模型权重继续保存在 VM，不进入 Git 仓库或镜像。
