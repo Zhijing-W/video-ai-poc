@@ -269,6 +269,105 @@ def calibrate_fiqa_thresholds(
     }
 
 
+def summarize_fiqa_calibration(rows: list[dict]) -> dict:
+    """即使目标precision不可达，也保存完整的FIQA识别效用诊断。"""
+    valid = sorted(
+        (
+            {
+                "pid": row.get("pid"),
+                "track": row.get("track"),
+                "source_relpath": row.get("source_relpath"),
+                "fiqa": float(row["fiqa"]),
+                "pred": row.get("pred"),
+                "confidence": float(row.get("confidence") or 0.0),
+                "usable": bool(row.get("usable")),
+            }
+            for row in rows
+            if row.get("fiqa") is not None and row.get("usable") is not None
+        ),
+        key=lambda row: row["fiqa"],
+    )
+    if not valid:
+        raise ValueError("没有可用于FIQA诊断的样本")
+
+    total = len(valid)
+    clear_frontier = []
+    poor_frontier = []
+    for threshold in sorted({row["fiqa"] for row in valid}):
+        high = [row for row in valid if row["fiqa"] >= threshold]
+        low = [row for row in valid if row["fiqa"] < threshold]
+        clear_frontier.append(
+            {
+                "threshold": round(threshold, 6),
+                "count": len(high),
+                "coverage": round(len(high) / total, 6),
+                "precision": round(
+                    sum(row["usable"] for row in high) / len(high), 6
+                ),
+            }
+        )
+        if low:
+            poor_frontier.append(
+                {
+                    "threshold": round(threshold, 6),
+                    "count": len(low),
+                    "coverage": round(len(low) / total, 6),
+                    "unusable_precision": round(
+                        sum(not row["usable"] for row in low) / len(low), 6
+                    ),
+                }
+            )
+
+    reject_curve = []
+    for reject_rate in (0.0, 0.1, 0.2, 0.3, 0.4, 0.5):
+        rejected = int(total * reject_rate)
+        kept = valid[rejected:]
+        reject_curve.append(
+            {
+                "reject_rate": reject_rate,
+                "kept": len(kept),
+                "usable_rate": round(
+                    sum(row["usable"] for row in kept) / len(kept), 6
+                ),
+                "minimum_kept_fiqa": round(kept[0]["fiqa"], 6),
+            }
+        )
+
+    bins = []
+    for index, chunk in enumerate(np.array_split(np.asarray(valid, dtype=object), 10)):
+        values = list(chunk)
+        if not values:
+            continue
+        bins.append(
+            {
+                "bin": index + 1,
+                "count": len(values),
+                "fiqa_min": round(min(row["fiqa"] for row in values), 6),
+                "fiqa_max": round(max(row["fiqa"] for row in values), 6),
+                "usable_rate": round(
+                    sum(row["usable"] for row in values) / len(values), 6
+                ),
+            }
+        )
+
+    best_clear = max(
+        clear_frontier,
+        key=lambda item: (item["precision"], item["count"]),
+    )
+    return {
+        "total_rows": total,
+        "overall_usable_rate": round(
+            sum(row["usable"] for row in valid) / total, 6
+        ),
+        "best_clear_precision": best_clear,
+        "clear_frontier": clear_frontier,
+        "poor_frontier": poor_frontier,
+        "reject_curve": reject_curve,
+        "score_deciles": bins,
+        "rows": valid,
+    }
+
+
 def _load_rgb_image(path: Path) -> Image.Image:
     with Image.open(path) as handle:
         return handle.convert("RGB")
@@ -384,13 +483,20 @@ def calibrate_manifest(args: argparse.Namespace) -> int:
             }
         )
 
-    threshold_info = calibrate_fiqa_thresholds(
-        calibration_rows,
-        poor_precision=args.poor_precision,
-        clear_precision=args.clear_precision,
-    )
+    diagnostics = summarize_fiqa_calibration(calibration_rows)
+    threshold_info = None
+    threshold_error = None
+    try:
+        threshold_info = calibrate_fiqa_thresholds(
+            calibration_rows,
+            poor_precision=args.poor_precision,
+            clear_precision=args.clear_precision,
+        )
+    except ValueError as exc:
+        threshold_error = str(exc)
+
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "kind": "fiqa_calibration",
         "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "data_root_hint": data_dir.name,
@@ -407,13 +513,22 @@ def calibrate_manifest(args: argparse.Namespace) -> int:
             "poor_precision_target": args.poor_precision,
             "clear_precision_target": args.clear_precision,
         },
-        "thresholds": {
-            "poor": threshold_info["poor"],
-            "clear": threshold_info["clear"],
-        },
+        "status": "calibrated" if threshold_info else "targets_unmet",
+        "threshold_error": threshold_error,
+        "thresholds": (
+            {
+                "poor": threshold_info["poor"],
+                "clear": threshold_info["clear"],
+            }
+            if threshold_info
+            else None
+        ),
+        "diagnostics": diagnostics,
         "stats": {
-            "total_rows": threshold_info["total_rows"],
-            "identities": threshold_info["identities"],
+            "total_rows": diagnostics["total_rows"],
+            "identities": len(
+                {row["pid"] for row in calibration_rows if row.get("pid")}
+            ),
             "eligible_identities": len(eligible_pids),
             "train_tracklets": len(tracklets),
             "valid_tracks": valid_tracks,
@@ -423,10 +538,19 @@ def calibrate_manifest(args: argparse.Namespace) -> int:
             "face_hit_thresh": float(settings.face_hit_thresh),
             "elapsed_seconds": round(time.perf_counter() - started, 2),
         },
-        "method": threshold_info["method"],
+        "method": (
+            threshold_info["method"]
+            if threshold_info
+            else (
+                "目标precision未达到；请读取diagnostics中的clear_frontier、"
+                "reject_curve与score_deciles后决定阈值或软权重策略。"
+            )
+        ),
     }
     output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"[saved] {output_path}")
+    if threshold_error:
+        print(f"[warn] {threshold_error}")
     return 0
 
 

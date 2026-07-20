@@ -138,6 +138,23 @@ def test_calibrate_fiqa_thresholds_raises_when_poor_and_clear_cannot_separate() 
         MODULE.calibrate_fiqa_thresholds(rows, poor_precision=0.60, clear_precision=0.50)
 
 
+def test_fiqa_diagnostics_are_saved_without_a_valid_90_percent_threshold() -> None:
+    rows = [
+        {"pid": "0001", "track": 1, "fiqa": 0.1, "usable": False},
+        {"pid": "0002", "track": 2, "fiqa": 0.2, "usable": True},
+        {"pid": "0003", "track": 3, "fiqa": 0.8, "usable": False},
+        {"pid": "0004", "track": 4, "fiqa": 0.9, "usable": True},
+    ]
+
+    result = MODULE.summarize_fiqa_calibration(rows)
+
+    assert result["total_rows"] == 4
+    assert result["overall_usable_rate"] == pytest.approx(0.5)
+    assert result["clear_frontier"]
+    assert result["reject_curve"][0]["kept"] == 4
+    assert len(result["rows"]) == 4
+
+
 def test_prepare_rejects_calibration_from_different_fiqa_backend(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
