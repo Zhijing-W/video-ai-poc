@@ -5,6 +5,7 @@ import argparse
 import datetime as dt
 import hashlib
 import json
+import random
 import sys
 import time
 from collections import defaultdict
@@ -88,6 +89,50 @@ def select_product_best_frame(
             best = candidate
     assert best is not None
     return best
+
+
+def select_stratified_train_tracklets(
+    tracklets: list[common.Tracklet],
+    max_identities: int,
+    tracks_per_identity: int,
+    seed: int,
+) -> list[common.Tracklet]:
+    """按身份分层，并优先覆盖不同相机和服装。"""
+    grouped = defaultdict(list)
+    for tracklet in tracklets:
+        grouped[tracklet.pid].append(tracklet)
+
+    identities = sorted(pid for pid, rows in grouped.items() if len(rows) >= 2)
+    rng = random.Random(seed)
+    rng.shuffle(identities)
+    if max_identities > 0:
+        identities = identities[:max_identities]
+
+    selected = []
+    for pid in identities:
+        remaining = list(grouped[pid])
+        random.Random(f"{seed}:{pid}").shuffle(remaining)
+        limit = len(remaining) if tracks_per_identity <= 0 else min(
+            tracks_per_identity, len(remaining)
+        )
+        chosen = []
+        used_cams = set()
+        used_outfits = set()
+        while remaining and len(chosen) < limit:
+            best = max(
+                remaining,
+                key=lambda item: (
+                    item.cam not in used_cams,
+                    item.outfit not in used_outfits,
+                ),
+            )
+            chosen.append(best)
+            used_cams.add(best.cam)
+            used_outfits.add(best.outfit)
+            remaining.remove(best)
+        if len(chosen) >= 2:
+            selected.extend(chosen)
+    return selected
 
 
 def _quality_tags(quality: dict) -> list[str]:
@@ -245,6 +290,12 @@ def calibrate_manifest(args: argparse.Namespace) -> int:
     settings.face_superres = "off"
 
     tracklets = common.load_mevid_train(data_dir)
+    tracklets = select_stratified_train_tracklets(
+        tracklets,
+        max_identities=args.max_identities,
+        tracks_per_identity=args.tracks_per_identity,
+        seed=args.seed,
+    )
     if args.max_tracklets > 0:
         tracklets = tracklets[: args.max_tracklets]
 
@@ -345,6 +396,9 @@ def calibrate_manifest(args: argparse.Namespace) -> int:
         "data_root_hint": data_dir.name,
         "calibration_config": {
             "frames_per_track": args.frames_per_track,
+            "max_identities": args.max_identities,
+            "tracks_per_identity": args.tracks_per_identity,
+            "seed": args.seed,
             "max_tracklets": args.max_tracklets,
             "face_rec_backend": settings.face_rec_backend,
             "face_superres": settings.face_superres,
@@ -896,12 +950,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--output",
         default=str(SUPERRES_DIR / "manifests" / "fiqa_calibration.json"),
     )
-    calibrate.add_argument(
-        "--frames-per-track",
-        type=int,
-        default=0,
-        help="0表示扫描整条轨迹；非0仅用于调试抽样",
-    )
+    calibrate.add_argument("--frames-per-track", type=int, default=16)
+    calibrate.add_argument("--max-identities", type=int, default=80)
+    calibrate.add_argument("--tracks-per-identity", type=int, default=8)
+    calibrate.add_argument("--seed", type=int, default=0)
     calibrate.add_argument("--poor-precision", type=float, default=0.80)
     calibrate.add_argument("--clear-precision", type=float, default=0.90)
     calibrate.add_argument("--max-tracklets", type=int, default=0, help="0表示全部；smoke可设小值")
@@ -922,12 +974,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--cache",
         default=str(common.ROOT / "data" / "generated" / "superres_gate"),
     )
-    prepare.add_argument(
-        "--frames-per-track",
-        type=int,
-        default=0,
-        help="0表示扫描整条轨迹；非0仅用于调试抽样",
-    )
+    prepare.add_argument("--frames-per-track", type=int, default=16)
     prepare.add_argument("--max-tracklets", type=int, default=0, help="0表示全部；smoke可设小值")
     prepare.set_defaults(handler=prepare_manifest)
 

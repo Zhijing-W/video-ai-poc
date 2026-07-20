@@ -73,6 +73,39 @@ def test_select_product_best_frame_scans_full_track_by_default() -> None:
     assert chosen["candidate_count"] == 9
 
 
+def test_stratified_train_selection_limits_identities_and_tracks() -> None:
+    tracklets = [
+        MODULE.common.Tracklet(
+            pid=f"{pid:04d}",
+            cam=track % 3,
+            outfit=track % 2,
+            track=track,
+            frames=[Path(f"{pid}_{track}.png")],
+        )
+        for pid in range(10)
+        for track in range(6)
+    ]
+
+    selected = MODULE.select_stratified_train_tracklets(
+        tracklets,
+        max_identities=4,
+        tracks_per_identity=3,
+        seed=7,
+    )
+
+    grouped = {}
+    for tracklet in selected:
+        grouped.setdefault(tracklet.pid, []).append(tracklet)
+    assert len(grouped) == 4
+    assert all(len(rows) == 3 for rows in grouped.values())
+    assert selected == MODULE.select_stratified_train_tracklets(
+        tracklets,
+        max_identities=4,
+        tracks_per_identity=3,
+        seed=7,
+    )
+
+
 def test_calibrate_fiqa_thresholds_picks_max_coverage_thresholds() -> None:
     rows = [
         {"pid": "0001", "fiqa": 0.10, "usable": False},
