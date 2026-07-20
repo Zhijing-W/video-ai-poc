@@ -105,6 +105,47 @@ def test_calibrate_fiqa_thresholds_raises_when_poor_and_clear_cannot_separate() 
         MODULE.calibrate_fiqa_thresholds(rows, poor_precision=0.60, clear_precision=0.50)
 
 
+def test_prepare_rejects_calibration_from_different_fiqa_backend(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.core.config import settings
+
+    calibration = tmp_path / "calibration.json"
+    calibration.write_text(
+        """
+        {
+          "kind": "fiqa_calibration",
+          "calibration_config": {
+            "face_fiqa_backend": "cr_fiqa",
+            "face_fiqa_arch": "iresnet50"
+          },
+          "thresholds": {
+            "poor": {"threshold": 0.2},
+            "clear": {"threshold": 0.8}
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(settings, "face_fiqa_backend", "off")
+    args = type(
+        "Args",
+        (),
+        {
+            "data": str(tmp_path),
+            "manifest": str(tmp_path / "manifest.json"),
+            "calibration": str(calibration),
+            "cache": str(tmp_path / "cache"),
+            "max_tracklets": 0,
+            "frames_per_track": 0,
+        },
+    )()
+
+    with pytest.raises(ValueError, match="FIQA后端与Train校准不一致"):
+        MODULE.prepare_manifest(args)
+
+
 def test_evaluate_no_longer_uses_track_aggregation_helpers() -> None:
     assert not hasattr(MODULE, "_aggregate_track")
     assert not hasattr(MODULE, "_best_quality")

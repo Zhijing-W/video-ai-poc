@@ -349,6 +349,7 @@ def calibrate_manifest(args: argparse.Namespace) -> int:
             "face_rec_backend": settings.face_rec_backend,
             "face_superres": settings.face_superres,
             "face_fiqa_backend": settings.face_fiqa_backend,
+            "face_fiqa_arch": settings.face_fiqa_arch,
             "poor_precision_target": args.poor_precision,
             "clear_precision_target": args.clear_precision,
         },
@@ -391,6 +392,27 @@ def prepare_manifest(args: argparse.Namespace) -> int:
     if not calibration_path.is_file():
         raise FileNotFoundError(f"校准文件不存在：{calibration_path}")
     calibration_payload = json.loads(calibration_path.read_text(encoding="utf-8"))
+    if calibration_payload.get("kind") != "fiqa_calibration":
+        raise ValueError("校准文件类型非法：必须是fiqa_calibration")
+    calibration_config = calibration_payload.get("calibration_config") or {}
+    calibrated_backend = str(
+        calibration_config.get("face_fiqa_backend") or ""
+    ).strip().lower()
+    runtime_backend = str(settings.face_fiqa_backend or "").strip().lower()
+    if calibrated_backend in {"", "off", "none"}:
+        raise ValueError("校准文件没有记录已启用的FIQA后端")
+    if runtime_backend != calibrated_backend:
+        raise ValueError(
+            "FIQA后端与Train校准不一致："
+            f"calibration={calibrated_backend}, runtime={runtime_backend}"
+        )
+    calibrated_arch = str(calibration_config.get("face_fiqa_arch") or "").strip().lower()
+    runtime_arch = str(settings.face_fiqa_arch or "").strip().lower()
+    if calibrated_arch and runtime_arch != calibrated_arch:
+        raise ValueError(
+            "FIQA网络结构与Train校准不一致："
+            f"calibration={calibrated_arch}, runtime={runtime_arch}"
+        )
     poor_threshold = float(calibration_payload["thresholds"]["poor"]["threshold"])
     clear_threshold = float(calibration_payload["thresholds"]["clear"]["threshold"])
     if not poor_threshold < clear_threshold:
