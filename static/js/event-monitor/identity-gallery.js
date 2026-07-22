@@ -6,11 +6,14 @@ export function routeBadges(record) {
   const fused = record.fused || null;
   const badges = [];
 
-  if (face) {
+  if (face && face.observed !== false && face.eligibility !== "none") {
     const quality = face.quality || "?";
-    const good = face.matched || quality === "clear";
+    const eligibility = face.eligibility || "?";
+    const source = face.match_source || "none";
+    const frame = face.evidence && face.evidence.frame_index != null ? ` · frame ${face.evidence.frame_index}` : "";
+    const good = face.matched || face.match_ready;
     badges.push(
-      `<span class="em-rb ${good ? "hit" : "weak"}" title="人脸 · 质量${esc(quality)}${face.match_score != null ? ` · 相似${(+face.match_score).toFixed(2)}` : ""}">脸</span>`
+      `<span class="em-rb ${good ? "hit" : "weak"}" title="人脸 · ${esc(eligibility)} · 质量${esc(quality)} · 来源${esc(source)}${frame}${face.match_score != null ? ` · 相似${(+face.match_score).toFixed(2)}` : ""}">脸</span>`
     );
   } else {
     badges.push('<span class="em-rb off" title="无脸 → 退人形/步态">脸</span>');
@@ -35,9 +38,10 @@ export function routeBadges(record) {
     const level = fused.resolved ? "hit" : "weak";
     const primaryCn = { face: "脸", body: "形", gait: "步" }[fused.primary] || "—";
     const multiSource = fused.multi_source ?? fused.agreed;
+    const agreed = fused.agreed === true;
     confidence =
-      `<span class="em-conf ${level}" title="多路线身份置信 · 主导线索 ${esc(primaryCn)}${multiSource ? " · 多路线参与" : ""}">` +
-      `置信 ${(fused.confidence * 100).toFixed(0)}%${multiSource ? " ✓" : ""}</span>`;
+      `<span class="em-conf ${level}" title="多路线身份置信 · 主导线索 ${esc(primaryCn)}${multiSource ? " · 多路线参与" : ""}${agreed ? " · canonical一致" : ""}">` +
+      `置信 ${(fused.confidence * 100).toFixed(0)}%${agreed ? " ✓" : ""}</span>`;
   }
 
   return `<span class="em-routes">${badges.join("")}${confidence}</span>`;

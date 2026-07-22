@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from functools import wraps
 from pathlib import Path
 
 import numpy as np
@@ -40,6 +41,24 @@ def _gfpgan_weights_path() -> str:
 
     return load_file_from_url(url=url, model_dir=str(cache_dir), progress=True)
 
+
+def _make_gfpgan_deterministic(restorer):
+    """关闭StyleGAN随机噪声，保证同一张脸每次修复结果一致。"""
+    generator = restorer.gfpgan
+    if getattr(generator, "_deterministic_noise", False):
+        return restorer
+    original_forward = generator.forward
+
+    @wraps(original_forward)
+    def deterministic_forward(*args, **kwargs):
+        kwargs["randomize_noise"] = False
+        return original_forward(*args, **kwargs)
+
+    generator.forward = deterministic_forward
+    generator._deterministic_noise = True
+    return restorer
+
+
 def _ensure_superres():
     """懒加载 GFP-GAN 人脸增强器（首次会下权重）。失败记录 error 并降级为 no-op。"""
     if _sr_state["ready"] or _sr_state["error"] is not None:
@@ -52,9 +71,9 @@ def _ensure_superres():
             from gfpgan import GFPGANer
 
             weights = _gfpgan_weights_path()
-            _sr_state["model"] = GFPGANer(
+            _sr_state["model"] = _make_gfpgan_deterministic(GFPGANer(
                 model_path=weights, upscale=2, arch="clean", channel_multiplier=2, bg_upsampler=None
-            )
+            ))
             _sr_state["ready"] = True
         except Exception as exc:  # noqa: BLE001
             _sr_state["error"] = f"{type(exc).__name__}: {exc}"

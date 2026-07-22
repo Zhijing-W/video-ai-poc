@@ -26,6 +26,7 @@ from .identity.face.adaface import embed as _adaface_embed
 from .identity.face.adaface import load_error as _adaface_error
 from .identity.face.quality import assess_quality as _assess_quality_impl
 from .identity.face.quality import deep_fiqa_score as _deep_fiqa_score
+from .identity.face.quality import superres_quality_ok as _superres_quality_ok
 from .identity.face.super_resolution import _ensure_superres as _ensure_superres_impl
 from .identity.face.super_resolution import enhance as _enhance_impl
 from .identity.face.super_resolution import superres_error as _superres_error_impl
@@ -256,43 +257,86 @@ def detect(
         if with_geometry:
             _attach_optional_geometry(app, bgr, item)
 
-        # 武器②：直接消费统一质量评估的can_superres，不再重复维护另一套角度/模糊门控。
-        enhanced_aligned_bgr = None
-        if use_sr and quality.get("can_superres"):
-            x1, y1, x2, y2 = [int(v) for v in item["bbox"]]
-            x1, y1 = max(0, x1), max(0, y1)
-            x2, y2 = min(bgr.shape[1], x2), min(bgr.shape[0], y2)
-            big_enough = min(x2 - x1, y2 - y1) >= 8 and aligned_bgr is not None
-            if big_enough:
-                item["superres_attempted"] = True
-                aligned_rgb = Image.fromarray(aligned_bgr[:, :, ::-1])
-                enh = enhance(aligned_rgb, aligned=True)
-                if enh is not None and enh is not aligned_rgb:
-                    enhanced_aligned_bgr = np.asarray(enh.convert("RGB"))[:, :, ::-1].copy()
-                    fiqa_after = _deep_fiqa_score(enhanced_aligned_bgr)
-                    if fiqa_after is not None:
-                        quality["fiqa_after_superres"] = round(fiqa_after, 3)
-                        before = quality.get("fiqa")
-                        if before is not None:
-                            quality["fiqa_delta_superres"] = round(fiqa_after - float(before), 3)
-                    item["enhanced"] = True
-
-        # 质量分类完成后才调用身份模型。CR-FIQA与产品ArcFace/AdaFace的embedding互不混用。
-        identity_input = enhanced_aligned_bgr if enhanced_aligned_bgr is not None else aligned_bgr
-        if with_identity and quality.get("can_match") and identity_input is not None:
-            try:
-                identity_embedding = embed_aligned_face(identity_input, settings.face_rec_backend)
-                if identity_embedding is not None:
-                    item["embedding"] = identity_embedding
-                    item["rec_backend"] = settings.face_rec_backend
-            except Exception as exc:
-                item["identity_error"] = f"{type(exc).__name__}: {exc}"
+        _attach_identity(item, aligned_bgr, quality, use_sr=use_sr, with_identity=with_identity)
 
         item.pop("_kps_array", None)
         if with_quality:
             item["quality"] = quality
         out.append(item)
     return out
+
+
+def _attach_identity(
+    item: dict,
+    aligned_bgr: np.ndarray | None,
+    quality: dict,
+    *,
+    use_sr: bool,
+    with_identity: bool,
+) -> None:
+    """Finalize one frozen face candidate without rerunning detection."""
+    from PIL import Image
+
+    eligibility = quality.get("eligibility", "direct" if quality.get("can_match") else "unusable")
+    identity_input = aligned_bgr if eligibility == "direct" else None
+    match_source = "original" if identity_input is not None else "none"
+    quality["enhanced"] = False
+
+    if use_sr and eligibility == "recoverable" and aligned_bgr is not None:
+        item["superres_attempted"] = True
+        aligned_rgb = Image.fromarray(aligned_bgr[:, :, ::-1])
+        enhanced = enhance(aligned_rgb, aligned=True)
+        if enhanced is not None and enhanced is not aligned_rgb:
+            restored_bgr = np.asarray(enhanced.convert("RGB"))[:, :, ::-1].copy()
+            fiqa_after = _deep_fiqa_score(restored_bgr)
+            if fiqa_after is not None:
+                quality["fiqa_after_superres"] = round(fiqa_after, 3)
+                before = quality.get("fiqa")
+                if before is not None:
+                    quality["fiqa_delta_superres"] = round(fiqa_after - float(before), 3)
+            restored_ok, restored_reason = _superres_quality_ok(fiqa_after)
+            if restored_ok:
+                identity_input = restored_bgr
+                match_source = "superres"
+                item["enhanced"] = True
+                quality["enhanced"] = True
+            else:
+                item["superres_rejected"] = restored_reason
+
+    item["match_source"] = match_source
+    item["match_ready"] = False
+    if not with_identity or identity_input is None:
+        return
+    try:
+        identity_embedding = embed_aligned_face(identity_input, settings.face_rec_backend)
+        if identity_embedding is not None:
+            item["embedding"] = identity_embedding
+            item["rec_backend"] = settings.face_rec_backend
+            item["match_ready"] = True
+    except Exception as exc:
+        item["identity_error"] = f"{type(exc).__name__}: {exc}"
+
+
+def finalize_identity(image, face: dict, enhance_blurry: bool | None = None) -> dict:
+    """Embed one previously detected face candidate without rerunning SCRFD."""
+    _ensure_backend()
+    bgr = _to_bgr(image)
+    item = dict(face)
+    kps = item.get("kps")
+    aligned_bgr = _align_face(
+        bgr,
+        np.asarray(kps, dtype=np.float32) if kps is not None else None,
+    )
+    quality = dict(item.get("quality") or assess_quality(item, bgr, aligned_bgr=aligned_bgr))
+    use_sr = (
+        settings.face_superres not in {"off", "none", ""}
+        if enhance_blurry is None
+        else enhance_blurry
+    )
+    _attach_identity(item, aligned_bgr, quality, use_sr=use_sr, with_identity=True)
+    item["quality"] = quality
+    item.pop("_kps_array", None)
+    return item
 
 
 def geometry_descriptor(landmarks_3d: np.ndarray) -> np.ndarray | None:
@@ -391,16 +435,46 @@ def associate_to_persons(faces: list[dict], person_dets: list[dict]) -> dict[int
         {track_id: face}，每个 track 取被包含度最高的那张脸（> 阈值才算）。
     """
     persons = [d for d in person_dets if d.get("label", "person") == "person" and d.get("track_id") is not None]
-    result: dict[int, dict] = {}
-    best_score: dict[int, float] = {}
-    for face in faces:
+    pairs: list[tuple[float, int, int]] = []
+    ambiguous_faces: set[int] = set()
+    for face_index, face in enumerate(faces):
         fb = face["bbox"]
-        for p in persons:
+        face_cx = (float(fb[0]) + float(fb[2])) / 2.0
+        face_cy = (float(fb[1]) + float(fb[3])) / 2.0
+        face_pairs = []
+        for person_index, p in enumerate(persons):
             tid = int(p["track_id"])
+            px1, py1, px2, py2 = [float(value) for value in p["box"][:4]]
+            person_h = max(1e-6, py2 - py1)
+            head_y_ratio = (face_cy - py1) / person_h
             score = _iou_contain(fb, p["box"])
-            if score >= settings.face_assoc_min_contain and score > best_score.get(tid, 0.0):
-                best_score[tid] = score
-                result[tid] = face
+            if not (px1 <= face_cx <= px2):
+                continue
+            if head_y_ratio < -0.05 or head_y_ratio > settings.face_assoc_max_head_y_ratio:
+                continue
+            if score >= settings.face_assoc_min_contain:
+                face_pairs.append((score, face_index, person_index, tid))
+        face_pairs.sort(reverse=True)
+        if len(face_pairs) > 1:
+            margin = face_pairs[0][0] - face_pairs[1][0]
+            if margin < settings.face_assoc_ambiguity_margin:
+                ambiguous_faces.add(face_index)
+                continue
+        pairs.extend((score, fidx, pidx) for score, fidx, pidx, _ in face_pairs)
+
+    result: dict[int, dict] = {}
+    used_faces: set[int] = set()
+    used_persons: set[int] = set()
+    for score, face_index, person_index in sorted(pairs, reverse=True):
+        if face_index in ambiguous_faces or face_index in used_faces or person_index in used_persons:
+            continue
+        person = persons[person_index]
+        tid = int(person["track_id"])
+        associated = dict(faces[face_index])
+        associated["association_score"] = round(float(score), 4)
+        result[tid] = associated
+        used_faces.add(face_index)
+        used_persons.add(person_index)
     return result
 
 
@@ -435,6 +509,7 @@ __all__ = [
     "associate_to_persons",
     "best_face",
     "detect",
+    "finalize_identity",
     "embed_aligned_face",
     "enhance",
     "fuse_embeddings",

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
+from PIL import Image
 
 from app import face
 from app.identity.face import quality as face_quality
@@ -198,3 +200,125 @@ def test_face_detect_can_freeze_quality_without_identity(monkeypatch) -> None:
 
     assert result[0]["quality"]["category"] == "clear"
     assert "embedding" not in result[0]
+
+
+def test_recoverable_face_requires_successful_superres_before_embedding(monkeypatch) -> None:
+    _prepare_detect_test(monkeypatch)
+    monkeypatch.setattr(
+        face,
+        "assess_quality",
+        lambda *args, **kwargs: {
+            "category": "poor",
+            "eligibility": "recoverable",
+            "can_enroll": False,
+            "can_match": False,
+            "can_superres": True,
+            "fiqa": None,
+        },
+    )
+    calls = []
+    monkeypatch.setattr(
+        face,
+        "enhance",
+        lambda image, aligned=False: Image.fromarray(
+            np.full((112, 112, 3), 180, dtype=np.uint8)
+        ),
+    )
+    monkeypatch.setattr(face, "_deep_fiqa_score", lambda aligned: None)
+    monkeypatch.setattr(
+        face,
+        "embed_aligned_face",
+        lambda aligned, backend: calls.append(backend) or np.ones(512, dtype=np.float32),
+    )
+
+    restored = face.detect(np.zeros((120, 120, 3), dtype=np.uint8), enhance_blurry=True)
+    blocked = face.detect(np.zeros((120, 120, 3), dtype=np.uint8), enhance_blurry=False)
+
+    assert restored[0]["match_ready"] is True
+    assert restored[0]["match_source"] == "superres"
+    assert restored[0]["quality"]["enhanced"] is True
+    assert blocked[0]["match_ready"] is False
+    assert blocked[0]["match_source"] == "none"
+    assert len(calls) == 1
+
+
+def _quality_payload(short_side: float) -> dict:
+    return {
+        "bbox": [10.0, 10.0, 10.0 + short_side, 10.0 + short_side * 1.2],
+        "det_score": 0.95,
+        "kps": [
+            [10.2 * 1 + short_side * 0.25, 10 + short_side * 0.35],
+            [10 + short_side * 0.75, 10 + short_side * 0.35],
+            [10 + short_side * 0.50, 10 + short_side * 0.52],
+            [10 + short_side * 0.32, 10 + short_side * 0.78],
+            [10 + short_side * 0.68, 10 + short_side * 0.78],
+        ],
+    }
+
+
+def test_tiny_six_by_eight_face_is_unusable(monkeypatch) -> None:
+    monkeypatch.setattr(face_quality, "_blur_var", lambda *args: 100.0)
+    monkeypatch.setattr(face_quality, "_deep_fiqa_score", lambda *args: None)
+
+    result = face_quality.assess_quality(
+        {
+            "bbox": [10.0, 10.0, 15.9, 17.5],
+            "det_score": 0.504,
+            "kps": [[11, 12], [14, 12], [12.5, 13], [11.5, 15], [13.5, 15]],
+        },
+        bgr=np.zeros((32, 32, 3), dtype=np.uint8),
+    )
+
+    assert result["eligibility"] == "unusable"
+    assert result["can_match"] is False
+    assert result["can_superres"] is False
+
+
+@pytest.mark.parametrize(
+    ("short_side", "eligibility", "can_match", "can_superres"),
+    [
+        (19, "unusable", False, False),
+        (20, "recoverable", False, True),
+        (27, "recoverable", False, True),
+        (28, "direct", True, False),
+    ],
+)
+def test_face_size_state_boundaries(
+    monkeypatch,
+    short_side,
+    eligibility,
+    can_match,
+    can_superres,
+) -> None:
+    monkeypatch.setattr(face_quality, "_blur_var", lambda *args: 100.0)
+    monkeypatch.setattr(face_quality, "_deep_fiqa_score", lambda *args: None)
+
+    result = face_quality.assess_quality(
+        _quality_payload(short_side),
+        bgr=np.zeros((128, 128, 3), dtype=np.uint8),
+    )
+
+    assert result["eligibility"] == eligibility
+    assert result["can_match"] is can_match
+    assert result["can_superres"] is can_superres
+
+
+def test_face_gallery_gate_rejects_restored_and_accepts_direct_clear() -> None:
+    assert face_quality.face_gallery_quality_ok(
+        {
+            "category": "clear",
+            "eligibility": "direct",
+            "can_enroll": True,
+            "enhanced": False,
+        }
+    ) == (True, None)
+    accepted, reason = face_quality.face_gallery_quality_ok(
+        {
+            "category": "clear",
+            "eligibility": "recoverable",
+            "can_enroll": False,
+            "enhanced": True,
+        }
+    )
+    assert accepted is False
+    assert reason == "restored_face_not_enrollable"

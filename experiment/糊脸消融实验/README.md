@@ -23,7 +23,9 @@ Market-1501、ChokePoint以及早期B/B2结果仅作为历史记录。
 │  └─ legacy_market/               # Market/ChokePoint旧结果
 ├─ dataset/                        # 旧实验人工分桶样例
 └─ 超分实验/
-   └─ 实验设计.md
+   ├─ 实验设计.md
+   └─ scripts/
+      └─ run_checkin_superres_abc.py # actor check-in固定Gallery schema-v3 A/B/C
 ```
 
 ## 正式结果
@@ -47,3 +49,9 @@ python .\experiment\糊脸消融实验\scripts\plot_paper_results.py
 results/paper_figures/
 ```
 
+## Check-in 超分实验
+
+正式协议见 `超分实验/实验设计.md`。`run_checkin_superres_abc.py prepare` 冻结
+check-in 正脸 Gallery 与全部官方 Query；`evaluate` 计算 A/B 一次并从缓存派生 C，
+同时输出压缩 embedding、全量比较图和 image manifest。旧
+`run_superres_gate.py` 仅保留作历史诊断，不代表当前正式协议。

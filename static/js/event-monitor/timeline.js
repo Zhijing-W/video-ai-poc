@@ -100,7 +100,12 @@ function renderWindow(windowData) {
       const avatar = thumb ? `<img class="em-pavatar" src="${thumb}" loading="lazy"/>` : "";
       const cues = [];
       if (person.reid && person.reid.score != null) cues.push(`人形ReID ${(+person.reid.score).toFixed(2)}`);
-      cues.push(person.face ? "有脸" : "无脸→人形为准");
+      const faceUsable =
+        person.face &&
+        person.face.observed !== false &&
+        person.face.eligibility !== "none" &&
+        person.face.match_ready;
+      cues.push(faceUsable ? `人脸${person.face.match_source === "superres" ? "超分恢复" : "可用"}` : "无可用脸→人形为准");
       if (person.reused) cues.push("♻回头客");
       if (person.local_subject) cues.push("本视频本地subject");
       if (person.subject_conflict_split) cues.push("时间冲突已拆分");

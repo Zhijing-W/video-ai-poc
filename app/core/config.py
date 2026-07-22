@@ -125,6 +125,8 @@ class Settings:
     face_min_blur_var: float = float(_get("FACE_MIN_BLUR_VAR", "15.0"))    # 清晰度下限（拉普拉斯方差）
     face_ref_area: int = int(_get("FACE_REF_AREA", "10000"))     # 面积归一化基准（约 100×100）
     face_assoc_min_contain: float = float(_get("FACE_ASSOC_MIN_CONTAIN", "0.6"))  # 人脸被人体框包含度阈值
+    face_assoc_max_head_y_ratio: float = float(_get("FACE_ASSOC_MAX_HEAD_Y_RATIO", "0.48"))
+    face_assoc_ambiguity_margin: float = float(_get("FACE_ASSOC_AMBIGUITY_MARGIN", "0.08"))
     # 人脸库比对阈值（ArcFace 余弦分布与人形 OSNet 不同，单独配）：≥hit 认人，<new 判新主体。
     face_hit_thresh: float = float(_get("FACE_HIT_THRESH", "0.45"))   # 同人 ArcFace 余弦通常 >0.4
     face_new_thresh: float = float(_get("FACE_NEW_THRESH", "0.30"))   # 陌生人通常 <0.3
@@ -160,7 +162,14 @@ class Settings:
     face_3d_cue: bool = _get("FACE_3D_CUE", "true").strip().lower() in {"1", "true", "yes", "on"}
     # ② 人脸超分：识别前把糊脸拉清作预处理（GFP-GAN / CodeFormer）。off/gfpgan/codeformer。
     face_superres: str = _get("FACE_SUPERRES", "gfpgan").strip().lower()
-    face_superres_min_size: int = int(_get("FACE_SUPERRES_MIN_SIZE", "90"))  # 小于此边长才超分（省算力）
+    face_recoverable_min_size: int = int(_get("FACE_RECOVERABLE_MIN_SIZE", "20"))
+    face_superres_max_size: int = int(
+        _get("FACE_SUPERRES_MAX_SIZE", _get("FACE_SUPERRES_MIN_SIZE", "90"))
+    )
+    face_superres_min_size: int = face_superres_max_size  # deprecated compatibility alias
+    face_candidate_top_k: int = int(_get("FACE_CANDIDATE_TOP_K", "3"))
+    face_candidate_min_gap_frames: int = int(_get("FACE_CANDIDATE_MIN_GAP_FRAMES", "2"))
+    face_track_consistency_thresh: float = float(_get("FACE_TRACK_CONSISTENCY_THRESH", "0.82"))
     face_gfpgan_weights: str = _get("FACE_GFPGAN_WEIGHTS", "")               # 留空自动下载/默认路径
     # ③ AdaFace：质量自适应人脸识别后端（低清脸更强）。arcface / adaface（默认 adaface，最强）。
     face_rec_backend: str = _get("FACE_REC_BACKEND", "adaface").strip().lower()
@@ -264,6 +273,21 @@ class Settings:
     )
     object_min_conf: float = float(_get("OBJECT_MIN_CONF", "0.35"))  # 低于此检测分的物体不计入
     object_min_frames: int = int(_get("OBJECT_MIN_FRAMES", "2"))  # 窗内出现帧数 < 此值的物体丢弃（抗 1 帧误检/ID 跳变）
+
+    def __post_init__(self) -> None:
+        if not (
+            0 < self.face_recoverable_min_size
+            <= self.face_min_size
+            <= self.face_superres_max_size
+        ):
+            raise ValueError(
+                "人脸尺寸配置必须满足 0 < FACE_RECOVERABLE_MIN_SIZE "
+                "<= FACE_MIN_SIZE <= FACE_SUPERRES_MAX_SIZE"
+            )
+        if self.face_candidate_top_k < 1:
+            raise ValueError("FACE_CANDIDATE_TOP_K 必须至少为 1")
+        if self.face_candidate_min_gap_frames < 1:
+            raise ValueError("FACE_CANDIDATE_MIN_GAP_FRAMES 必须至少为 1")
 
     def object_class_set(self) -> set[str]:
         return {c.strip() for c in self.object_classes.split(",") if c.strip()}

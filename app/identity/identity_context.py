@@ -57,6 +57,7 @@ class PersonIdentity:
     face: dict | None = None
     gait: dict | None = None
     fused: dict | None = None
+    evidence: dict | None = None
     color: str | None = None
     attributes: list[str] = field(default_factory=list)
 
@@ -74,6 +75,7 @@ class PersonIdentity:
             face=d.get("face"),
             gait=d.get("gait"),
             fused=d.get("fused"),
+            evidence=d.get("evidence"),
             color=d.get("color"),
             attributes=list(d.get("attributes") or []),
         )
@@ -125,6 +127,18 @@ class PersonIdentity:
         band = confidence_band(conf)
         return f"融合身份·{band}({conf}){agree}" + (f"·来源:{srcs}" if srcs else "")
 
+    def _evidence_text(self) -> str:
+        if not self.evidence:
+            return ""
+        body = self.evidence.get("body") or {}
+        face = self.evidence.get("face") or {}
+        parts = []
+        if body.get("frame_index") is not None:
+            parts.append(f"人形证据frame#{body['frame_index']}@{body.get('timestamp')}")
+        if face.get("frame_index") is not None:
+            parts.append(f"人脸证据frame#{face['frame_index']}@{face.get('timestamp')}")
+        return "；".join(parts)
+
     def to_line(self, idx: int) -> str:
         """格式化成 prompt 里的一行（仿 _format_detections 的 grounding 风格）。"""
         box_str = ", ".join(str(round(v, 1)) for v in self.box)
@@ -139,6 +153,9 @@ class PersonIdentity:
         cues = self._cues_text()
         if cues:
             extra.append(cues)
+        evidence = self._evidence_text()
+        if evidence:
+            extra.append(evidence)
         if self.color:
             extra.append(f"主色:{self.color}")
         if self.attributes:
@@ -158,6 +175,7 @@ class PersonIdentity:
             "reid": self.reid,
             "face": self.face,
             "gait": self.gait,
+            "evidence": self.evidence,
             "color": self.color,
             "attributes": self.attributes,
         }

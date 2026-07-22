@@ -85,10 +85,48 @@ def test_split_subject_time_conflicts_breaks_overlapping_tracks() -> None:
 
 def test_merge_tracks_cross_route_records_agreement_across_body_face_gait() -> None:
     identities = {
-        1: {"subject_id": 7, "decision": "hit", "face": {"matched": True, "quality": "clear", "face_subject_id": 100}},
-        2: {"subject_id": None, "decision": None, "face": {"matched": True, "quality": "clear", "face_subject_id": 100}},
-        3: {"subject_id": 7, "decision": "hit", "gait": {"decision": "hit", "subject_id": 55}},
-        4: {"subject_id": None, "decision": None, "gait": {"decision": "hit", "subject_id": 55}},
+        1: {
+            "subject_id": 7,
+            "decision": "hit",
+            "route_subject": {"route": "body", "local_subject_id": 7},
+            "face": {
+                "matched": True,
+                "match_ready": True,
+                "quality": "clear",
+                "eligibility": "direct",
+                "track_consistency_status": "same_frame",
+                "route_subject": {"route": "face", "local_subject_id": 100},
+            },
+        },
+        2: {
+            "subject_id": None,
+            "decision": None,
+            "face": {
+                "matched": True,
+                "match_ready": True,
+                "quality": "clear",
+                "eligibility": "direct",
+                "track_consistency_status": "passed",
+                "route_subject": {"route": "face", "local_subject_id": 100},
+            },
+        },
+        3: {
+            "subject_id": 7,
+            "decision": "hit",
+            "route_subject": {"route": "body", "local_subject_id": 7},
+            "gait": {
+                "decision": "hit",
+                "route_subject": {"route": "gait", "local_subject_id": 55},
+            },
+        },
+        4: {
+            "subject_id": None,
+            "decision": None,
+            "gait": {
+                "decision": "hit",
+                "route_subject": {"route": "gait", "local_subject_id": 55},
+            },
+        },
     }
 
     merge_tracks_cross_route(identities)
@@ -97,6 +135,7 @@ def test_merge_tracks_cross_route_records_agreement_across_body_face_gait() -> N
         assert identities[tid]["subject_id"] == 7
         assert identities[tid]["merge_agree"] == 3
         assert identities[tid]["merge_routes"] == ["body", "face", "gait"]
+        assert set(identities[tid]["route_subject_ids"]) <= {"body", "face", "gait"}
     assert identities[2]["decision"] == "merged"
     assert identities[4]["decision"] == "merged"
 
