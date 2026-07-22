@@ -25,6 +25,7 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass, field
+from typing import Callable
 
 import numpy as np
 
@@ -254,6 +255,8 @@ class SessionGallery:
         top_k: int | None = None,
         hit_thresh: float | None = None,
         new_thresh: float | None = None,
+        quality_gate: Callable[[dict | None], tuple[bool, str | None]] | None = None,
+        low_quality_hit_thresh: float | None = None,
     ) -> dict:
         """查库 + 按裁决处理（开放集登记的主路径，供 /identify 用）。
 
@@ -267,13 +270,18 @@ class SessionGallery:
         v = candidates["vector"]
         res = self.decide_identity(candidates, hit_thresh=hit_thresh, new_thresh=new_thresh)
         decision = res["decision"]
-        accept, why = quality_ok(quality)
+        accept, why = (quality_gate or quality_ok)(quality)
         res["quality_ok"] = accept
         res["quality_reason"] = why
         now = time.time()
 
         if decision == "hit":
-            if not accept and float(res.get("score") or 0.0) < settings.reid_low_quality_hit_thresh:
+            low_quality_threshold = (
+                settings.reid_low_quality_hit_thresh
+                if low_quality_hit_thresh is None
+                else low_quality_hit_thresh
+            )
+            if not accept and float(res.get("score") or 0.0) < low_quality_threshold:
                 # 低质远景/遮挡 crop 的 OSNet 相似度容易虚高；不允许用普通 hit 阈值复用长期主体。
                 res["decision"] = "grey"
                 res["subject_id"] = None

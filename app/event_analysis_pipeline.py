@@ -37,6 +37,13 @@ from . import body_reid as reid_mod
 from . import tracker as tracker_mod
 from .core.config import settings
 from .identity import embedding_gallery as gallery_mod
+from .identity.evidence_selection import (
+    body_quality_score,
+    ensure_body_fallback,
+    face_candidate_proxy,
+    public_evidence,
+    update_face_candidates,
+)
 from .identity.face_attachment import attach_faces
 from .identity.identity_confidence import score_identity_confidence
 from .identity.identity_context import format_identity_grounding
@@ -235,8 +242,7 @@ def _finish_session(
     quiet_frames = max(1, int(round(quiet_seconds * fps)))
     img_w = img_h = 0
 
-    # track_id -> {"first": i, "last": i, "best_q": q, "best_crop": PIL, "best_idx": i,
-    #              "best_box": box, "centers": [(i,(cx,cy))], "boxes": {i: box}}
+    # best_* 保留为 body_best 的兼容别名；face_best 由独立候选集稀疏选择。
     tracks: dict[int, dict] = {}
     # 物体轨迹（LANE D）：非 person 目标的跨帧记录（label/boxes/centers/first/last），结构仿 tracks
     object_tracks: dict[int, dict] = {}
@@ -266,17 +272,21 @@ def _finish_session(
             tid = int(d["track_id"])
             box = d["box"]
             crop = _crop(pil, box)
+            timestamp = _ts_seconds(fr, i, step)
+            detection_confidence = float(d.get("confidence") or 0.0)
             q = 0.0
+            qa = None
             if crop is not None:
                 qa = reid_mod.assess_quality(crop)
-                # 帧内 track 清晰度（给 keyframe 选最佳帧）：清晰度 × 面积饱和
-                q = float(qa["blur_var"]) * min(1.0, qa["area"] / 20000.0)
+                q = body_quality_score(qa)
             track_quality[tid] = q
 
             t = tracks.get(tid)
             if t is None:
                 t = {"first": i, "last": i, "best_q": -1.0, "best_crop": None,
-                     "best_idx": i, "best_box": box, "centers": [], "boxes": {}}
+                     "best_idx": i, "best_box": box, "body_best": None,
+                     "face_candidates": [], "face_best": None,
+                     "centers": [], "boxes": {}}
                 tracks[tid] = t
                 events.append(f"new_track:{tid}")
             t["last"] = i
@@ -286,6 +296,36 @@ def _finish_session(
             t["centers"].append((i, (round(cx, 3), round(cy, 3))))
             if crop is not None and q > t["best_q"]:
                 t["best_q"], t["best_crop"], t["best_idx"], t["best_box"] = q, crop, i, box
+                t["body_best"] = {
+                    "track_id": tid,
+                    "frame_index": i,
+                    "timestamp": timestamp,
+                    "person_bbox": list(box),
+                    "score": q,
+                    "quality": dict(qa or {}),
+                    "det_confidence": detection_confidence,
+                    "crop": crop,
+                }
+            if crop is not None:
+                proxy_score = face_candidate_proxy(
+                    crop,
+                    person_bbox=box,
+                    image_size=pil.size,
+                    detection_confidence=detection_confidence,
+                )
+                t["face_candidates"] = update_face_candidates(
+                    t["face_candidates"],
+                    {
+                        "track_id": tid,
+                        "frame_index": i,
+                        "timestamp": timestamp,
+                        "person_bbox": list(box),
+                        "proxy_score": proxy_score,
+                        "det_confidence": detection_confidence,
+                    },
+                    top_k=settings.face_candidate_top_k,
+                    min_gap_frames=settings.face_candidate_min_gap_frames,
+                )
 
         # 计数变化 = 语义事件
         if len(active) != prev_person_count:
@@ -341,6 +381,12 @@ def _finish_session(
     if not windows:  # 全程无人/无活动 → 整段当一个窗，LLM 仍可描述场景
         windows = [list(range(len(metas)))]
     windowed_frames = sorted({i for win in windows for i in win})
+    for track in tracks.values():
+        track["face_candidates"] = ensure_body_fallback(
+            track.get("face_candidates") or [],
+            track.get("body_best"),
+            top_k=settings.face_candidate_top_k,
+        )
 
     # ---- Track 级门控：筛掉"太短/太低质"的 track，整条不做身份提取（省 reid/face/步态 + 防污染库）----
     def _track_worth_identity(t: dict) -> bool:
@@ -390,7 +436,8 @@ def _finish_session(
             ident["skipped"] = f"low_track(frames={len(t.get('boxes', {}))},q={float(t.get('best_q', 0.0)):.1f})"
             identities[tid] = ident
             continue
-        crop = t["best_crop"]
+        body_best = t.get("body_best") or {}
+        crop = body_best.get("crop") or t.get("best_crop")
         if crop is not None:
             try:
                 vec = reid_mod.embed(crop)
@@ -407,6 +454,11 @@ def _finish_session(
                 ident["quality_ok"] = res.get("quality_ok")
                 ident["quality_reason"] = res.get("quality_reason")
                 ident["enrolled"] = res.get("enrolled")
+                if res.get("subject_id") is not None:
+                    ident["route_subject"] = {
+                        "route": "body",
+                        "local_subject_id": res["subject_id"],
+                    }
             except Exception as exc:  # 认人失败不致命：身份留空，仍可做事件理解
                 ident["error"] = str(exc)
         identities[tid] = ident
@@ -424,10 +476,10 @@ def _finish_session(
             fi = tracks[tid]["first"]
             metas[fi].events.append(f"identity_hit:主体#{ident['subject_id']}")
 
-    # ---- 可选人脸分支：仅在每条 track 的最佳帧上稀疏跑（攻"人脸模糊"的同时不拖慢全片）----
+    # ---- 可选人脸分支：每条 track 独立选择有界 face-best，不再复用 body-best ----
     _lap("reid_identify")
     if with_face:
-        _attach_faces(frames, tracks, identities, session_id)
+        _attach_faces(frames, tracks, identities, session_id, body_embeddings=track_emb)
         _lap("face")
 
     # ---- 步态认人：每条 track 用累积的(姿态+剪影)序列提步态向量 → 步态库 → 写 gait_cue ----
@@ -457,6 +509,11 @@ def _finish_session(
                     "decision": gres.get("decision"),
                     "frames": len(pose_seq),
                 }
+                if gres.get("subject_id") is not None:
+                    identities[tid]["gait"]["route_subject"] = {
+                        "route": "gait",
+                        "local_subject_id": gres["subject_id"],
+                    }
             except Exception as exc:  # 步态认人失败不致命
                 identities[tid].setdefault("gait_error", str(exc))
 
@@ -470,6 +527,10 @@ def _finish_session(
     # ---- A 汇聚：多路线身份置信度（人脸 + 人形 + 步态按质量加权）----
     for tid in identities:
         score_identity_confidence(identities[tid])
+        identities[tid]["evidence"] = {
+            "body": public_evidence(tracks[tid].get("body_best")),
+            "face": public_evidence(tracks[tid].get("face_best")),
+        }
 
     # ---- 身份画廊头像：每条 track 的最佳人物 crop 缩略图（仅 Web 端要图时才生成）----
     if include_keyframe_images:
@@ -478,6 +539,7 @@ def _finish_session(
                 thumb = _pil_to_thumb_uri(t["best_crop"])
                 if thumb:
                     identities[tid]["thumb"] = thumb
+                    identities[tid]["thumb_source"] = "body_best"
 
     # 事件窗已在前面（重活之前）切好；此处直接逐窗选帧②并做多帧事件理解
     _lap("merge_fusion_thumb")
@@ -570,6 +632,7 @@ def _finish_session(
         "frames_total": len(frames),
         "img_size": [img_w, img_h],
         "session_id": session_id,
+        "evidence_schema_version": 2,
         "tracker_backend": tracker_mod.active_backend(),
         "reid_backend": reid_mod.active_backend(),
         "reid_dim": dim,

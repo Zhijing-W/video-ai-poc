@@ -21,6 +21,7 @@ def person_record(tid: int, t: dict, ident: dict, win_idx: list[int], img_w: int
         "face": ident.get("face"),
         "gait": ident.get("gait"),
         "fused": ident.get("fused"),
+        "evidence": ident.get("evidence"),
         "merge_routes": ident.get("merge_routes"),
         "merge_agree": ident.get("merge_agree"),
         "cross_track_merged": ident.get("cross_track_merged", False),
@@ -276,17 +277,26 @@ def merge_tracks_cross_route(identities: dict[int, dict]) -> None:
 
     def _route_id(idn: dict, route: str):
         if route == "body":
-            return idn.get("subject_id")
+            local = (idn.get("route_subject") or {}).get("local_subject_id")
+            return ("body", local) if local is not None else None
         if route == "face":
             fc = idn.get("face") or {}
-            # 仅清晰且命中库内主体才算"认出同一人"（糊脸只查不建，不足以做跨 track 锚点）
-            if fc.get("matched") and fc.get("quality") == "clear":
-                return fc.get("face_subject_id")
+            local = (fc.get("route_subject") or {}).get("local_subject_id")
+            if (
+                fc.get("matched")
+                and fc.get("match_ready")
+                and fc.get("eligibility") == "direct"
+                and fc.get("quality") == "clear"
+                and fc.get("track_consistency_status") in {"same_frame", "passed"}
+                and local is not None
+            ):
+                return ("face", local)
             return None
         if route == "gait":
             gt = idn.get("gait") or {}
-            if gt.get("decision") == "hit":
-                return gt.get("subject_id")
+            local = (gt.get("route_subject") or {}).get("local_subject_id")
+            if gt.get("decision") == "hit" and local is not None:
+                return ("gait", local)
         return None
 
     # 三路分别按库编号分组 → 组内两两并；记录每条 track 触发合并用到了哪几路
@@ -345,5 +355,26 @@ def merge_tracks_cross_route(identities: dict[int, dict]) -> None:
                 idn["reused"] = True
                 if idn.get("decision") not in ("hit", "stitched"):
                     idn["decision"] = "merged"
+
+    for idn in identities.values():
+        canonical = idn.get("subject_id")
+        route_subject_ids = {}
+        if canonical is not None and (idn.get("route_subject") or {}).get("local_subject_id") is not None:
+            route_subject_ids["body"] = canonical
+        face = idn.get("face") or {}
+        if (
+            canonical is not None
+            and face.get("matched")
+            and face.get("match_ready")
+            and face.get("eligibility") == "direct"
+            and face.get("quality") == "clear"
+            and face.get("track_consistency_status") in {"same_frame", "passed"}
+            and (face.get("route_subject") or {}).get("local_subject_id") is not None
+        ):
+            route_subject_ids["face"] = canonical
+        gait = idn.get("gait") or {}
+        if canonical is not None and (gait.get("route_subject") or {}).get("local_subject_id") is not None:
+            route_subject_ids["gait"] = canonical
+        idn["route_subject_ids"] = route_subject_ids
 
 __all__ = ["person_record", "group_people", "stitch_orphans", "split_subject_time_conflicts", "merge_tracks_cross_route"]

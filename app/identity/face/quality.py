@@ -1,8 +1,23 @@
 from __future__ import annotations
 
+from typing import Literal, TypedDict
+
 import numpy as np
 
 from ...config import settings
+
+
+FaceEligibility = Literal["direct", "recoverable", "unusable", "none"]
+
+
+class FaceQuality(TypedDict, total=False):
+    category: str
+    eligibility: FaceEligibility
+    can_enroll: bool
+    can_match: bool
+    can_superres: bool
+    enhanced: bool
+    reason: str | None
 
 
 def _frontalness(kps: np.ndarray) -> float:
@@ -158,14 +173,29 @@ def assess_quality(
     )
 
     extreme_pose = yaw_bad or pitch_bad
-    can_enroll = category == "clear"
-    can_match = not extreme_pose and not detection_bad
-    superres_size_candidate = min(w, h) < settings.face_superres_min_size
-    can_superres = (
-        category != "clear"
-        and can_match
-        and (blur_degraded or superres_size_candidate)
+    short_side = min(w, h)
+    recoverable_size = (
+        settings.face_recoverable_min_size
+        <= short_side
+        <= settings.face_superres_max_size
     )
+    if extreme_pose or detection_bad or short_side < settings.face_recoverable_min_size:
+        eligibility: FaceEligibility = "unusable"
+    elif size_bad:
+        eligibility = "recoverable"
+    elif (blur_bad or fiqa_bad) and recoverable_size:
+        eligibility = "recoverable"
+    elif blur_degraded and recoverable_size:
+        eligibility = "recoverable"
+    elif blur_bad or fiqa_bad:
+        eligibility = "unusable"
+    else:
+        eligibility = "direct"
+
+    can_match = eligibility == "direct"
+    can_superres = eligibility == "recoverable"
+    can_enroll = eligibility == "direct" and category == "clear"
+    superres_size_candidate = recoverable_size
     match_weight = max(0.0, min(1.0, quality))
 
     return {
@@ -179,6 +209,8 @@ def assess_quality(
         "rule_quality": round(float(rule_quality), 4),
         "quality": round(quality, 4),
         "category": category,
+        "eligibility": eligibility,
+        "short_side": round(short_side, 1),
         "quality_ok": category != "poor",  # 向后兼容：非 poor 视为可用
         "reason": reason,
         "defects": defects,
@@ -189,6 +221,54 @@ def assess_quality(
         "match_weight": round(match_weight, 4),
     }
 
+
+def no_face_quality(reason: str = "not_detected") -> FaceQuality:
+    return {
+        "category": "none",
+        "eligibility": "none",
+        "can_enroll": False,
+        "can_match": False,
+        "can_superres": False,
+        "reason": reason,
+    }
+
+
+def superres_quality_ok(
+    fiqa_after: float | None,
+    *,
+    poor_threshold: float | None = None,
+) -> tuple[bool, str | None]:
+    """Product post-GFPGAN acceptance gate shared with offline experiments."""
+    threshold = (
+        settings.face_fiqa_poor_thresh
+        if poor_threshold is None
+        else float(poor_threshold)
+    )
+    if fiqa_after is not None and fiqa_after < threshold:
+        return False, "fiqa_below_poor_threshold"
+    return True, None
+
+
+def face_gallery_quality_ok(quality: FaceQuality | None) -> tuple[bool, str | None]:
+    if not quality:
+        return False, "missing_face_quality"
+    if quality.get("enhanced"):
+        return False, "restored_face_not_enrollable"
+    if quality.get("eligibility") != "direct":
+        return False, "face_not_direct"
+    if quality.get("category") != "clear" or not quality.get("can_enroll"):
+        return False, "face_not_clear"
+    return True, None
+
+
 _deep_fiqa_score = deep_fiqa_score
 
-__all__ = ["assess_quality", "deep_fiqa_score"]
+__all__ = [
+    "FaceEligibility",
+    "FaceQuality",
+    "assess_quality",
+    "deep_fiqa_score",
+    "face_gallery_quality_ok",
+    "no_face_quality",
+    "superres_quality_ok",
+]

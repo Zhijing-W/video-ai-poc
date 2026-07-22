@@ -46,7 +46,7 @@
 | 事件会话与分窗/grounding | `app/pipeline/session.py`、`app/pipeline/windowing.py`、`app/pipeline/spatial_context.py`、`app/pipeline/object_context.py` |
 | 检测与跟踪 | `app/detector.py`、`app/tracker.py` |
 | 人形身份与 gallery | `app/body_reid.py`、`app/identity/embedding_gallery.py`、`app/body_gallery.py` |
-| 身份归并/跨路合并 | `app/identity/resolution.py`、`app/identity/face_attachment.py` |
+| 身份证据选帧/归并 | `app/identity/evidence_selection.py`、`app/identity/face_attachment.py`、`app/identity/resolution.py` |
 | 人脸身份与质量 | `app/face.py`、`app/identity/face/quality.py`、`app/identity/face/super_resolution.py`、`app/identity/face/fiqa/cr_fiqa.py`、`app/face_fiqa.py` |
 | 步态身份 | `app/gait.py` |
 | 场景 OCR | `app/ocr.py` |
@@ -65,6 +65,7 @@
 - 糊脸与身份实验：`experiment/糊脸消融实验/`
 - MEVID公共实验工具：`experiment/糊脸消融实验/common/mevid_eval_common.py`
 - 超分门控A/B/C：`experiment/糊脸消融实验/超分实验/scripts/run_superres_gate.py`
+- actor check-in固定Gallery超分schema-v3：`experiment/糊脸消融实验/超分实验/scripts/run_checkin_superres_abc.py`
 
 ## 范围规则
 
@@ -78,9 +79,10 @@
 ```text
 SCRFD检测与5点对齐
 → CR-FIQA + 尺寸/姿态/拉普拉斯质量评估
-→ 输出can_enroll / can_match / can_superres
-→ 可选超分
-→ 仅can_match=true时调用ArcFace或AdaFace
+→ 输出eligibility=direct / recoverable / unusable
+→ direct使用原图；recoverable仅在超分成功后可匹配
+→ 低于FACE_RECOVERABLE_MIN_SIZE直接拒绝
+→ 仅match_ready=true时调用人脸库
 → 查询人脸向量库
 ```
 

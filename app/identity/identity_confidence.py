@@ -27,6 +27,8 @@ def _face_cue(face: dict | None) -> tuple[float, float]:
     """
     if not face:
         return 0.0, 0.0
+    if not face.get("match_ready", face.get("matched", False)):
+        return 0.0, 0.0
     qs = face.get("quality_score")
     if qs is not None:
         q = max(0.0, min(1.0, float(qs)))
@@ -91,7 +93,14 @@ def score_identity_confidence(ident: dict) -> dict:
     confidence = (sum(contrib.values()) / wsum) if wsum > 0 else 0.0
     # 多路线参与加成：这里只判断有效信号数量，不判断不同模态的库编号是否同号。
     multi_source = len(active) >= 2
-    if multi_source:
+    canonical = ident.get("subject_id")
+    route_subject_ids = ident.get("route_subject_ids") or {}
+    agreeing = [
+        route for route in active
+        if canonical is not None and route_subject_ids.get(route) == canonical
+    ]
+    agreed = len(agreeing) >= 2
+    if agreed:
         confidence = min(1.0, confidence + settings.identity_agree_bonus)
 
     primary = max(contrib, key=contrib.get) if contrib else None
@@ -103,7 +112,7 @@ def score_identity_confidence(ident: dict) -> dict:
         "confidence": round(float(confidence), 4),
         "resolved": bool(confidence >= settings.identity_resolve_thresh),
         "multi_source": multi_source,
-        "agreed": multi_source,  # 兼容旧前端/实验字段；不表示各模态 subject_id 已完成同号校验。
+        "agreed": agreed,
         "primary": primary if (primary and contrib.get(primary, 0) > 0) else None,
         "sources": sources,
     }
