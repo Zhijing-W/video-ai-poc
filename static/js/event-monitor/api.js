@@ -9,6 +9,12 @@ export async function listSamples() {
   return response.json();
 }
 
+export async function listSuperresBackends() {
+  const response = await fetch("/api/event-monitor/superres-backends");
+  if (!response.ok) await readError(response);
+  return response.json();
+}
+
 export async function runAnalysis(formData) {
   const response = await fetch("/api/event-monitor/understand", {
     method: "POST",

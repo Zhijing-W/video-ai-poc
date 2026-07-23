@@ -150,11 +150,13 @@ def test_face_assess_quality_returns_expected_fields_with_mocked_fiqa(monkeypatc
         "rule_quality",
     ]:
         assert key in result
-    assert result["category"] == "poor"
-    assert result["quality_ok"] is False
-    assert result["reason"] == "low_fiqa"
+    assert result["category"] == "marginal"
+    assert result["quality_ok"] is True
+    assert result["reason"] is None
     assert "low_fiqa" in result["defects"]
     assert result["fiqa"] == 0.25
+    assert result["quality"] == result["rule_quality"]
+    assert result["eligibility"] == "direct"
     assert result["can_enroll"] is False
 
 
@@ -220,26 +222,102 @@ def test_recoverable_face_requires_successful_superres_before_embedding(monkeypa
     monkeypatch.setattr(
         face,
         "enhance",
-        lambda image, aligned=False: Image.fromarray(
+        lambda image, aligned=False, backend=None: Image.fromarray(
             np.full((112, 112, 3), 180, dtype=np.uint8)
         ),
     )
-    monkeypatch.setattr(face, "_deep_fiqa_score", lambda aligned: None)
+    monkeypatch.setattr(face, "_deep_fiqa_score", lambda aligned: 0.1)
     monkeypatch.setattr(
         face,
         "embed_aligned_face",
         lambda aligned, backend: calls.append(backend) or np.ones(512, dtype=np.float32),
     )
 
-    restored = face.detect(np.zeros((120, 120, 3), dtype=np.uint8), enhance_blurry=True)
+    restored = face.detect(
+        np.zeros((120, 120, 3), dtype=np.uint8),
+        enhance_blurry=True,
+        superres_backend="gfpgan",
+    )
     blocked = face.detect(np.zeros((120, 120, 3), dtype=np.uint8), enhance_blurry=False)
 
     assert restored[0]["match_ready"] is True
     assert restored[0]["match_source"] == "superres"
     assert restored[0]["quality"]["enhanced"] is True
+    assert restored[0]["superres_fiqa_passed"] is False
+    assert (
+        restored[0]["superres_fiqa_diagnostic"]
+        == "fiqa_below_poor_threshold"
+    )
     assert blocked[0]["match_ready"] is False
     assert blocked[0]["match_source"] == "none"
     assert len(calls) == 1
+
+
+def test_finalize_identity_uses_explicit_registered_superres_backend(monkeypatch) -> None:
+    face.register_superres_backend(
+        "unit-finalize",
+        lambda: object(),
+        lambda model, image, aligned: Image.new("RGB", image.size, "white"),
+        replace=True,
+    )
+    monkeypatch.setattr(face, "_ensure_backend", lambda: None)
+    monkeypatch.setattr(
+        face,
+        "_to_bgr",
+        lambda image: np.zeros((64, 64, 3), dtype=np.uint8),
+    )
+    monkeypatch.setattr(
+        face,
+        "_align_face",
+        lambda bgr, kps: np.zeros((112, 112, 3), dtype=np.uint8),
+    )
+    monkeypatch.setattr(face, "_deep_fiqa_score", lambda aligned: None)
+    monkeypatch.setattr(
+        face,
+        "embed_aligned_face",
+        lambda aligned, backend: np.ones(512, dtype=np.float32),
+    )
+    frozen = {
+        "bbox": [10, 10, 40, 40],
+        "kps": [[15, 16], [30, 16], [22, 23], [17, 31], [28, 31]],
+        "quality": {
+            "category": "poor",
+            "eligibility": "recoverable",
+            "can_match": False,
+            "can_superres": True,
+            "can_enroll": False,
+        },
+    }
+
+    result = face.finalize_identity(
+        np.zeros((64, 64, 3), dtype=np.uint8),
+        frozen,
+        enhance_blurry=True,
+        superres_backend="unit-finalize",
+    )
+
+    assert result["match_ready"] is True
+    assert result["match_source"] == "superres"
+    assert result["superres_backend"] == "unit_finalize"
+    assert result["superres_fiqa_passed"] is False
+    assert result["superres_fiqa_diagnostic"] == "fiqa_unavailable_or_nonfinite"
+
+
+def test_finalize_identity_rejects_unknown_explicit_backend_before_loading(monkeypatch) -> None:
+    monkeypatch.setattr(
+        face,
+        "_ensure_backend",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("unknown backend must fail before face model loading")
+        ),
+    )
+
+    with pytest.raises(ValueError, match="未知人脸超分后端"):
+        face.finalize_identity(
+            np.zeros((16, 16, 3), dtype=np.uint8),
+            {},
+            superres_backend="missing-finalizer",
+        )
 
 
 def _quality_payload(short_side: float) -> dict:

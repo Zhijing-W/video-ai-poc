@@ -25,6 +25,7 @@ def _empty_face_record(reason: str, *, error: str | None = None) -> dict:
         "can_superres": False,
         "match_ready": False,
         "match_source": "none",
+        "superres_backend": None,
         "matched": False,
         "face_subject_id": None,
         "match_score": None,
@@ -180,7 +181,24 @@ def attach_faces(
 
         selected = max(options, key=face_evidence_rank)
         frame_index = int(selected["frame_index"])
-        image = Image.open(frames[frame_index].local_path).convert("RGB")
+        quality = dict((selected.get("_face") or {}).get("quality") or {})
+        try:
+            image = Image.open(frames[frame_index].local_path).convert("RGB")
+        except Exception as exc:
+            track["face_best"] = selected
+            identities[tid]["face"] = {
+                **_empty_face_record(
+                    "face_frame_unavailable",
+                    error=f"{type(exc).__name__}: {exc}",
+                ),
+                "observed": True,
+                "quality": quality.get("category", "poor"),
+                "eligibility": quality.get("eligibility", "unusable"),
+                "quality_score": quality.get("quality"),
+                "evidence": public_evidence(selected),
+                "quality_detail": quality,
+            }
+            continue
         consistent, consistency_score, consistency_status = _track_consistency(
             selected,
             track,
@@ -190,9 +208,8 @@ def attach_faces(
         selected["track_consistency_score"] = consistency_score
         selected["track_consistency_status"] = consistency_status
         track["face_best"] = selected
-
         frozen_face = selected["_face"]
-        quality = dict(frozen_face.get("quality") or {})
+        frozen_face = selected["_face"]
         if not consistent:
             rec = {
                 **_empty_face_record("track_consistency_failed"),
@@ -210,7 +227,24 @@ def attach_faces(
             identities[tid]["face"] = rec
             continue
 
-        finalized = face_mod.finalize_identity(image, frozen_face)
+        try:
+            finalized = face_mod.finalize_identity(image, frozen_face)
+        except Exception as exc:
+            identities[tid]["face"] = {
+                **_empty_face_record(
+                    "face_finalize_error",
+                    error=f"{type(exc).__name__}: {exc}",
+                ),
+                "observed": True,
+                "quality": quality.get("category", "poor"),
+                "eligibility": quality.get("eligibility", "unusable"),
+                "quality_score": quality.get("quality"),
+                "evidence": public_evidence(selected),
+                "track_consistency_status": consistency_status,
+                "track_consistency_score": consistency_score,
+                "quality_detail": quality,
+            }
+            continue
         quality = dict(finalized.get("quality") or quality)
         embedding = finalized.get("embedding")
         match_ready = bool(finalized.get("match_ready") and embedding is not None)
@@ -227,6 +261,7 @@ def attach_faces(
             "can_superres": bool(quality.get("can_superres")),
             "match_ready": match_ready,
             "match_source": finalized.get("match_source", "none"),
+            "superres_backend": finalized.get("superres_backend"),
             "matched": False,
             "face_subject_id": None,
             "match_score": None,
@@ -237,8 +272,12 @@ def attach_faces(
         }
         if finalized.get("identity_error"):
             rec["face_error"] = finalized["identity_error"]
-        if finalized.get("superres_rejected"):
-            rec["superres_rejected"] = finalized["superres_rejected"]
+        if "superres_fiqa_passed" in finalized:
+            rec["superres_fiqa_passed"] = finalized["superres_fiqa_passed"]
+        if finalized.get("superres_fiqa_diagnostic"):
+            rec["superres_fiqa_diagnostic"] = finalized[
+                "superres_fiqa_diagnostic"
+            ]
 
         if match_ready:
             try:

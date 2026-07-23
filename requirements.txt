@@ -52,6 +52,11 @@ onnxruntime
 # 3D-68 几何 cue 复用 insightface buffalo_l 自带的 1k3d68（无需额外装）。
 gfpgan
 
+# Optional registered model adapters. CodeFormer is supplied by extra arches
+# under its non-commercial S-Lab License 1.0; review rights before production use.
+spandrel>=0.4.2,<0.5
+spandrel-extra-arches>=0.2.0,<0.3
+
 # Phase 4 · Step 29：场景文字 OCR（LANE D 子能力，默认关，--ocr / OCR_ENABLED 开）。
 # rapidocr_onnxruntime：内置 PP-OCRv4 检测+识别（与 PaddleOCR 同源模型），走已装的 onnxruntime，
 #   CPU 友好、Windows 安装干净、~15MB 模型自带。读时间戳/车牌/单号→scene_context 喂 LLM（不进 subject_id）。

@@ -27,7 +27,11 @@
      -> body_reid.py + identity/embedding_gallery.py
      -> identity/resolution.py
      -> identity/face_attachment.py
-     -> face.py + identity/face/{quality,super_resolution,fiqa/cr_fiqa}.py + face_fiqa.py
+     -> face.py (compatibility façade/orchestration)
+        + identity/face/{runtime,recognition,geometry,association,quality}.py
+        + identity/face/super_resolution.py
+        + identity/face/superres_backends/*.py
+        + identity/face/fiqa/cr_fiqa.py + face_fiqa.py
      -> gait.py
      -> ocr.py
      -> keyframe.py
@@ -47,7 +51,12 @@
 | 检测与跟踪 | `app/detector.py`、`app/tracker.py` |
 | 人形身份与 gallery | `app/body_reid.py`、`app/identity/embedding_gallery.py`、`app/body_gallery.py` |
 | 身份证据选帧/归并 | `app/identity/evidence_selection.py`、`app/identity/face_attachment.py`、`app/identity/resolution.py` |
-| 人脸身份与质量 | `app/face.py`、`app/identity/face/quality.py`、`app/identity/face/super_resolution.py`、`app/identity/face/fiqa/cr_fiqa.py`、`app/face_fiqa.py` |
+| 人脸兼容入口与编排 | `app/face.py`（保留旧导入、monkeypatch seam、detect/finalize编排） |
+| 人脸运行时与检测 | `app/identity/face/runtime.py`（单例InsightFace状态、输入解码、SCRFD候选、五点对齐） |
+| 人脸识别与证据 | `app/identity/face/recognition.py`（ArcFace/AdaFace embedding、恢复后身份挂接、best/fuse） |
+| 人脸几何与关联 | `app/identity/face/geometry.py`（3D descriptor）、`app/identity/face/association.py`（一对一face-person归属） |
+| 人脸质量与FIQA | `app/identity/face/quality.py`、`app/identity/face/fiqa/cr_fiqa.py`、`app/face_fiqa.py` |
+| 人脸超分 | `app/identity/face/super_resolution.py`（轻量注册表与调度）、`app/identity/face/superres_backends/{gfpgan,codeformer,realesrgan}.py`（懒加载模型适配器） |
 | 步态身份 | `app/gait.py` |
 | 场景 OCR | `app/ocr.py` |
 | 关键帧选择 | `app/keyframe.py` |
@@ -57,6 +66,12 @@
 | 时间线与设置前端 | `static/js/event-monitor/`、`static/css/event-monitor.css`、`static/css/event-monitor/` |
 | 行为保护测试 | `tests/` |
 
+新增超分算法时，在 `app/identity/face/superres_backends/` 增加只暴露
+`register(register_backend, settings)` 的适配器；注册时仅提供 loader/enhancer，
+重依赖必须留到 loader 首次执行时导入。随后在
+`app/identity/face/super_resolution.py` 与其他内置适配器一起调用该模块的
+`register`。产品层的显式选择、来源记录、API 校验及 UI 下拉会继续复用注册表。
+
 ## 文档与实验
 
 - Phase 4 流程图：`docs/phase4-logic-flow.*`
@@ -65,7 +80,17 @@
 - 糊脸与身份实验：`experiment/糊脸消融实验/`
 - MEVID公共实验工具：`experiment/糊脸消融实验/common/mevid_eval_common.py`
 - 超分门控A/B/C：`experiment/糊脸消融实验/超分实验/scripts/run_superres_gate.py`
-- actor check-in固定Gallery超分schema-v3：`experiment/糊脸消融实验/超分实验/scripts/run_checkin_superres_abc.py`
+- actor check-in固定Gallery超分schema-v3入口：
+  `experiment/糊脸消融实验/超分实验/scripts/run_checkin_superres_abc.py`
+- schema-v3实现包：`experiment/糊脸消融实验/超分实验/checkin_superres/`
+  - `common.py`：常量、路径、hash、coverage、manifest identity与image-manifest行构造；
+  - `preparation.py`：check-in Gallery和face-best Query冻结；
+  - `embeddings.py`：A/B/C embedding cache、provenance与重载校验；
+  - `metrics.py`：模板、评分、分组汇总与配对统计；
+  - `visualization.py`：全量comparison图片渲染；
+  - `matrix.py`：冻结manifest多后端/resize控制、normalize112、content-addressed
+    cache-v3、主表、诊断与完整artifact编排；
+  - `orchestration.py`：prepare/evaluate编排、image manifest输出及CLI parser。
 
 ## 范围规则
 

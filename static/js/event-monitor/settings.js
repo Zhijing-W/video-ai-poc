@@ -24,6 +24,9 @@ export function collectAnalysisRequest() {
   formData.append("dry_run", dryRun ? "true" : "false");
   appendIfValue(formData, "face_rec_backend", $("faceRecBackend").value);
   appendIfValue(formData, "face_superres", $("faceSuperres").value);
+  if (isCodeFormerSelected()) {
+    appendIfValue(formData, "face_codeformer_fidelity", $("faceCodeformerFidelity").value);
+  }
   appendIfValue(formData, "reid_backend", $("reidBackend").value);
   appendIfValue(formData, "track_backend", $("trackBackend").value);
   formData.append("face_3d_cue", $("face3d").checked ? "true" : "false");
@@ -40,6 +43,46 @@ export function collectAnalysisRequest() {
 
 export function getObjectiveValue() {
   return $("objective").value.trim();
+}
+
+function isCodeFormerSelected() {
+  const select = $("faceSuperres");
+  return select.value === "codeformer"
+    || (!select.value && select.dataset.defaultBackend === "codeformer");
+}
+
+function updateCodeFormerFidelityVisibility() {
+  const field = $("faceCodeformerFidelityField");
+  if (field) field.hidden = !isCodeFormerSelected();
+}
+
+export function renderSuperresBackends(catalog = {}) {
+  const select = $("faceSuperres");
+  if (!select) return;
+  const names = Array.isArray(catalog.backends) ? catalog.backends : [];
+  const allowed = [...new Set(["off", "gfpgan", "codeformer", "realesrgan_x2plus", ...names])];
+  const labels = {
+    off: "关闭",
+    gfpgan: "GFP-GAN",
+    codeformer: "CodeFormer",
+    realesrgan_x2plus: "Real-ESRGAN x2plus",
+  };
+  const defaultBackend = catalog.default || "gfpgan";
+  select.dataset.defaultBackend = defaultBackend;
+  select.replaceChildren();
+  select.add(new Option(`默认（${labels[defaultBackend] || defaultBackend}）`, ""));
+  allowed.forEach((name) => select.add(new Option(labels[name] || name, name)));
+
+  const fidelity = catalog.metadata?.codeformer?.fidelity_default;
+  const input = $("faceCodeformerFidelity");
+  if (input && Number.isFinite(Number(fidelity))) input.value = String(fidelity);
+  updateCodeFormerFidelityVisibility();
+}
+
+export function wireSuperresSettings() {
+  const select = $("faceSuperres");
+  if (select) select.addEventListener("change", updateCodeFormerFidelityVisibility);
+  updateCodeFormerFidelityVisibility();
 }
 
 export function openSettings() {

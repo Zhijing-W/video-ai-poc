@@ -287,3 +287,68 @@ def test_attach_faces_blocks_failed_cross_frame_track_provenance(
     assert record["can_enroll"] is False
     assert record["face_subject_id"] is None
     assert record["track_consistency_status"] == "failed"
+
+
+def test_attach_faces_contains_finalizer_error_to_one_track(
+    monkeypatch,
+    runtime_dir: Path,
+) -> None:
+    frame = write_image(runtime_dir / "face-finalize-error.jpg", (220, 220, 220))
+    frames = [Frame(frame_id="0", timestamp="00:00:00", local_path=str(frame))]
+    tracks = {
+        1: {
+            "best_idx": 0,
+            "best_box": [10, 0, 90, 90],
+            "body_best": {
+                "track_id": 1,
+                "frame_index": 0,
+                "timestamp": "00:00:00",
+                "person_bbox": [10, 0, 90, 90],
+            },
+            "face_candidates": [
+                {
+                    "track_id": 1,
+                    "frame_index": 0,
+                    "timestamp": "00:00:00",
+                    "person_bbox": [10, 0, 90, 90],
+                    "proxy_score": 10,
+                }
+            ],
+            "boxes": {0: [10, 0, 90, 90]},
+        }
+    }
+    identities = {1: {"track_id": 1}}
+    monkeypatch.setattr(
+        face_attachment.face_mod,
+        "detect",
+        lambda *args, **kwargs: [
+            {
+                "bbox": [35, 10, 65, 40],
+                "kps": [[42, 20], [58, 20], [50, 28], [44, 36], [56, 36]],
+                "det_score": 0.95,
+                "quality": {
+                    "category": "clear",
+                    "eligibility": "direct",
+                    "quality": 0.9,
+                    "can_match": True,
+                    "can_superres": False,
+                    "can_enroll": True,
+                },
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        face_attachment.face_mod,
+        "finalize_identity",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            RuntimeError("plugin failed")
+        ),
+    )
+    monkeypatch.setattr(face_attachment.gallery_mod, "reset_gallery", lambda _: True)
+
+    face_attachment.attach_faces(frames, tracks, identities, "test")
+
+    record = identities[1]["face"]
+    assert record["observed"] is True
+    assert record["match_ready"] is False
+    assert "plugin failed" in record["face_error"]
