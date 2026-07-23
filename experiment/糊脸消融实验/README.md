@@ -29,6 +29,7 @@ Market-1501、ChokePoint以及早期B/B2结果仅作为历史记录。
    └─ checkin_superres/              # schema-v3正式实现
       ├─ preparation.py              # 固定Gallery/Query
       ├─ embeddings.py               # A/B/C缓存
+      ├─ matrix.py                   # A/B1--3/C1--3固定多后端矩阵
       ├─ metrics.py                  # 指标与配对统计
       ├─ visualization.py            # 全量审计图
       ├─ common.py                   # hash/path/manifest
@@ -62,3 +63,18 @@ results/paper_figures/
 check-in 正脸 Gallery 与全部官方 Query；`evaluate` 计算 A/B 一次并从缓存派生 C，
 同时输出压缩 embedding、全量比较图和 image manifest。旧
 `run_superres_gate.py` 仅保留作历史诊断，不代表当前正式协议。
+
+固定manifest多后端正式实验使用GFPGAN、CodeFormer `w=1`与
+Real-ESRGAN x2plus，并把全部输出统一为112×112后进入ArcFace。冻结
+recoverable 40条Query的Rank-1为：
+
+| 输入 | Rank-1 |
+|---|---:|
+| A 原图 | 26/40（65.0%） |
+| C1 GFPGAN | 8/40（20.0%） |
+| C2 CodeFormer | 11/40（27.5%） |
+| C3 Real-ESRGAN | 18/40（45.0%） |
+
+两种纯缩放控制均为26/40。2,126项结果checksum全部通过；正式报告见
+`paper/多超分算法适用性报告.pdf`。原始结果归档保存在外部结果目录，不提交模型输出图片和
+embedding缓存。
