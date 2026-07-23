@@ -24,8 +24,15 @@ Market-1501、ChokePoint以及早期B/B2结果仅作为历史记录。
 ├─ dataset/                        # 旧实验人工分桶样例
 └─ 超分实验/
    ├─ 实验设计.md
-   └─ scripts/
-      └─ run_checkin_superres_abc.py # actor check-in固定Gallery schema-v3 A/B/C
+   ├─ scripts/
+   │  └─ run_checkin_superres_abc.py # 兼容CLI入口
+   └─ checkin_superres/              # schema-v3正式实现
+      ├─ preparation.py              # 固定Gallery/Query
+      ├─ embeddings.py               # A/B/C缓存
+      ├─ metrics.py                  # 指标与配对统计
+      ├─ visualization.py            # 全量审计图
+      ├─ common.py                   # hash/path/manifest
+      └─ orchestration.py            # prepare/evaluate编排
 ```
 
 ## 正式结果

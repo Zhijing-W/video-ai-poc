@@ -129,7 +129,7 @@ def test_arm_semantics_have_no_b_fallback_and_c_reuses_cache() -> None:
         post_superres_accepted=False,
     )
     assert rejected["B_all_superres"] is restored
-    assert rejected["C_gated_superres"] is None
+    assert rejected["C_gated_superres"] is restored
 
     unusable = MODULE.select_arm_embeddings(
         original,
@@ -219,7 +219,15 @@ def test_manifest_identity_hash_covers_quality_and_candidate_provenance() -> Non
     assert MODULE.stable_hash(original) != MODULE.stable_hash(changed_candidates)
 
 
-def test_post_superres_gate_can_use_manifest_frozen_threshold() -> None:
+def test_post_superres_fiqa_is_diagnostic_only() -> None:
+    assert superres_quality_ok(None, poor_threshold=0.3) == (
+        False,
+        "fiqa_unavailable_or_nonfinite",
+    )
+    assert superres_quality_ok(float("nan"), poor_threshold=0.3) == (
+        False,
+        "fiqa_unavailable_or_nonfinite",
+    )
     assert superres_quality_ok(0.4, poor_threshold=0.3) == (True, None)
     assert superres_quality_ok(0.4, poor_threshold=0.5) == (
         False,
@@ -244,3 +252,42 @@ def test_recoverable_only_successful_accepted_cohort_has_identical_b_and_c() -> 
         np.array_equal(row["B_all_superres"], row["C_gated_superres"])
         for row in rows
     )
+
+
+def test_compatibility_facade_reexports_and_cli_help(capsys) -> None:
+    required_symbols = (
+        "SCHEMA_VERSION",
+        "ARMS",
+        "canonical_json",
+        "stable_hash",
+        "manifest_identity",
+        "parse_checkin_image",
+        "load_checkin_front_images",
+        "audit_prefix_coverage",
+        "sample_evenly_indexed",
+        "select_arm_embeddings",
+        "build_image_manifest_records",
+        "paired_uncertainty",
+        "build_parser",
+        "main",
+        "prepare",
+        "evaluate",
+    )
+    assert all(hasattr(MODULE, name) for name in required_symbols)
+
+    from checkin_superres.common import stable_hash as package_stable_hash
+    from checkin_superres.orchestration import (
+        evaluate as package_evaluate,
+        prepare as package_prepare,
+    )
+
+    assert MODULE.stable_hash is package_stable_hash
+    assert MODULE.prepare is package_prepare
+    assert MODULE.evaluate is package_evaluate
+
+    with pytest.raises(SystemExit) as exit_info:
+        MODULE.main(["--help"])
+    assert exit_info.value.code == 0
+    help_text = capsys.readouterr().out
+    assert "prepare" in help_text
+    assert "evaluate" in help_text

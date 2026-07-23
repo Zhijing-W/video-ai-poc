@@ -135,12 +135,27 @@ Copy `.env.example` to `.env`. Important settings include:
 | `TRACK_BACKEND` | `bytetrack`, `botsort`, or `botsort_reid` |
 | `REID_BACKEND` | `auto`, `osnet`, `resnet50`, or `coarse` |
 | `FACE_REC_BACKEND` | `arcface` or `adaface` |
-| `FACE_SUPERRES` | `off`, `gfpgan`, or another supported backend |
+| `FACE_SUPERRES` | `off`, `gfpgan`, `codeformer`, or `realesrgan_x2plus` |
+| `FACE_CODEFORMER_FIDELITY` | CodeFormer identity fidelity in `[0,1]`; default `1.0` is identity-first |
+| `FACE_CODEFORMER_WEIGHTS` | Optional local path or URL for CodeFormer weights |
+| `FACE_REALESRGAN_X2PLUS_WEIGHTS` | Optional local path or URL for Real-ESRGAN x2plus weights |
 | `GAIT_ENABLED` | Enable the optional gait provider |
 | `OCR_ENABLED` | Enable scene-level OCR |
 | `OBJECT_DETECT` | Enable object/package context |
 
 The web settings panel can override selected options for one run without permanently modifying `.env`.
+
+Super-resolution dispatch lives in
+`app/identity/face/super_resolution.py`; it owns only the light registry and
+dispatch. GFP-GAN, CodeFormer, and Real-ESRGAN adapters live under
+`app/identity/face/superres_backends/` and lazily import model libraries only
+when selected. To add another algorithm, create an adapter module exposing
+`register(register_backend, settings)`, register a lazy loader/enhancer pair,
+and import/call that module with the other built-ins. The API and UI discover
+registered names through `/api/event-monitor/superres-backends`.
+CodeFormer is integrated for research/non-commercial evaluation under S-Lab
+License 1.0; commercial deployment requires separate permission. The complete
+notice is in `licenses/CodeFormer-S-Lab-License-1.0.txt`.
 
 ### Project structure
 
@@ -180,7 +195,8 @@ Install `requirements-dev.txt` when running the behavior-protection tests.
 ### Docker and Azure deployment
 
 - `Dockerfile.cpu`: CPU deployment.
-- `Dockerfile.gpu`: CUDA/GPU deployment.
+- `Dockerfile.gpu.base`: stable CUDA/Python dependency image.
+- `Dockerfile.gpu`: lightweight GPU application image built from the dependency image.
 - `charts/video-poc/`: Helm deployment.
 - `infra/`: Azure provisioning and deployment scripts.
 - [`docs/AZURE_DEPLOY.md`](docs/AZURE_DEPLOY.md): deployment guide.
@@ -332,7 +348,8 @@ python scripts\download_models.py --include-optional-yolo
 ### 部署
 
 - `Dockerfile.cpu`：CPU 镜像。
-- `Dockerfile.gpu`：CUDA/GPU 镜像。
+- `Dockerfile.gpu.base`：稳定的 CUDA/Python 依赖镜像。
+- `Dockerfile.gpu`：基于依赖镜像构建的轻量 GPU 应用镜像。
 - `charts/video-poc/`：Helm Chart。
 - `infra/`：Azure 基础设施和部署脚本。
 - [`docs/AZURE_DEPLOY.md`](docs/AZURE_DEPLOY.md)：部署说明。

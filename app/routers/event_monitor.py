@@ -18,6 +18,7 @@ from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
 from starlette.concurrency import run_in_threadpool
 
 from .. import body_reid as reid_mod
+from .. import face as face_mod
 from ..core.config import ALLOWED_VIDEO_SUFFIXES, DATA_DIR, OUTPUT_DIR, settings
 from ..event_analysis_pipeline import analyze_event_stream
 from ..services.event_reporter import summarize_event_windows, understand_event
@@ -27,6 +28,8 @@ router = APIRouter(prefix="/api/event-monitor", tags=["event-monitor"])
 SAMPLES_DIR = DATA_DIR / "samples"
 OUT_DIR = OUTPUT_DIR / "event-monitor"
 _RUN_LOCK = asyncio.Lock()
+_STARTUP_FACE_SUPERRES = settings.face_superres
+_STARTUP_CODEFORMER_FIDELITY = settings.face_codeformer_fidelity
 
 
 @router.get("/samples")
@@ -38,6 +41,22 @@ def list_samples() -> dict:
             if p.suffix.lower() in ALLOWED_VIDEO_SUFFIXES:
                 items.append({"name": p.name, "size_mb": round(p.stat().st_size / 1e6, 1)})
     return {"samples": items}
+
+
+@router.get("/superres-backends")
+def list_superres_backends() -> dict:
+    return {
+        "default": _STARTUP_FACE_SUPERRES,
+        "backends": ["off", *face_mod.available_superres_backends()],
+        "metadata": {
+            "codeformer": {
+                "requires_fidelity": True,
+                "fidelity_default": _STARTUP_CODEFORMER_FIDELITY,
+                "fidelity_min": 0.0,
+                "fidelity_max": 1.0,
+            },
+        },
+    }
 
 
 @router.post("/complete")
@@ -85,7 +104,8 @@ async def understand(
     dry_run: bool = Form(False),
     # ---- 本次请求覆盖的可插拔开关（设置面板传来；留空=用默认，仅本次生效不持久）----
     face_rec_backend: str | None = Form(None),   # arcface | adaface
-    face_superres: str | None = Form(None),      # off | gfpgan
+    face_superres: str | None = Form(None),      # off | registered backend
+    face_codeformer_fidelity: float | None = Form(None),
     face_3d_cue: bool | None = Form(None),
     reid_backend: str | None = Form(None),       # auto | osnet | resnet50 | coarse
     reid_decision_top_k: int | None = Form(None),
@@ -101,6 +121,21 @@ async def understand(
 
     设置面板的模型/能力开关随本请求传入，用 settings.override 临时覆盖、仅本次生效。
     """
+    requested_face_superres = face_superres or None
+    if (
+        face_codeformer_fidelity is not None
+        and not 0.0 <= face_codeformer_fidelity <= 1.0
+    ):
+        raise HTTPException(400, "face_codeformer_fidelity 必须在 [0, 1] 范围内")
+    explicit_face_superres = None
+    if requested_face_superres is not None:
+        try:
+            explicit_face_superres = face_mod.validate_superres_backend(
+                requested_face_superres
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
     run_id = uuid.uuid4().hex[:12]
     run_dir = OUT_DIR / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -120,19 +155,28 @@ async def understand(
     else:
         raise HTTPException(400, "请选择样片或上传视频")
 
-    overrides = {
-        "face_rec_backend": (face_rec_backend or None),
-        "face_superres": (face_superres or None),
-        "face_3d_cue": face_3d_cue,
-        "reid_backend": (reid_backend or None),
-        "reid_decision_top_k": reid_decision_top_k,
-        "reid_consistency_enabled": reid_consistency_enabled,
-        "reid_vote_score_thresh": reid_vote_score_thresh,
-        "reid_consistency_ratio": reid_consistency_ratio,
-        "reid_top1_margin": reid_top1_margin,
-        "track_backend": (track_backend or None),
-    }
     async with _RUN_LOCK:
+        selected_face_superres = explicit_face_superres
+        if selected_face_superres is None and with_face:
+            try:
+                selected_face_superres = face_mod.validate_superres_backend(
+                    settings.face_superres
+                )
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
+        overrides = {
+            "face_rec_backend": (face_rec_backend or None),
+            "face_superres": selected_face_superres,
+            "face_codeformer_fidelity": face_codeformer_fidelity,
+            "face_3d_cue": face_3d_cue,
+            "reid_backend": (reid_backend or None),
+            "reid_decision_top_k": reid_decision_top_k,
+            "reid_consistency_enabled": reid_consistency_enabled,
+            "reid_vote_score_thresh": reid_vote_score_thresh,
+            "reid_consistency_ratio": reid_consistency_ratio,
+            "reid_top1_margin": reid_top1_margin,
+            "track_backend": (track_backend or None),
+        }
         try:
             with settings.override(**overrides):
                 if reid_backend:
@@ -144,6 +188,7 @@ async def understand(
                     "with_objects": with_objects,
                     "face_rec_backend": settings.face_rec_backend,
                     "face_superres": settings.face_superres,
+                    "face_codeformer_fidelity": settings.face_codeformer_fidelity,
                     "face_3d_cue": settings.face_3d_cue,
                     "reid_backend": settings.reid_backend,
                     "reid_decision_top_k": settings.reid_decision_top_k,

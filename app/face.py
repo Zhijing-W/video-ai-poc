@@ -1,114 +1,52 @@
-"""人脸识别分支（Phase 4 · Step 20）。
+"""Face detection and identity orchestration compatibility façade.
 
-定位：和 `body_reid.py`（人形指纹）并列的**人脸身份**线索——给一帧画面，检测人脸、提
-512 维归一化 embedding（人脸指纹），并评估人脸质量。**与向量库 / 融合解耦**：本模块只回答
-"这帧里有哪些脸、各自的指纹和质量是什么"，不关心库怎么存、怎么和人形/步态融合（那是集成步）。
-
-为什么要它：监控痛点是**人脸模糊**。清晰正脸时人脸是最强身份信号；糊脸/背身时降权、退人形。
-本模块负责"把人脸用好"——最佳脸选择、多帧脸融合、质量加权，正是攻人脸模糊的核心。
-
-后端（`FACE_BACKEND`，默认 insightface）：
-  - **insightface**：InsightFace buffalo_l（SCRFD 检测 + ArcFace w600k_r50 识别，预训练）。
-    业界标杆、与客户 UniFace 同源；embedding **512 维、已 L2 归一化**，直接可进 FAISS 余弦库。
-    只加载 detection+recognition 两个子模型（砍掉 3D 关键点 / 性别年龄）以提速、省内存。
-
-性能：模型首次加载约 20~30s（进程内一次性，常驻）；人脸推理 CPU 上较慢，故**稀疏调用**——
-只在每条 track 的最佳帧上跑一次（认出即复用），不逐帧、不逐人每帧跑。
+The cohesive detector/runtime, recognition, geometry, and association
+implementations live in ``app.identity.face``. This module retains the product
+orchestration and legacy public/private monkeypatch seams.
 """
 from __future__ import annotations
-
-import threading
 
 import numpy as np
 
 from .config import settings
+from .identity.face import association as _association
+from .identity.face import geometry as _geometry
+from .identity.face import recognition as _recognition
+from .identity.face import runtime as _runtime
 from .identity.face.adaface import embed as _adaface_embed
 from .identity.face.adaface import load_error as _adaface_error
 from .identity.face.quality import assess_quality as _assess_quality_impl
 from .identity.face.quality import deep_fiqa_score as _deep_fiqa_score
 from .identity.face.quality import superres_quality_ok as _superres_quality_ok
 from .identity.face.super_resolution import _ensure_superres as _ensure_superres_impl
+from .identity.face.super_resolution import available_backends as _available_superres_backends
 from .identity.face.super_resolution import enhance as _enhance_impl
+from .identity.face.super_resolution import register_backend as _register_superres_backend
 from .identity.face.super_resolution import superres_error as _superres_error_impl
+from .identity.face.super_resolution import validate_backend as _validate_superres_backend
 
-_lock = threading.Lock()
-_state: dict = {"backend": None, "model": None}
+_lock = _runtime._lock
+_state = _runtime._state
+_FaceRecord = _geometry.FaceRecord
 
-FACE_DIM = 512  # ArcFace 输出维度
-
-
-class _FaceRecord(dict):
-    def __getattr__(self, name):
-        try:
-            return self[name]
-        except KeyError as exc:
-            raise AttributeError(name) from exc
-
-    def __setattr__(self, name, value):
-        self[name] = value
+FACE_DIM = 512
 
 
+# Runtime compatibility seams -------------------------------------------------
 def _resolve_cuda(device: str, ort: bool = False) -> bool:
-    """把 auto/cuda/cpu 解析成"是否用 CUDA"。ort=True 时按 onnxruntime 的可用 provider 判断
-    (InsightFace 走 onnxruntime)；否则按 torch.cuda 判断 (AdaFace 走 torch)。"""
-    d = (device or "auto").strip().lower()
-    if d == "cpu":
-        return False
-    if ort:
-        try:
-            import onnxruntime as _o
-            return "CUDAExecutionProvider" in _o.get_available_providers()
-        except Exception:
-            return False
-    try:
-        import torch
-        return bool(torch.cuda.is_available())
-    except Exception:
-        return False
+    return _runtime.resolve_cuda(device, ort)
 
 
-def adaface_error() -> str | None:
-    return _adaface_error()
-
-
-# ---------------- 后端：InsightFace ----------------
 def _load_insightface():
-    """懒加载 InsightFace：detection + recognition，并按配置可选启用 3D-68 几何 cue。
-    按 settings.face_device 选 CPU / CUDA(onnxruntime CUDAExecutionProvider)。"""
-    from insightface.app import FaceAnalysis
-
-    modules = ["detection", "recognition"]
-    if settings.face_3d_cue:
-        modules.insert(1, "landmark_3d_68")  # 武器①：3D 面部几何（糊脸兜底）
-    use_cuda = _resolve_cuda(settings.face_device, ort=True)
-    providers = (["CUDAExecutionProvider", "CPUExecutionProvider"] if use_cuda
-                 else ["CPUExecutionProvider"])
-    app = FaceAnalysis(
-        name=settings.face_model,
-        allowed_modules=modules,
-        providers=providers,
-    )
-    app.prepare(
-        ctx_id=(0 if use_cuda else -1),
-        det_thresh=settings.face_min_det_score,
-        det_size=(settings.face_det_size, settings.face_det_size),
-    )
-    return {"app": app}
+    return _runtime.load_insightface(resolve_cuda_fn=_resolve_cuda)
 
 
 def _ensure_backend() -> None:
-    """线程安全地懒加载并选定 backend（仅初始化一次）。"""
-    if _state["backend"] is not None:
-        return
-    with _lock:
-        if _state["backend"] is not None:
-            return
-        want = (settings.face_backend or "insightface").strip().lower()
-        if want == "insightface":
-            _state["model"] = _load_insightface()
-            _state["backend"] = "insightface"
-        else:
-            raise ValueError(f"未知 FACE_BACKEND：{want}")
+    _runtime.ensure_backend(
+        _state,
+        load_insightface_fn=_load_insightface,
+        lock=_lock,
+    )
 
 
 def active_backend() -> str:
@@ -116,154 +54,126 @@ def active_backend() -> str:
     return _state["backend"]
 
 
-# ---------------- 图像归一化（项目内统一用 PIL/data URI，InsightFace 要 BGR np）----------------
 def _to_bgr(image) -> np.ndarray:
-    """把 data URI / 纯 base64 / 字节 / PIL.Image / np(RGB) 统一成 InsightFace 要的 BGR ndarray。"""
-    from PIL import Image
-
-    if isinstance(image, np.ndarray):
-        arr = image
-        # 约定传入 np 为 RGB；转 BGR
-        return arr[:, :, ::-1].copy() if arr.ndim == 3 else arr
-    if isinstance(image, Image.Image):
-        pil = image
-    else:
-        from .detector import _decode_image  # 复用：支持 data URI / base64 / bytes → PIL RGB
-
-        pil = _decode_image(image)
-    rgb = np.asarray(pil.convert("RGB"))
-    return rgb[:, :, ::-1].copy()  # RGB → BGR
+    return _runtime.to_bgr(image)
 
 
-# ---------------- 核心：检测 + 提 embedding + 质量 ----------------
-
-def _reembed(bgr_face: np.ndarray) -> np.ndarray | None:
-    """对一张已裁好的人脸 BGR 图，用 recognition 模型重提归一化 embedding（超分后重算用）。"""
-    app = _state["model"]["app"]
-    rec = None
-    for m in app.models.values():
-        if getattr(m, "taskname", "") == "recognition":
-            rec = m
-            break
-    if rec is None:
-        return None
-    try:
-        feat = rec.get_feat(bgr_face).reshape(-1).astype(np.float32)
-    except Exception:
-        return None
-    n = float(np.linalg.norm(feat))
-    return feat / n if n > 0 else feat
-
-
-def embed_aligned_face(bgr_face: np.ndarray, backend: str) -> np.ndarray | None:
-    """对已按 5 点关键点对齐的人脸提指定后端 embedding。"""
-    _ensure_backend()
-    name = backend.strip().lower()
-    if name == "arcface":
-        return _reembed(bgr_face)
-    if name == "adaface":
-        return _adaface_embed(bgr_face)
-    raise ValueError(f"未知人脸识别后端：{backend}")
-
-
-def _align_face(bgr: np.ndarray, kps: np.ndarray | None) -> np.ndarray | None:
-    if kps is None:
-        return None
-    try:
-        from insightface.utils import face_align
-
-        return face_align.norm_crop(bgr, np.asarray(kps), image_size=112)
-    except Exception:
-        return None
+def _align_face(
+    bgr: np.ndarray,
+    kps: np.ndarray | None,
+) -> np.ndarray | None:
+    return _runtime.align_face(bgr, kps)
 
 
 def align_face(image, kps) -> np.ndarray | None:
-    """使用产品相同的五点对齐逻辑，返回112×112 BGR人脸。"""
-    return _align_face(_to_bgr(image), np.asarray(kps, dtype=np.float32) if kps is not None else None)
+    """Use the product five-point alignment and return a 112x112 BGR face."""
+    points = (
+        np.asarray(kps, dtype=np.float32)
+        if kps is not None
+        else None
+    )
+    return _align_face(_to_bgr(image), points)
 
 
 def _detect_face_candidates(app, bgr: np.ndarray) -> list[dict]:
-    """仅调用SCRFD，避免质量门控前提前运行ArcFace识别模型。"""
-    bboxes, kpss = app.det_model.detect(bgr, max_num=0, metric="default")
-    candidates = []
-    for index in range(bboxes.shape[0]):
-        kps = np.asarray(kpss[index], dtype=np.float32) if kpss is not None else None
-        candidates.append(
-            {
-                "bbox": [float(value) for value in bboxes[index, :4]],
-                "kps": kps.tolist() if kps is not None else None,
-                "det_score": float(bboxes[index, 4]),
-                "_kps_array": kps,
-            }
-        )
-    return candidates
+    return _runtime.detect_face_candidates(app, bgr)
 
 
-def _attach_optional_geometry(app, bgr: np.ndarray, item: dict) -> None:
-    if not settings.face_3d_cue:
-        return
-    try:
-        face_obj = _FaceRecord(
-            bbox=np.asarray(item["bbox"], dtype=np.float32),
-            kps=item.get("_kps_array"),
-            det_score=float(item["det_score"]),
-        )
-        for model in app.models.values():
-            if getattr(model, "taskname", "") == "landmark_3d_68":
-                model.get(bgr, face_obj)
-                landmarks = getattr(face_obj, "landmark_3d_68", None)
-                if landmarks is not None:
-                    descriptor = geometry_descriptor(np.asarray(landmarks, dtype=np.float32))
-                    if descriptor is not None:
-                        item["geom3d"] = descriptor
-                return
-    except Exception as exc:
-        item["geom3d_error"] = f"{type(exc).__name__}: {exc}"
+# Recognition compatibility seams -------------------------------------------
+def adaface_error() -> str | None:
+    return _adaface_error()
 
 
+def _reembed(bgr_face: np.ndarray) -> np.ndarray | None:
+    return _recognition.reembed(bgr_face, _state)
+
+
+def embed_aligned_face(
+    bgr_face: np.ndarray,
+    backend: str,
+) -> np.ndarray | None:
+    """Extract an embedding from an already aligned face."""
+    _ensure_backend()
+    return _recognition.embed_aligned_face(
+        bgr_face,
+        backend,
+        arcface_embed=_reembed,
+        adaface_embed=_adaface_embed,
+    )
+
+
+# Geometry compatibility seams ----------------------------------------------
+def geometry_descriptor(
+    landmarks_3d: np.ndarray,
+) -> np.ndarray | None:
+    return _geometry.geometry_descriptor(landmarks_3d)
+
+
+def _attach_optional_geometry(
+    app,
+    bgr: np.ndarray,
+    item: dict,
+) -> None:
+    _geometry.attach_optional_geometry(
+        app,
+        bgr,
+        item,
+        enabled=settings.face_3d_cue,
+        descriptor_fn=geometry_descriptor,
+        face_record_cls=_FaceRecord,
+    )
+
+
+# Detection and identity orchestration --------------------------------------
 def detect(
     image,
     with_quality: bool = True,
     enhance_blurry: bool | None = None,
     with_identity: bool = True,
     with_geometry: bool = True,
+    superres_backend: str | None = None,
 ) -> list[dict]:
-    """先检测和评估质量，仅对can_match=true的人脸提身份embedding。
-
-    Args:
-        image: data URI / base64 / bytes / PIL.Image / np(RGB)（整帧）。
-        with_quality: 是否附带 assess_quality 结果。
-        enhance_blurry: 是否对糊脸做超分(武器②)后重提 embedding。None 时取 settings（超分非 off 即开）。
-        with_identity: 是否在质量评估后调用ArcFace/AdaFace。False用于只冻结检测与质量输入集。
-        with_geometry: 是否计算可选3D-68几何描述；实验prepare可关闭以保持纯检测/质量链路。
-
-    Returns:
-        list[dict]，每项：
-          {bbox, kps, det_score, quality, embedding?, geom3d?, enhanced?}
-    """
-    from PIL import Image
-
+    """Detect faces, assess quality, then optionally attach identity evidence."""
+    if superres_backend is not None:
+        superres_backend = _validate_superres_backend(superres_backend)
     _ensure_backend()
     bgr = _to_bgr(image)
     app = _state["model"]["app"]
     candidates = _detect_face_candidates(app, bgr)
-    use_sr = (settings.face_superres not in {"off", "none", ""}) if enhance_blurry is None else enhance_blurry
+    selected_superres = (
+        settings.face_superres
+        if superres_backend is None
+        else superres_backend
+    )
+    use_sr = (
+        selected_superres not in {"off", "none", ""}
+        if enhance_blurry is None
+        else enhance_blurry
+    )
+    if use_sr:
+        selected_superres = _validate_superres_backend(selected_superres)
+        use_sr = selected_superres != "off"
 
-    out: list[dict] = []
+    output: list[dict] = []
     for candidate in candidates:
         item = dict(candidate)
         aligned_bgr = _align_face(bgr, item.get("_kps_array"))
         quality = assess_quality(item, bgr, aligned_bgr=aligned_bgr)
         if with_geometry:
             _attach_optional_geometry(app, bgr, item)
-
-        _attach_identity(item, aligned_bgr, quality, use_sr=use_sr, with_identity=with_identity)
-
+        _attach_identity(
+            item,
+            aligned_bgr,
+            quality,
+            use_sr=use_sr,
+            superres_backend=selected_superres,
+            with_identity=with_identity,
+        )
         item.pop("_kps_array", None)
         if with_quality:
             item["quality"] = quality
-        out.append(item)
-    return out
+        output.append(item)
+    return output
 
 
 def _attach_identity(
@@ -272,224 +182,153 @@ def _attach_identity(
     quality: dict,
     *,
     use_sr: bool,
+    superres_backend: str,
     with_identity: bool,
 ) -> None:
     """Finalize one frozen face candidate without rerunning detection."""
-    from PIL import Image
-
-    eligibility = quality.get("eligibility", "direct" if quality.get("can_match") else "unusable")
-    identity_input = aligned_bgr if eligibility == "direct" else None
-    match_source = "original" if identity_input is not None else "none"
-    quality["enhanced"] = False
-
-    if use_sr and eligibility == "recoverable" and aligned_bgr is not None:
-        item["superres_attempted"] = True
-        aligned_rgb = Image.fromarray(aligned_bgr[:, :, ::-1])
-        enhanced = enhance(aligned_rgb, aligned=True)
-        if enhanced is not None and enhanced is not aligned_rgb:
-            restored_bgr = np.asarray(enhanced.convert("RGB"))[:, :, ::-1].copy()
-            fiqa_after = _deep_fiqa_score(restored_bgr)
-            if fiqa_after is not None:
-                quality["fiqa_after_superres"] = round(fiqa_after, 3)
-                before = quality.get("fiqa")
-                if before is not None:
-                    quality["fiqa_delta_superres"] = round(fiqa_after - float(before), 3)
-            restored_ok, restored_reason = _superres_quality_ok(fiqa_after)
-            if restored_ok:
-                identity_input = restored_bgr
-                match_source = "superres"
-                item["enhanced"] = True
-                quality["enhanced"] = True
-            else:
-                item["superres_rejected"] = restored_reason
-
-    item["match_source"] = match_source
-    item["match_ready"] = False
-    if not with_identity or identity_input is None:
-        return
-    try:
-        identity_embedding = embed_aligned_face(identity_input, settings.face_rec_backend)
-        if identity_embedding is not None:
-            item["embedding"] = identity_embedding
-            item["rec_backend"] = settings.face_rec_backend
-            item["match_ready"] = True
-    except Exception as exc:
-        item["identity_error"] = f"{type(exc).__name__}: {exc}"
+    _recognition.attach_identity(
+        item,
+        aligned_bgr,
+        quality,
+        use_sr=use_sr,
+        superres_backend=superres_backend,
+        with_identity=with_identity,
+        rec_backend=settings.face_rec_backend,
+        enhance_fn=enhance,
+        superres_error_fn=superres_error,
+        fiqa_fn=_deep_fiqa_score,
+        superres_quality_fn=_superres_quality_ok,
+        embed_fn=embed_aligned_face,
+    )
 
 
-def finalize_identity(image, face: dict, enhance_blurry: bool | None = None) -> dict:
-    """Embed one previously detected face candidate without rerunning SCRFD."""
+def finalize_identity(
+    image,
+    face: dict,
+    enhance_blurry: bool | None = None,
+    superres_backend: str | None = None,
+) -> dict:
+    """Embed a previously detected face without rerunning SCRFD."""
+    if superres_backend is not None:
+        superres_backend = _validate_superres_backend(superres_backend)
     _ensure_backend()
     bgr = _to_bgr(image)
     item = dict(face)
-    kps = item.get("kps")
+    keypoints = item.get("kps")
     aligned_bgr = _align_face(
         bgr,
-        np.asarray(kps, dtype=np.float32) if kps is not None else None,
+        (
+            np.asarray(keypoints, dtype=np.float32)
+            if keypoints is not None
+            else None
+        ),
     )
-    quality = dict(item.get("quality") or assess_quality(item, bgr, aligned_bgr=aligned_bgr))
+    quality = dict(
+        item.get("quality")
+        or assess_quality(item, bgr, aligned_bgr=aligned_bgr)
+    )
+    selected_superres = (
+        settings.face_superres
+        if superres_backend is None
+        else superres_backend
+    )
     use_sr = (
-        settings.face_superres not in {"off", "none", ""}
+        selected_superres not in {"off", "none", ""}
         if enhance_blurry is None
         else enhance_blurry
     )
-    _attach_identity(item, aligned_bgr, quality, use_sr=use_sr, with_identity=True)
+    if use_sr:
+        selected_superres = _validate_superres_backend(selected_superres)
+        use_sr = selected_superres != "off"
+    _attach_identity(
+        item,
+        aligned_bgr,
+        quality,
+        use_sr=use_sr,
+        superres_backend=selected_superres,
+        with_identity=True,
+    )
     item["quality"] = quality
     item.pop("_kps_array", None)
     return item
 
 
-def geometry_descriptor(landmarks_3d: np.ndarray) -> np.ndarray | None:
-    """从 68 个 3D 关键点算一个**姿态/尺度不变**的面部几何描述子（L2 归一化）。
-
-    思路：把 3D 点云中心化、按尺度归一化，再用关键点对之间的归一化距离（脸的"骨架结构"——
-    颧骨宽、鼻梁高、下巴长等），这些在**纹理糊掉后依然稳定**，是攻人脸模糊的几何线索。
-    与 ArcFace 外观向量互补：糊脸时几何撑住身份。
-    """
-    if landmarks_3d is None or landmarks_3d.shape[0] < 68:
-        return None
-    pts = landmarks_3d.astype(np.float32).copy()
-    pts -= pts.mean(axis=0, keepdims=True)              # 中心化（平移不变）
-    scale = float(np.sqrt((pts ** 2).sum(axis=1).mean()))
-    if scale <= 1e-6:
-        return None
-    pts /= scale                                        # 尺度归一化
-    # 选若干结构性关键点对（轮廓/眼/鼻/嘴/下巴），用点对距离刻画几何结构
-    idx_pairs = [
-        (36, 45),  # 两眼外角（脸宽）
-        (39, 42),  # 两眼内角
-        (31, 35),  # 鼻翼宽
-        (27, 33),  # 鼻梁长
-        (48, 54),  # 嘴角宽
-        (51, 57),  # 上下唇
-        (0, 16),   # 颧骨/脸颊最宽
-        (8, 27),   # 下巴到鼻根（脸长）
-        (17, 26),  # 两眉外端
-        (21, 22),  # 两眉内端
-        (3, 13),   # 下颌宽
-        (30, 8),   # 鼻尖到下巴
-    ]
-    feats = []
-    for a, b in idx_pairs:
-        feats.append(float(np.linalg.norm(pts[a] - pts[b])))
-    # 再补几个深度差（Z 轴，体现立体度：鼻梁凸起、眼窝深度）
-    feats.append(float(pts[30, 2] - pts[27, 2]))        # 鼻尖 vs 鼻根 深度
-    feats.append(float(pts[8, 2] - pts[30, 2]))         # 下巴 vs 鼻尖 深度
-    feats.append(float(pts[0, 2] - pts[30, 2]))         # 脸颊 vs 鼻尖 深度（侧凸）
-    vec = np.asarray(feats, dtype=np.float32)
-    n = float(np.linalg.norm(vec))
-    return (vec / n).astype(np.float32) if n > 0 else vec
-
-
+# Recognition selection/fusion façade ---------------------------------------
 def best_face(faces: list[dict]) -> dict | None:
-    """从一条 track 的若干帧人脸里挑质量最高的一张（最佳脸选择，攻人脸模糊）。"""
-    cand = [f for f in faces if f.get("embedding") is not None]
-    if not cand:
-        return None
-    return max(cand, key=lambda f: (f.get("quality", {}) or {}).get("quality", 0.0))
+    return _recognition.best_face(faces)
 
 
 def fuse_embeddings(faces: list[dict]) -> np.ndarray | None:
-    """多帧人脸 embedding 的质量加权融合 → 一个更稳的 512 维向量（再归一化）。
-
-    对应"多帧脸融合"：几帧糊不要紧，按质量加权平均压住单帧噪声。质量全 0 时退化为等权平均。
-    """
-    embs, weights = [], []
-    for f in faces:
-        e = f.get("embedding")
-        if e is None:
-            continue
-        embs.append(np.asarray(e, dtype=np.float32))
-        q = f.get("quality", {}) or {}
-        weights.append(max(0.0, min(1.0, float(q.get("match_weight", q.get("quality", 0.0))))))
-    if not embs:
-        return None
-    w = np.asarray(weights, dtype=np.float32)
-    if w.sum() <= 0:
-        w = np.ones(len(embs), dtype=np.float32)
-    fused = (np.stack(embs) * w[:, None]).sum(axis=0)
-    n = float(np.linalg.norm(fused))
-    return (fused / n).astype(np.float32) if n > 0 else fused.astype(np.float32)
+    return _recognition.fuse_embeddings(faces)
 
 
+# Association façade ---------------------------------------------------------
 def _iou_contain(face_box, person_box) -> float:
-    """人脸框相对 person 框的"被包含度"= 交集面积 / 人脸框面积（人脸应落在人体内）。"""
-    fx1, fy1, fx2, fy2 = face_box
-    px1, py1, px2, py2 = person_box
-    ix1, iy1 = max(fx1, px1), max(fy1, py1)
-    ix2, iy2 = min(fx2, px2), min(fy2, py2)
-    iw, ih = max(0.0, ix2 - ix1), max(0.0, iy2 - iy1)
-    inter = iw * ih
-    face_area = max(1e-6, (fx2 - fx1) * (fy2 - fy1))
-    return inter / face_area
+    return _association.containment(face_box, person_box)
 
 
-def associate_to_persons(faces: list[dict], person_dets: list[dict]) -> dict[int, dict]:
-    """把检测到的人脸对到 person 的 track_id（用"人脸被人体框包含"的程度）。
-
-    Args:
-        faces: detect() 的输出。
-        person_dets: [{box:[x1,y1,x2,y2], track_id}]（来自 /track 的 person 检测）。
-
-    Returns:
-        {track_id: face}，每个 track 取被包含度最高的那张脸（> 阈值才算）。
-    """
-    persons = [d for d in person_dets if d.get("label", "person") == "person" and d.get("track_id") is not None]
-    pairs: list[tuple[float, int, int]] = []
-    ambiguous_faces: set[int] = set()
-    for face_index, face in enumerate(faces):
-        fb = face["bbox"]
-        face_cx = (float(fb[0]) + float(fb[2])) / 2.0
-        face_cy = (float(fb[1]) + float(fb[3])) / 2.0
-        face_pairs = []
-        for person_index, p in enumerate(persons):
-            tid = int(p["track_id"])
-            px1, py1, px2, py2 = [float(value) for value in p["box"][:4]]
-            person_h = max(1e-6, py2 - py1)
-            head_y_ratio = (face_cy - py1) / person_h
-            score = _iou_contain(fb, p["box"])
-            if not (px1 <= face_cx <= px2):
-                continue
-            if head_y_ratio < -0.05 or head_y_ratio > settings.face_assoc_max_head_y_ratio:
-                continue
-            if score >= settings.face_assoc_min_contain:
-                face_pairs.append((score, face_index, person_index, tid))
-        face_pairs.sort(reverse=True)
-        if len(face_pairs) > 1:
-            margin = face_pairs[0][0] - face_pairs[1][0]
-            if margin < settings.face_assoc_ambiguity_margin:
-                ambiguous_faces.add(face_index)
-                continue
-        pairs.extend((score, fidx, pidx) for score, fidx, pidx, _ in face_pairs)
-
-    result: dict[int, dict] = {}
-    used_faces: set[int] = set()
-    used_persons: set[int] = set()
-    for score, face_index, person_index in sorted(pairs, reverse=True):
-        if face_index in ambiguous_faces or face_index in used_faces or person_index in used_persons:
-            continue
-        person = persons[person_index]
-        tid = int(person["track_id"])
-        associated = dict(faces[face_index])
-        associated["association_score"] = round(float(score), 4)
-        result[tid] = associated
-        used_faces.add(face_index)
-        used_persons.add(person_index)
-    return result
+def associate_to_persons(
+    faces: list[dict],
+    person_dets: list[dict],
+) -> dict[int, dict]:
+    return _association.associate_to_persons(
+        faces,
+        person_dets,
+        min_contain=settings.face_assoc_min_contain,
+        ambiguity_margin=settings.face_assoc_ambiguity_margin,
+        max_head_y_ratio=settings.face_assoc_max_head_y_ratio,
+        containment_fn=_iou_contain,
+    )
 
 
-
-def superres_error() -> str | None:
-    return _superres_error_impl()
-
-
-def _ensure_superres():
-    """兼容实验脚本：实际实现已迁到 identity.face.super_resolution。"""
-    return _ensure_superres_impl()
+# Super-resolution and quality compatibility façade -------------------------
+def available_superres_backends() -> tuple[str, ...]:
+    return _available_superres_backends()
 
 
-def enhance(image, *, aligned: bool = False):
-    return _enhance_impl(image, aligned=aligned)
+def validate_superres_backend(backend: str | None = None) -> str:
+    return _validate_superres_backend(backend)
+
+
+def register_superres_backend(
+    name: str,
+    loader,
+    enhancer,
+    *,
+    replace: bool = False,
+) -> None:
+    _register_superres_backend(
+        name,
+        loader,
+        enhancer,
+        replace=replace,
+    )
+
+
+def superres_error(backend: str | None = None) -> str | None:
+    if backend is None:
+        return _superres_error_impl()
+    return _superres_error_impl(backend)
+
+
+def _ensure_superres(backend: str | None = None):
+    """Retain the legacy experiment integration seam."""
+    if backend is None:
+        return _ensure_superres_impl()
+    return _ensure_superres_impl(backend)
+
+
+def enhance(
+    image,
+    *,
+    aligned: bool = False,
+    backend: str | None = None,
+):
+    return _enhance_impl(
+        image,
+        aligned=aligned,
+        backend=backend,
+    )
 
 
 def assess_quality(
@@ -497,7 +336,11 @@ def assess_quality(
     bgr: np.ndarray | None = None,
     aligned_bgr: np.ndarray | None = None,
 ) -> dict:
-    return _assess_quality_impl(face, bgr=bgr, aligned_bgr=aligned_bgr)
+    return _assess_quality_impl(
+        face,
+        bgr=bgr,
+        aligned_bgr=aligned_bgr,
+    )
 
 
 __all__ = [
@@ -507,6 +350,7 @@ __all__ = [
     "adaface_error",
     "assess_quality",
     "associate_to_persons",
+    "available_superres_backends",
     "best_face",
     "detect",
     "finalize_identity",
@@ -514,5 +358,7 @@ __all__ = [
     "enhance",
     "fuse_embeddings",
     "geometry_descriptor",
+    "register_superres_backend",
     "superres_error",
+    "validate_superres_backend",
 ]

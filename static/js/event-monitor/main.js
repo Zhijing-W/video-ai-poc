@@ -1,5 +1,5 @@
 import { downloadJson, openLightbox, closeLightbox, sendDryRunToLlm, toggleJson } from "./actions.js";
-import { health, listSamples, runAnalysis } from "./api.js";
+import { health, listSamples, listSuperresBackends, runAnalysis } from "./api.js";
 import { finishProgress, startProgress } from "./progress.js";
 import {
   prepareForRun,
@@ -9,7 +9,14 @@ import {
   setStatus,
   showRunFailure,
 } from "./render.js";
-import { closeSettings, collectAnalysisRequest, openSettings, wireDropzone } from "./settings.js";
+import {
+  closeSettings,
+  collectAnalysisRequest,
+  openSettings,
+  renderSuperresBackends,
+  wireDropzone,
+  wireSuperresSettings,
+} from "./settings.js";
 import { $ } from "./utils.js";
 
 function tickClock() {
@@ -21,6 +28,14 @@ async function loadSampleOptions() {
     renderSamples(await listSamples());
   } catch (_) {
     renderSamples({}, true);
+  }
+}
+
+async function loadSuperresOptions() {
+  try {
+    renderSuperresBackends(await listSuperresBackends());
+  } catch (_) {
+    renderSuperresBackends();
   }
 }
 
@@ -91,6 +106,8 @@ window.addEventListener("error", (event) => {
 tickClock();
 setInterval(tickClock, 1000);
 wireDropzone();
+wireSuperresSettings();
 bindEvents();
 checkBackend();
 loadSampleOptions();
+loadSuperresOptions();

@@ -111,20 +111,19 @@ def assess_quality(
     pitch_bad = (pitch <= -settings.face_pitch_down_max) or (pitch >= settings.face_pitch_up_max)
     angle_clear = abs(yaw) <= settings.face_yaw_clear and abs(pitch) <= settings.face_pitch_clear
 
-    # ---- 清晰度 / FIQA 判级 ----
+    # ---- 清晰度判级；FIQA仅保留为诊断 ----
     detection_bad = det < settings.face_min_det_score
     blur_bad = blur is not None and blur < settings.face_min_blur_var
     blur_degraded = blur is not None and blur < settings.face_blur_clear_var
     blur_clear = (blur is None or blur >= settings.face_blur_clear_var) and not detection_bad
-    fiqa_bad = fiqa is not None and fiqa < settings.face_fiqa_poor_thresh
     fiqa_clear = fiqa is None or fiqa >= settings.face_fiqa_clear_thresh
 
     size_bad = min(w, h) < settings.face_min_size
 
-    # ---- 合成类别：规则硬失败或FIQA过低→poor；全部清晰→clear；其余marginal ----
-    if yaw_bad or pitch_bad or blur_bad or detection_bad or size_bad or fiqa_bad:
+    # ---- 合成类别：规则硬失败→poor；全部清晰→clear；其余marginal ----
+    if yaw_bad or pitch_bad or blur_bad or detection_bad or size_bad:
         category = "poor"
-    elif angle_clear and blur_clear and fiqa_clear:
+    elif angle_clear and blur_clear:
         category = "clear"
     else:
         category = "marginal"
@@ -158,19 +157,13 @@ def assess_quality(
         reason = "pitch_down" if pitch < 0 else "pitch_up"
     elif blur_bad or detection_bad:
         reason = "too_blurry"
-    elif fiqa_bad:
-        reason = "low_fiqa"
 
-    # 规则式连续分保留作诊断；启用FIQA后，融合/最佳脸优先使用FIQA识别可用性分数。
+    # 产品排序、融合和分桶统一使用可解释规则分；FIQA不改变产品动作。
     size_term = min(1.0, area / float(settings.face_ref_area)) if settings.face_ref_area > 0 else 1.0
     rule_quality = det * (0.5 + 0.5 * front) * (0.5 + 0.5 * size_term)
     if blur is not None and settings.face_min_blur_var > 0:
         rule_quality *= min(1.0, blur / (settings.face_min_blur_var * 4))
-    quality = (
-        max(0.0, min(1.0, float(fiqa)))
-        if fiqa is not None
-        else float(rule_quality)
-    )
+    quality = float(rule_quality)
 
     extreme_pose = yaw_bad or pitch_bad
     short_side = min(w, h)
@@ -183,11 +176,11 @@ def assess_quality(
         eligibility: FaceEligibility = "unusable"
     elif size_bad:
         eligibility = "recoverable"
-    elif (blur_bad or fiqa_bad) and recoverable_size:
+    elif blur_bad and recoverable_size:
         eligibility = "recoverable"
     elif blur_degraded and recoverable_size:
         eligibility = "recoverable"
-    elif blur_bad or fiqa_bad:
+    elif blur_bad:
         eligibility = "unusable"
     else:
         eligibility = "direct"
@@ -238,13 +231,15 @@ def superres_quality_ok(
     *,
     poor_threshold: float | None = None,
 ) -> tuple[bool, str | None]:
-    """Product post-GFPGAN acceptance gate shared with offline experiments."""
+    """Return a FIQA diagnostic without deciding restored-face routing."""
     threshold = (
         settings.face_fiqa_poor_thresh
         if poor_threshold is None
         else float(poor_threshold)
     )
-    if fiqa_after is not None and fiqa_after < threshold:
+    if fiqa_after is None or not np.isfinite(float(fiqa_after)):
+        return False, "fiqa_unavailable_or_nonfinite"
+    if fiqa_after < threshold:
         return False, "fiqa_below_poor_threshold"
     return True, None
 

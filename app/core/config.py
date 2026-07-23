@@ -139,7 +139,7 @@ class Settings:
     face_pitch_down_max: float = float(_get("FACE_PITCH_DOWN_MAX", "35"))  # 低头超此判不合格（严）
     face_pitch_up_max: float = float(_get("FACE_PITCH_UP_MAX", "50"))      # 抬头超此判不合格（宽）
     face_blur_clear_var: float = float(_get("FACE_BLUR_CLEAR_VAR", "60"))  # 拉普拉斯方差≥ 此值算清晰
-    # 人脸识别可用性：CR-FIQA输出连续质量分，规则指标保留为硬门槛与具体问题标签。
+    # CR-FIQA仅作诊断；产品质量分桶、路由和融合权重由可解释规则指标决定。
     # 官方CR-FIQA代码为CC BY-NC 4.0，商业使用前需完成许可确认。
     face_fiqa_backend: str = _get("FACE_FIQA_BACKEND", "off").strip().lower()
     face_fiqa_root: str = _get(
@@ -152,7 +152,7 @@ class Settings:
     )
     face_fiqa_arch: str = _get("FACE_FIQA_ARCH", "iresnet50").strip().lower()
     face_fiqa_device: str = _get("FACE_FIQA_DEVICE", "auto").strip().lower()
-    # CR-FIQA回归头输出不是通用概率；以下是原始分数阈值，必须用MEVID训练集与客户数据重新校准。
+    # CR-FIQA回归头输出不是通用概率；以下阈值只生成诊断，需独立校准后才能升级为门控。
     face_fiqa_poor_thresh: float = float(_get("FACE_FIQA_POOR_THRESH", "0.3"))
     face_fiqa_clear_thresh: float = float(_get("FACE_FIQA_CLEAR_THRESH", "0.6"))
 
@@ -160,7 +160,7 @@ class Settings:
     # ① 3D-68 几何 cue：打开 buffalo_l 自带的 1k3d68 landmark，用 3D 面部几何（颧骨/鼻梁/下巴
     #    等结构）做额外身份线索——纹理糊但几何还在，对姿态+中度模糊鲁棒。
     face_3d_cue: bool = _get("FACE_3D_CUE", "true").strip().lower() in {"1", "true", "yes", "on"}
-    # ② 人脸超分：识别前把糊脸拉清作预处理（GFP-GAN / CodeFormer）。off/gfpgan/codeformer。
+    # ② 人脸超分：off 或任意已注册后端名称；内置 gfpgan，其他算法通过注册表接入。
     face_superres: str = _get("FACE_SUPERRES", "gfpgan").strip().lower()
     face_recoverable_min_size: int = int(_get("FACE_RECOVERABLE_MIN_SIZE", "20"))
     face_superres_max_size: int = int(
@@ -171,6 +171,9 @@ class Settings:
     face_candidate_min_gap_frames: int = int(_get("FACE_CANDIDATE_MIN_GAP_FRAMES", "2"))
     face_track_consistency_thresh: float = float(_get("FACE_TRACK_CONSISTENCY_THRESH", "0.82"))
     face_gfpgan_weights: str = _get("FACE_GFPGAN_WEIGHTS", "")               # 留空自动下载/默认路径
+    face_codeformer_weights: str = _get("FACE_CODEFORMER_WEIGHTS", "")
+    face_codeformer_fidelity: float = float(_get("FACE_CODEFORMER_FIDELITY", "1.0"))
+    face_realesrgan_x2plus_weights: str = _get("FACE_REALESRGAN_X2PLUS_WEIGHTS", "")
     # ③ AdaFace：质量自适应人脸识别后端（低清脸更强）。arcface / adaface（默认 adaface，最强）。
     face_rec_backend: str = _get("FACE_REC_BACKEND", "adaface").strip().lower()
     face_adaface_root: str = _get("FACE_ADAFACE_ROOT", str(BASE_DIR / "models" / "AdaFace"))
@@ -288,6 +291,8 @@ class Settings:
             raise ValueError("FACE_CANDIDATE_TOP_K 必须至少为 1")
         if self.face_candidate_min_gap_frames < 1:
             raise ValueError("FACE_CANDIDATE_MIN_GAP_FRAMES 必须至少为 1")
+        if not 0.0 <= self.face_codeformer_fidelity <= 1.0:
+            raise ValueError("FACE_CODEFORMER_FIDELITY 必须在 [0, 1] 范围内")
 
     def object_class_set(self) -> set[str]:
         return {c.strip() for c in self.object_classes.split(",") if c.strip()}

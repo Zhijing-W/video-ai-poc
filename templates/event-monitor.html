@@ -70,8 +70,16 @@
         <select id="faceSuperres" class="em-input">
           <option value="">默认（GFP-GAN）</option>
           <option value="gfpgan">GFP-GAN</option>
+          <option value="codeformer">CodeFormer</option>
+          <option value="realesrgan_x2plus">Real-ESRGAN x2plus</option>
           <option value="off">关闭</option>
         </select>
+        <div id="faceCodeformerFidelityField" hidden>
+          <label class="em-label" style="margin-top:8px">CodeFormer fidelity</label>
+          <input id="faceCodeformerFidelity" type="number" class="em-input" value="1.0" min="0" max="1" step="0.05" />
+          <div class="em-hint">1.0 优先保留身份；降低可增强视觉修复，但可能改变身份纹理。</div>
+        </div>
+        <div class="em-hint">选项来自服务端注册表；未知名称不会提交。</div>
         <label class="em-check" style="margin-top:8px"><input type="checkbox" id="face3d" checked /> 3D-68 几何 cue</label>
       </div>
 
@@ -222,6 +230,6 @@
     </figure>
   </div>
 
-  <script type="module" src="/static/js/event-monitor/main.js?v=20260716-split"></script>
+  <script type="module" src="/static/js/event-monitor/main.js?v=20260723-superres"></script>
 </body>
 </html>

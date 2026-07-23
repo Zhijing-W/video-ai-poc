@@ -39,6 +39,7 @@ experiment/**/__pycache__/
 experiment/**/dataset/
 experiment/**/results/
 experiment/**/papers/
+experiment/**/paper/
 experiment/**/*.pdf
 
 # git / IDE / infra 元数据（镜像不需要）
