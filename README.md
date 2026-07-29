@@ -62,7 +62,7 @@ python -m venv .venv
 copy .env.example .env
 # Edit .env and provide your Azure OpenAI endpoint, API key, and deployment.
 
-.\.venv\Scripts\python.exe scripts\download_models.py --include-optional-yolo
+.\.venv\Scripts\python.exe scripts\download_models.py --all
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --port 8000
 ```
 
@@ -81,33 +81,38 @@ Linux/macOS users can replace `.\.venv\Scripts\python.exe` with `.venv/bin/pytho
 | `GET /api/event-monitor/samples` | List locally available sample videos |
 | `POST /api/event-monitor/understand` | Run the complete video-to-event pipeline |
 | `POST /api/event-monitor/complete` | Continue a dry run with the LLM without rerunning CV |
+| `GET /api/event-monitor/reid-backends` | List registered body ReID backends |
+| `GET /api/event-monitor/superres-backends` | List registered face super-resolution backends |
 | `GET /health` | Service health |
 
 The legacy page path `/eventmonitor` redirects to `/event-monitor`.
 
 ### Models
 
-Git stores only model manifests and instructions, never model binaries.
+Git stores only model manifests and instructions, never model binaries. Models are
+shared outside the checkout through `MODEL_ROOT`, which defaults to
+`~/.cache/event-monitor/models`.
 
 ```text
-models/
-├── README.md
-├── manifest.json
-├── yolov8m.pt                 # local, ignored
-├── yolov8n-pose.pt            # local, ignored
-├── yolov8m-seg.pt             # local, ignored
-├── AdaFace/                   # optional, ignored
-├── OpenGait/                  # optional, ignored
-└── gfpgan/                    # optional, ignored
+~/.cache/event-monitor/models/
+├── detection/yolo/
+├── face/
+├── superres/
+├── reid/
+└── gait/
 ```
 
-Prepare the Ultralytics models with:
+Prepare all standard product models with:
 
 ```powershell
-python scripts\download_models.py --include-optional-yolo
+python scripts\download_models.py --all
 ```
 
 See [`models/README.md`](models/README.md) for InsightFace, AdaFace, OpenGait, and GFPGAN setup.
+
+Product runtimes never download weights implicitly. They load a selected backend
+lazily from `MODEL_ROOT` and return an explicit error when its local assets are
+missing. Only ReID `auto` may fall back (`OSNet -> ResNet50 -> coarse`).
 
 ### Data
 
@@ -133,7 +138,8 @@ Copy `.env.example` to `.env`. Important settings include:
 | `AZURE_OPENAI_DEPLOYMENT` | Vision-capable model deployment |
 | `DATA_DIR`, `OUTPUT_DIR`, `GALLERY_DIR` | Runtime storage locations |
 | `TRACK_BACKEND` | `bytetrack`, `botsort`, or `botsort_reid` |
-| `REID_BACKEND` | `auto`, `osnet`, `resnet50`, or `coarse` |
+| `MODEL_ROOT` | Shared model directory outside the Git checkout |
+| `REID_BACKEND` | `auto`, `osnet`, `resnet50`, `coarse`, `clipreid`, `siglip2`, or `differ` |
 | `FACE_REC_BACKEND` | `arcface` or `adaface` |
 | `FACE_SUPERRES` | `off`, `gfpgan`, `codeformer`, or `realesrgan_x2plus` |
 | `FACE_CODEFORMER_FIDELITY` | CodeFormer identity fidelity in `[0,1]`; default `1.0` is identity-first |
@@ -156,6 +162,12 @@ registered names through `/api/event-monitor/superres-backends`.
 CodeFormer is integrated for research/non-commercial evaluation under S-Lab
 License 1.0; commercial deployment requires separate permission. The complete
 notice is in `licenses/CodeFormer-S-Lab-License-1.0.txt`.
+
+Body ReID dispatch lives in `app/body_reid.py`. Each model-specific adapter lives
+under `app/identity/body_reid_backends/` and is registered with a lazy loader and
+embedder. CLIP-ReID, SigLIP2, and DIFFER are selectable through the same API/UI
+catalog; none of their official source trees or checkpoints is imported at process
+startup.
 
 ### Project structure
 

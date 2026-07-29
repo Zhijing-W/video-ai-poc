@@ -21,6 +21,7 @@ from __future__ import annotations
 import importlib
 import sys
 import threading
+from pathlib import Path
 
 import numpy as np
 
@@ -188,17 +189,29 @@ def embed_track(pose_seq: list[np.ndarray], sil_seq: list[np.ndarray]) -> np.nda
 # ---------------- 逐帧提取：姿态 + 剪影（供集成层按 track 累积）----------------
 def _seg_model():
     if _state["seg"] is None:
+        weights = Path(settings.gait_seg_model).expanduser()
+        if not weights.is_file():
+            raise FileNotFoundError(
+                f"步态分割权重不存在：{weights}；请先运行 "
+                "python scripts\\download_models.py --include-optional-yolo"
+            )
         from ultralytics import YOLO
 
-        _state["seg"] = YOLO(settings.gait_seg_model)
+        _state["seg"] = YOLO(str(weights))
     return _state["seg"]
 
 
 def _pose_model():
     if _state["pose"] is None:
+        weights = Path(settings.pose_model).expanduser()
+        if not weights.is_file():
+            raise FileNotFoundError(
+                f"姿态权重不存在：{weights}；请先运行 "
+                "python scripts\\download_models.py --include-optional-yolo"
+            )
         from ultralytics import YOLO
 
-        _state["pose"] = YOLO(settings.pose_model)
+        _state["pose"] = YOLO(str(weights))
     return _state["pose"]
 
 

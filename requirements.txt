@@ -20,7 +20,7 @@ python-dotenv
 imageio-ffmpeg
 
 # Phase 2 · Step 5：YOLO 物体检测层（廉价守门员，给事件门控提供依据）。
-# ultralytics 会按平台拉取 CPU 版 torch；首次调用自动下载模型权重。
+# ultralytics 会按平台拉取 CPU 版 torch；模型权重由 scripts/download_models.py 预先准备。
 ultralytics
 
 # Phase 3 · Step 11 / Phase 4：多目标跟踪（MOT）。
@@ -35,13 +35,27 @@ faiss-cpu
 torchvision
 
 # Phase 4：ReID 升级为真·行人重识别 OSNet（域泛化）。
-# boxmot：提供 OSNet/OSNet-AIN 等预训练 ReID（默认 osnet_ain_x1_0_msmt17，512 维，权重首次自动下载）；
+# boxmot：提供 OSNet/OSNet-AIN 等预训练 ReID（默认 osnet_ain_x1_0_msmt17，512 维，权重由准备脚本下载）；
 #   同时带入 lapx（替代 lap）。比通用 resnet50 强一个量级，REID_BACKEND=auto 会优先选 osnet。
 boxmot
 
+# Pluggable person ReID backends.
+# SigLIP2 runs through Transformers. CLIP-ReID and DIFFER use their pinned
+# official source trees with only the inference-time dependencies listed here.
+transformers>=4.49,<5
+huggingface-hub>=0.28,<1
+timm>=1.0,<2
+yacs>=0.1.8,<0.2
+einops>=0.8,<1
+ftfy>=6.2,<7
+torchinfo>=1.8,<2
+
+# Model preparation helper (Google Drive checkpoints).
+gdown>=5.2,<6
+
 # Phase 4 · Step 20：人脸识别分支。
 # insightface：SCRFD 检测 + ArcFace(w600k_r50) 识别，512 维归一化 embedding（业界标杆，与客户 UniFace 同源）。
-# onnxruntime：insightface 的推理后端（CPU）。首次运行自动下 ~300MB buffalo_l 模型到 ~/.insightface。
+# onnxruntime：insightface 的推理后端（CPU）。buffalo_l 由准备脚本放入 MODEL_ROOT。
 insightface
 onnxruntime
 

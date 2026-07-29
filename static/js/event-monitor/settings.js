@@ -79,6 +79,42 @@ export function renderSuperresBackends(catalog = {}) {
   updateCodeFormerFidelityVisibility();
 }
 
+export function renderReidBackends(catalog = {}) {
+  const select = $("reidBackend");
+  if (!select) return;
+  const names = Array.isArray(catalog.backends) ? catalog.backends : [];
+  const allowed = [
+    ...new Set([
+      "auto",
+      "osnet",
+      "resnet50",
+      "coarse",
+      "clipreid",
+      "siglip2",
+      "differ",
+      ...names,
+    ]),
+  ];
+  const fallbackLabels = {
+    auto: "自动（OSNet → ResNet50 → 颜色）",
+    osnet: "OSNet-AIN",
+    resnet50: "ResNet50",
+    coarse: "颜色直方图",
+    clipreid: "CLIP-ReID ViT-B/16",
+    siglip2: "SigLIP2 Person ReID",
+    differ: "DIFFER EVA02-L",
+  };
+  const metadata = catalog.metadata || {};
+  const labelFor = (name) => {
+    const base = metadata[name]?.label || fallbackLabels[name] || name;
+    return metadata[name]?.experimental ? `${base}（实验）` : base;
+  };
+  const defaultBackend = catalog.default || "auto";
+  select.replaceChildren();
+  select.add(new Option(`默认（${labelFor(defaultBackend)}）`, ""));
+  allowed.forEach((name) => select.add(new Option(labelFor(name), name)));
+}
+
 export function wireSuperresSettings() {
   const select = $("faceSuperres");
   if (select) select.addEventListener("change", updateCodeFormerFidelityVisibility);

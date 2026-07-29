@@ -85,12 +85,15 @@
 
       <div class="em-group">
         <div class="em-group-title">🧥 人形 ReID</div>
-        <label class="em-label">后端 <span class="em-info" title="选择人形 ReID 特征提取模型。auto 会优先使用 OSNet，失败时回退到 ResNet50 / 颜色直方图。">ⓘ</span></label>
+        <label class="em-label">后端 <span class="em-info" title="选择人形 ReID 特征提取模型。只有 auto 会在加载失败时回退；明确选择某个模型时会直接报告错误。">ⓘ</span></label>
         <select id="reidBackend" class="em-input">
           <option value="">默认（auto）</option>
           <option value="osnet">OSNet-AIN</option>
           <option value="resnet50">ResNet50</option>
           <option value="coarse">颜色直方图</option>
+          <option value="clipreid">CLIP-ReID ViT-B/16</option>
+          <option value="siglip2">SigLIP2 Person ReID</option>
+          <option value="differ">DIFFER EVA02-L</option>
         </select>
         <div class="em-row" style="margin-top:8px">
           <div>

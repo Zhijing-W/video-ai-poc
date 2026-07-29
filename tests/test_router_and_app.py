@@ -120,6 +120,33 @@ def test_superres_backend_catalog_and_unknown_request_validation() -> None:
     assert "未知人脸超分后端" in invalid.json()["detail"]
 
 
+def test_reid_backend_catalog_and_unknown_request_validation() -> None:
+    client = TestClient(app)
+
+    catalog = client.get("/api/event-monitor/reid-backends")
+    invalid = client.post(
+        "/api/event-monitor/understand",
+        files={"file": ("clip.mp4", b"fake video bytes", "video/mp4")},
+        data={"dry_run": "true", "reid_backend": "not-registered"},
+    )
+
+    assert catalog.status_code == 200
+    body = catalog.json()
+    assert {
+        "auto",
+        "osnet",
+        "resnet50",
+        "coarse",
+        "clipreid",
+        "siglip2",
+        "differ",
+    } <= set(body["backends"])
+    assert body["metadata"]["clipreid"]["requires_cuda"] is True
+    assert body["metadata"]["siglip2"]["experimental"] is True
+    assert invalid.status_code == 400
+    assert "未知人形ReID后端" in invalid.json()["detail"]
+
+
 def test_router_rejects_unknown_effective_default_when_face_is_enabled(
     monkeypatch,
 ) -> None:

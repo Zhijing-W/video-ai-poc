@@ -4,8 +4,8 @@
 confidence），为事件门控（Event Gate）提供判断依据 —— 避免无脑把每帧都丢给昂贵的
 gpt-4o，只在命中关键物体/事件时才放行给 LLM。
 
-模型：Ultralytics YOLO，默认 yolov8m（medium）。纯 CPU 可跑；首次调用自动下载权重。
-模型名与置信度阈值可通过环境变量 YOLO_MODEL / YOLO_CONF 配置（见 config.py）。
+模型：Ultralytics YOLO，默认 yolov8m（medium）。纯 CPU 可跑；权重必须在部署准备阶段下载。
+模型路径与置信度阈值可通过环境变量 YOLO_MODEL / YOLO_CONF 配置（见 config.py）。
 """
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ import base64
 import io
 import threading
 import time
+from pathlib import Path
 
 from .config import settings
 
@@ -21,14 +22,20 @@ _model_lock = threading.Lock()
 
 
 def _load_model():
-    """懒加载 + 单例：进程内只加载一次权重（首次会自动下载）。"""
+    """懒加载 + 单例：进程内只从本地读取一次权重。"""
     global _model
     if _model is None:
         with _model_lock:
             if _model is None:
+                model_path = Path(settings.yolo_model).expanduser()
+                if not model_path.is_file():
+                    raise FileNotFoundError(
+                        f"YOLO权重不存在：{model_path}；请先运行 "
+                        "python scripts\\download_models.py"
+                    )
                 from ultralytics import YOLO
 
-                _model = YOLO(settings.yolo_model)
+                _model = YOLO(str(model_path))
     return _model
 
 

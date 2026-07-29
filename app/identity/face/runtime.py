@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
+from pathlib import Path
 
 import numpy as np
 
@@ -9,6 +10,13 @@ from ...config import settings
 
 _lock = threading.Lock()
 _state: dict = {"backend": None, "model": None}
+_INSIGHTFACE_REQUIRED_FILES = (
+    "1k3d68.onnx",
+    "2d106det.onnx",
+    "det_10g.onnx",
+    "genderage.onnx",
+    "w600k_r50.onnx",
+)
 
 
 def resolve_cuda(device: str, ort: bool = False) -> bool:
@@ -35,6 +43,22 @@ def load_insightface(
     resolve_cuda_fn: Callable[[str, bool], bool] = resolve_cuda,
 ):
     """Load the configured InsightFace detection/recognition runtime."""
+    model_dir = (
+        Path(settings.face_insightface_root).expanduser()
+        / "models"
+        / settings.face_model
+    )
+    missing = [
+        name
+        for name in _INSIGHTFACE_REQUIRED_FILES
+        if not (model_dir / name).is_file()
+    ]
+    if missing:
+        raise FileNotFoundError(
+            f"InsightFace模型不完整：{model_dir}（缺少 {', '.join(missing)}）；"
+            "请先运行 python scripts\\download_models.py --face"
+        )
+
     from insightface.app import FaceAnalysis
 
     modules = ["detection", "recognition"]
@@ -48,6 +72,7 @@ def load_insightface(
     )
     app = FaceAnalysis(
         name=settings.face_model,
+        root=settings.face_insightface_root,
         allowed_modules=modules,
         providers=providers,
     )
