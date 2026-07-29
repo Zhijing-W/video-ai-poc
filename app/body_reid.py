@@ -145,21 +145,23 @@ def _load_osnet():
             "python scripts\\download_models.py --reid"
         )
 
-    from boxmot.reid import ReID
+    from boxmot.reid.core.auto_backend import ReidAutoBackend
     import torch
 
     # 传 torch.device 对象：boxmot 会跳过它的 select_device()，避免其把
     # CUDA_VISIBLE_DEVICES 设成非法字符串 'cuda' 而污染整个进程的 CUDA。
     dev = torch.device("cuda:0") if _reid_cuda() else torch.device("cpu")
-    reid = ReID(weights=weights, device=dev, half=False)
-    return {"reid": reid}
+    backend = ReidAutoBackend(weights=weights, device=dev, half=False)
+    return {"backend": backend.model}
 
 
 def _embed_osnet(model, crop) -> np.ndarray:
     """对一张人像 crop 提 OSNet 512 维 ReID 指纹（boxmot 已做 L2 归一化）。"""
-    reid = model["reid"]
+    backend = model["backend"]
     bgr = np.asarray(crop.convert("RGB"))[:, :, ::-1]  # PIL RGB → BGR（boxmot/cv2 约定）
-    feats = reid([bgr])  # 返回 (N, dim) 已归一化
+    height, width = bgr.shape[:2]
+    box = np.asarray([[0, 0, width, height]], dtype=np.float32)
+    feats = backend.get_features(box, bgr)
     feat = np.asarray(feats[0], dtype=np.float32).reshape(-1)
     n = float(np.linalg.norm(feat))
     return feat / n if n > 0 else feat

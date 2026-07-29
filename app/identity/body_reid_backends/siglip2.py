@@ -19,13 +19,14 @@ class LoadedSiglip2:
 
 def load(settings) -> LoadedSiglip2:
     import torch
-    from transformers import AutoModel, AutoProcessor
+    from transformers import AutoImageProcessor, AutoModel
 
     model_path = require_directory(settings.reid_siglip2_model, "SigLIP2模型目录")
     device = select_device(torch, settings.reid_device)
-    processor = AutoProcessor.from_pretrained(
+    processor = AutoImageProcessor.from_pretrained(
         model_path,
         local_files_only=True,
+        use_fast=False,
     )
     model = AutoModel.from_pretrained(
         model_path,

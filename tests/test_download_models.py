@@ -59,3 +59,55 @@ def test_prepare_face_repairs_incomplete_directory(monkeypatch, tmp_path):
         (target / name).read_bytes() == b"model"
         for name in download_models.INSIGHTFACE_REQUIRED_FILES
     )
+
+
+def test_google_drive_folder_selects_exact_relative_path(monkeypatch, tmp_path):
+    files = [
+        SimpleNamespace(id="celeb", path=r"Celeb_light\eva02_l_bio_best.pth"),
+        SimpleNamespace(id="ltcc", path=r"LTCC\eva02_l_bio_best.pth"),
+        SimpleNamespace(id="prcc", path=r"PRCC\eva02_l_bio_best.pth"),
+    ]
+    monkeypatch.setitem(
+        sys.modules,
+        "gdown",
+        SimpleNamespace(download_folder=lambda **kwargs: files),
+    )
+    selected = []
+    monkeypatch.setattr(
+        download_models,
+        "_download_gdrive",
+        lambda file_id, target, force=False: selected.append(file_id) or target,
+    )
+
+    download_models._download_gdrive_folder_file(
+        "folder",
+        "LTCC/eva02_l_bio_best.pth",
+        tmp_path / "checkpoint.pth",
+    )
+
+    assert selected == ["ltcc"]
+
+
+def test_siglip2_prepares_base_image_processor(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setitem(
+        sys.modules,
+        "huggingface_hub",
+        SimpleNamespace(
+            snapshot_download=lambda *args, **kwargs: calls.append(
+                ("snapshot", args, kwargs)
+            ),
+            hf_hub_download=lambda *args, **kwargs: calls.append(
+                ("file", args, kwargs)
+            ),
+        ),
+    )
+
+    download_models.prepare_siglip2(tmp_path, force=False)
+
+    file_call = next(call for call in calls if call[0] == "file")
+    assert file_call[1] == (
+        "google/siglip2-base-patch16-224",
+    )
+    assert file_call[2]["filename"] == "preprocessor_config.json"
+    assert file_call[2]["revision"] == download_models.SIGLIP2_BASE_REVISION

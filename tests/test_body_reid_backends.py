@@ -135,6 +135,20 @@ def test_clipreid_preprocessing_uses_official_shape_and_normalization():
     assert value.tolist() == [3.0, 4.0]
 
 
+def test_clipreid_infers_training_identity_count():
+    state = {"classifier.weight": torch.zeros((1041, 768))}
+
+    assert clipreid._infer_classifier_count(state) == 1041
+
+
+def test_clipreid_drops_null_config_sections():
+    value = {"MODEL": {"NAME": "ViT-B-16"}, "DATASETS": None}
+
+    assert clipreid._drop_null_config_values(value) == {
+        "MODEL": {"NAME": "ViT-B-16"}
+    }
+
+
 def test_siglip2_uses_processor_and_image_features():
     calls = []
 
@@ -186,10 +200,12 @@ def test_differ_infers_checkpoint_dimensions():
     state = {
         "head.weight": torch.zeros((152, 1024)),
         "camera_embed": torch.zeros((12, 1024)),
+        "head_clip_bio.weight": torch.zeros((512, 1024)),
     }
 
     assert differ._infer_classifier_count(state) == 152
     assert differ._infer_camera_count(state) == 12
+    assert differ._infer_clip_dim(state) == 512
 
 
 def test_image_tensor_resizes_width_then_height():

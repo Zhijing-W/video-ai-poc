@@ -21,6 +21,7 @@ DEFAULT_MODEL_ROOT = (
 CLIP_REID_REVISION = "eb1898b72c882875f478bebfc6d41644eece0a5d"
 DIFFER_REVISION = "67acb5d3658d103b4412c8c99f93ee8f085802fe"
 SIGLIP2_REVISION = "196e5d6"
+SIGLIP2_BASE_REVISION = "75de2d55ec2d0b4efc50b3e9ad70dba96a7b2fa2"
 INSIGHTFACE_REQUIRED_FILES = (
     "1k3d68.onnx",
     "2d106det.onnx",
@@ -125,7 +126,7 @@ def _download_gdrive(file_id: str, target: Path, *, force: bool = False) -> Path
 
 def _download_gdrive_folder_file(
     folder_id: str,
-    filename: str,
+    relative_path: str,
     target: Path,
     *,
     force: bool = False,
@@ -143,15 +144,16 @@ def _download_gdrive_folder_file(
         remaining_ok=True,
         quiet=False,
     )
+    expected = relative_path.replace("\\", "/").strip("/").casefold()
     matches = [
         item
         for item in files or []
-        if Path(item.path).name.casefold() == filename.casefold()
+        if str(item.path).replace("\\", "/").strip("/").casefold() == expected
     ]
     if len(matches) != 1:
-        available = ", ".join(Path(item.path).name for item in files or [])
+        available = ", ".join(str(item.path) for item in files or [])
         raise RuntimeError(
-            f"官方目录中应有且仅有一个{filename}；当前匹配{len(matches)}个。"
+            f"官方目录中应有且仅有一个{relative_path}；当前匹配{len(matches)}个。"
             f"目录内容：{available}"
         )
     return _download_gdrive(matches[0].id, target, force=force)
@@ -324,7 +326,7 @@ def prepare_clipreid(model_root: Path, *, force: bool) -> None:
 
 def prepare_siglip2(model_root: Path, *, force: bool) -> None:
     try:
-        from huggingface_hub import snapshot_download
+        from huggingface_hub import hf_hub_download, snapshot_download
     except ImportError as exc:
         raise RuntimeError("SigLIP2下载需要先安装huggingface-hub") from exc
     target = model_root / "reid" / "siglip2" / "model"
@@ -340,6 +342,13 @@ def prepare_siglip2(model_root: Path, *, force: bool) -> None:
         force_download=force,
         max_workers=4,
     )
+    hf_hub_download(
+        "google/siglip2-base-patch16-224",
+        filename="preprocessor_config.json",
+        revision=SIGLIP2_BASE_REVISION,
+        local_dir=target,
+        force_download=force,
+    )
     _print_ready(target)
 
 
@@ -354,8 +363,14 @@ def prepare_differ(model_root: Path, *, force: bool) -> None:
     )
     _download_gdrive_folder_file(
         GDRIVE_IDS["differ_folder"],
-        "eva02_l_bio_best.pth",
+        "LTCC/eva02_l_bio_best.pth",
         root / "eva02_l_bio_best.pth",
+        force=force,
+    )
+    _download_gdrive_folder_file(
+        GDRIVE_IDS["differ_folder"],
+        "LTCC/config.yml",
+        root / "config.yml",
         force=force,
     )
 

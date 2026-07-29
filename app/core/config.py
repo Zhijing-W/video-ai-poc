@@ -122,7 +122,7 @@ class Settings:
         _model_asset("reid", "clipreid", "ViT-B-16.pt"),
     )
     reid_clipreid_num_classes: int = int(
-        _get("REID_CLIPREID_NUM_CLASSES", "4101")
+        _get("REID_CLIPREID_NUM_CLASSES", "1041")
     )
     reid_clipreid_camera_count: int = int(
         _get("REID_CLIPREID_CAMERA_COUNT", "15")
@@ -141,14 +141,7 @@ class Settings:
     )
     reid_differ_config: str = _get(
         "REID_DIFFER_CONFIG",
-        _model_asset(
-            "reid",
-            "differ",
-            "source",
-            "configs",
-            "ltcc",
-            "eva02_l_bio.yml",
-        ),
+        _model_asset("reid", "differ", "config.yml"),
     )
     reid_differ_weights: str = _get(
         "REID_DIFFER_WEIGHTS",

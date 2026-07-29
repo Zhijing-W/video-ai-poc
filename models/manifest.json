@@ -49,7 +49,7 @@
       "environment": "REID_SIGLIP2_MODEL"
     },
     {
-      "name": "reid/differ/eva02_l_bio_best.pth + official source",
+      "name": "reid/differ/eva02_l_bio_best.pth + training config + official source",
       "provider": "xliangp/DIFFER",
       "environment": "REID_DIFFER_WEIGHTS"
     }
