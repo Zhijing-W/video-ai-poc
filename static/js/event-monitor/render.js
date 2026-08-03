@@ -4,16 +4,27 @@ import { renderTimeline } from "./timeline.js";
 import { $, baseName, esc } from "./utils.js";
 
 const STAGE_CN = {
-  extract_frames: "① 抽帧",
-  detect_track: "② YOLO 检测 + 跟踪",
-  gait_collect: "· 步态采集（Pose+Seg 逐帧）",
-  reid_identify: "③ 人形 ReID 认人",
-  face: "· 人脸分支（检测+对齐+AdaFace）",
-  gait_embed: "· 步态向量提取",
-  merge_fusion_thumb: "⑥ 三路融合 + 头像",
-  windows_select: "④⑤ 选帧 / 分窗",
-  windows_llm: "⑦ gpt-4o 事件理解",
-  overall_summary: "· 整段总结",
+  extract_frames: "视频解码与采样",
+  pipeline_setup: "模型与会话初始化",
+  object_detection: "YOLO 目标检测推理",
+  multi_object_tracking: "多目标轨迹关联（含 Tracker 外观 ReID）",
+  frame_preprocess: "帧读取、候选生成与事件分窗",
+  gait_collect: "步态样本采集（Pose + Seg）",
+  body_identity: "人形身份特征提取与检索",
+  face_identity: "人脸检测、对齐与身份检索",
+  gait_identity: "步态特征提取与检索",
+  identity_fusion: "身份融合与证据整理",
+  event_preparation: "事件上下文与关键帧准备",
+  event_understanding: "gpt-4o 多帧事件理解",
+  overall_summary: "跨事件窗整段总结",
+  other_overhead: "其他编排开销",
+  detect_track: "逐帧检测、跟踪与候选生成（旧版）",
+  reid_identify: "人形身份特征与检索（旧版）",
+  face: "人脸身份分支（旧版）",
+  gait_embed: "步态身份分支（旧版）",
+  merge_fusion_thumb: "身份融合与证据整理（旧版）",
+  windows_select: "事件上下文与关键帧准备（旧版）",
+  windows_llm: "事件准备与 gpt-4o 理解（旧版）",
 };
 
 export function setStatus(message, isError = false) {
@@ -74,10 +85,15 @@ export function showRunFailure(message) {
 
 function renderMeta(data) {
   const configUsed = data.config_used || {};
+  const withBody = configUsed.with_body ?? data.with_body ?? true;
+  const reidText = withBody
+    ? `人形 ReID <b>${esc(data.reid_backend || configUsed.reid_backend || "unknown")}</b>` +
+      `${data.reid_dim ? `(${data.reid_dim}d)` : ""}`
+    : "人形 ReID <b>off</b>";
   $("meta").innerHTML =
     `视频 <b>${esc(baseName(data.video))}</b> · ${data.frames_total} 帧 @ ${data.fps}fps · ` +
     `${(data.windows || []).length} 个事件窗 · Tracker <b>${esc(data.tracker_backend || configUsed.track_backend || "botsort_reid")}</b> · ` +
-    `ReID <b>${esc(data.reid_backend)}</b>(${data.reid_dim}d) · ` +
+    `${reidText} · ` +
     `模型 <b>${esc(data.model)}</b>${data.dry_run ? " · <b>dry-run</b>" : ""} · ${data.elapsed_seconds}s`;
 }
 
@@ -85,11 +101,19 @@ function renderConfigSummary(data) {
   const configUsed = data.config_used || {};
   const chips = [];
   const on = (enabled) => (enabled ? "on" : "off");
+  const withBody = configUsed.with_body ?? data.with_body ?? true;
 
+  chips.push(
+    `人形 <b>${on(withBody)}</b>` +
+      (withBody
+        ? `（${esc(data.reid_backend || configUsed.reid_backend || "auto")}` +
+          `${configUsed.reid_consistency_enabled ? `，top-${configUsed.reid_decision_top_k} 一致性` : "，top-1"}）`
+        : "")
+  );
   chips.push(
     `人脸 <b>${on(configUsed.with_face)}</b>` +
       (configUsed.with_face
-        ? `（${esc(configUsed.face_rec_backend || "adaface")}` +
+        ? `（${esc(configUsed.face_rec_backend || "arcface")}` +
           `${configUsed.face_superres && configUsed.face_superres !== "off" ? "+超分" : ""}` +
           `${configUsed.face_3d_cue ? "+3D" : ""}）`
         : "")
@@ -97,10 +121,6 @@ function renderConfigSummary(data) {
   chips.push(`步态 <b>${on(configUsed.with_gait)}</b>`);
   chips.push(`OCR <b>${configUsed.with_ocr ? esc(data.ocr_backend || "on") : "off"}</b>`);
   chips.push(`物体 <b>${on(configUsed.with_objects)}</b>`);
-  chips.push(
-    `ReID <b>${esc(configUsed.reid_backend || "auto")}</b>` +
-      `${configUsed.reid_consistency_enabled ? `（top-${configUsed.reid_decision_top_k} 一致性）` : "（top-1）"}`
-  );
   if (data.gait_error) chips.push(`<span class="warn">步态告警: ${esc(data.gait_error)}</span>`);
   if (data.ocr_error) chips.push(`<span class="warn">OCR告警: ${esc(data.ocr_error)}</span>`);
 
@@ -112,7 +132,7 @@ function renderTimings(data) {
   const stageTimings = data.stage_timings || {};
   const rows = Object.entries(stageTimings)
     .map(([key, value]) => ({ key, value: +value }))
-    .filter((row) => Number.isFinite(row.value) && row.value >= 0)
+    .filter((row) => Number.isFinite(row.value) && row.value > 0)
     .sort((left, right) => right.value - left.value);
 
   if (!rows.length) {
@@ -122,6 +142,11 @@ function renderTimings(data) {
 
   const max = Math.max(...rows.map((row) => row.value), 0.01);
   const total = rows.reduce((sum, row) => sum + row.value, 0);
+  const formatDuration = (seconds) => {
+    if (seconds < 0.001) return `${(seconds * 1000000).toFixed(0)}μs`;
+    if (seconds < 1) return `${(seconds * 1000).toFixed(seconds < 0.01 ? 1 : 0)}ms`;
+    return `${seconds.toFixed(2)}s`;
+  };
   const bars = rows
     .map((row, index) => {
       const pct = (row.value / max) * 100;
@@ -130,15 +155,15 @@ function renderTimings(data) {
         `<div class="em-tbar ${index === 0 ? "top" : ""}">` +
         `<span class="em-tbar-label">${esc(STAGE_CN[row.key] || row.key)}</span>` +
         `<span class="em-tbar-track"><span class="em-tbar-fill" style="width:${pct.toFixed(1)}%"></span></span>` +
-        `<span class="em-tbar-val">${row.value.toFixed(1)}s · ${share}%</span></div>`
+        `<span class="em-tbar-val">${formatDuration(row.value)} · ${share}%</span></div>`
       );
     })
     .join("");
 
   $("timings").hidden = false;
   $("timings").innerHTML =
-    `<div class="em-timings-head">⏱ 本次各阶段实测耗时` +
-    `<span class="tot">总 ${esc(data.elapsed_seconds)}s · 本地 CPU</span></div>${bars}`;
+    `<div class="em-timings-head">⏱ 服务端实测耗时（按耗时降序）` +
+    `<span class="tot">总 ${esc(data.elapsed_seconds)}s</span></div>${bars}`;
 }
 
 function renderOverall(overall) {

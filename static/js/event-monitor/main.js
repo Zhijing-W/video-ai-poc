@@ -23,7 +23,7 @@ import {
   renderSuperresBackends,
   wireDropzone,
   wireSuperresSettings,
-} from "./settings.js";
+} from "./settings.js?v=20260730-reid-models";
 import { $ } from "./utils.js";
 
 function tickClock() {

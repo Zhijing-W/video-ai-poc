@@ -51,6 +51,7 @@ def main() -> int:
     ap.add_argument("--no-overall", action="store_true",
                     help="关闭跨窗整段事件总结（默认开；纯文本便宜调用）")
     ap.add_argument("--face", action="store_true", help="启用人脸分支（InsightFace，较慢）")
+    ap.add_argument("--no-body", action="store_true", help="关闭最终人形 ReID 身份分支（不影响 Tracker 外观关联）")
     ap.add_argument("--gait", action="store_true", help="启用步态分支（SkeletonGait++，CPU 较慢；需 OpenGait+权重）")
     ap.add_argument("--ocr", action="store_true", help="启用场景文字 OCR（LANE D，读时间戳/车牌/单号→scene_context）")
     ap.add_argument("--objects", action="store_true", help="启用物体/包裹检测（LANE D，非人目标+轨迹→object_context；含品牌/logo 提示）")
@@ -66,7 +67,8 @@ def main() -> int:
 
     mode = "DRY-RUN（不调 LLM）" if args.dry_run else "FULL（真调 gpt-4o，消耗额度）"
     print(f"[*] 视频：{video.name}   采样：{args.fps} fps   "
-          f"人脸：{'开' if args.face else '关'}   步态：{'开' if args.gait else '关'}   "
+          f"人形：{'关' if args.no_body else '开'}   人脸：{'开' if args.face else '关'}   "
+          f"步态：{'开' if args.gait else '关'}   "
           f"OCR：{'开' if args.ocr else '关'}   物体：{'开' if args.objects else '关'}   模式：{mode}")
     print("[1/2] 抽帧 → 检测/跟踪 → 认人(ReID) → 分窗 → 选帧② ...")
 
@@ -74,7 +76,8 @@ def main() -> int:
         payload = analyze_event_stream(
             video, OUT_DIR,
             fps=args.fps, max_frames=args.max_frames,
-            run_llm=not args.dry_run, with_face=args.face, with_gait=args.gait,
+            run_llm=not args.dry_run, with_body=not args.no_body,
+            with_face=args.face, with_gait=args.gait,
             with_ocr=args.ocr, with_objects=args.objects,
             objective=args.objective, max_keyframes=args.max_keyframes,
             max_window_seconds=args.max_window_seconds,

@@ -2,8 +2,8 @@
 """生成「糊脸对比实验」流程图。
 
 Output:
-    docs/实验流程.svg (canonical)
-    docs/实验流程.png (preview)
+    results/legacy_market/experiment_flow.svg (canonical)
+    results/legacy_market/experiment_flow.png (preview)
 
 约定（与 phase4 logic flow 一致）：SVG 为准、节点标题加粗 + 小字说明、同类节点用容器分组、
 留白无重叠、未就绪能力（步态）用虚线灰框预留。
@@ -133,7 +133,7 @@ box(CX, 1294, 1180, 92,
 
 OUT = Path(__file__).resolve().parent.parent / "results" / "legacy_market"
 OUT.mkdir(parents=True, exist_ok=True)
-fig.savefig(OUT / "实验流程.svg", facecolor="white")
-fig.savefig(OUT / "实验流程.png", dpi=130, facecolor="white")
-print("[OK] ->", OUT / "实验流程.svg")
-print("[OK] ->", OUT / "实验流程.png")
+fig.savefig(OUT / "experiment_flow.svg", facecolor="white")
+fig.savefig(OUT / "experiment_flow.png", dpi=130, facecolor="white")
+print("[OK] ->", OUT / "experiment_flow.svg")
+print("[OK] ->", OUT / "experiment_flow.png")

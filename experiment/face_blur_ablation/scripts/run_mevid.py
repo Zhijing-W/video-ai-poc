@@ -1,6 +1,6 @@
 """MEVID 多模态消融评测（人脸 + 人形 + 步态）。
 
-历史设计见 `../docs/实验设计_MEVID多模态.md`。要点：
+历史设计见 `../docs/mevid_multimodal_experiment_design.md`。要点：
   · baseline = 完整多模态（ArcFace + OSNet 人形 + SkeletonGaitPP 步态）；主线只换人脸模型。
   · 分桶用产品 `app.face.assess_quality`（经 face.detect(with_quality)）；
     人脸建档走真门控（category==clear 才入库）；融合复刻产品 multimodal_identity_fusion 的软性连续加权。

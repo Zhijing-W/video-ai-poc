@@ -278,7 +278,7 @@ FMR 下的 operating point，避免把未经校准的产品默认值直接套到
 
 ```bash
 docker exec -it videopoc /usr/bin/python3 \
-  "/app/experiment/糊脸消融实验/scripts/run_mevid_e2e.py" \
+  "/app/experiment/face_blur_ablation/scripts/run_mevid_e2e.py" \
   --data /data/external/mevid \
   --arms F,B,G,FB,BG,FBG \
   --enroll-subjects 27 \
@@ -358,7 +358,7 @@ run_mevid_face.py
 
 ```bash
 docker exec -it videopoc /usr/bin/python3 \
-  "/app/experiment/糊脸消融实验/scripts/run_mevid_face.py" \
+  "/app/experiment/face_blur_ablation/scripts/run_mevid_face.py" \
   --data /data/external/mevid \
   --variants FR0,FR1,FR2,FR3 \
   --enroll-subjects 27 \
@@ -450,7 +450,7 @@ run_mevid_face_b2.py
 
 ```bash
 docker exec videopoc /usr/bin/python3 \
-  "/app/experiment/糊脸消融实验/scripts/run_mevid_face_b2.py" \
+  "/app/experiment/face_blur_ablation/scripts/run_mevid_face_b2.py" \
   --data /data/external/mevid \
   --variants FR0,FR1,FR2,FR3 \
   --enroll-subjects 27 \

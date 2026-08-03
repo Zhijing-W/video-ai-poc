@@ -1,6 +1,6 @@
 """糊脸消融实验 · 端到端评测（Market-1501 + 人脸质量分桶 + arm 矩阵）。
 
-实验目的（见 results/实验流程.svg）：
+实验目的（见 results/legacy_market/experiment_flow.svg）：
   在真实监控低清行人图上，先**只用人脸**按质量分桶（clear/blur/tiny/none），
   再在**差脸桶**上比各 arm 的「认人」准确率，证明每个手段救回多少：
     S0 baseline 纯 ArcFace 仅人脸 → S1 +AdaFace / S2 +超分（做强脸）
@@ -33,7 +33,7 @@ try:
 except Exception:  # noqa: BLE001
     pass
 
-# 本文件在 experiment/糊脸消融实验/scripts/ 下。
+# This file lives under experiment/face_blur_ablation/scripts/.
 EXPERIMENT_DIR = Path(__file__).resolve().parent.parent
 ROOT = EXPERIMENT_DIR.parents[1]
 sys.path.insert(0, str(ROOT))

@@ -15,6 +15,8 @@ def test_analyze_event_stream_keeps_top_level_contract_with_lightweight_mocks(mo
     ]
 
     monkeypatch.setattr(pipeline, "extract_frames", lambda *args, **kwargs: frames)
+    monkeypatch.setattr(pipeline.detector_mod, "prepare", lambda: None)
+    monkeypatch.setattr(pipeline.detector_mod, "active_device", lambda: "cpu")
     monkeypatch.setattr(pipeline.tracker_mod, "reset_tracker", lambda session_id: True)
     monkeypatch.setattr(pipeline.gallery_mod, "reset_gallery", lambda session_id: True)
     monkeypatch.setattr(pipeline.reid_mod, "embed_dim", lambda: 512)
@@ -40,4 +42,113 @@ def test_analyze_event_stream_keeps_top_level_contract_with_lightweight_mocks(mo
     assert len(result["windows"]) == 1
     assert result["windows"][0]["keyframe_indices"] == [0]
     assert result["windows"][0]["time_range"] == ["00:00:00", "00:00:01"]
-    assert {"extract_frames", "detect_track", "merge_fusion_thumb", "windows_select"} <= set(result["stage_timings"])
+    assert {
+        "extract_frames",
+        "pipeline_setup",
+        "frame_preprocess",
+        "event_preparation",
+    } <= set(result["stage_timings"])
+    assert result["runtime"] == {
+        "execution": "server",
+        "detector_device": "cpu",
+    }
+
+
+def test_analyze_event_stream_can_disable_body_identity_without_blocking_other_routes(
+    monkeypatch,
+    runtime_dir: Path,
+) -> None:
+    frame_dir = runtime_dir / "frames"
+    frames = [
+        Frame(
+            frame_id="frame_001",
+            timestamp="00:00:00",
+            local_path=str(write_image(frame_dir / "frame_001.jpg", (32, 64, 96))),
+        ),
+        Frame(
+            frame_id="frame_002",
+            timestamp="00:00:01",
+            local_path=str(write_image(frame_dir / "frame_002.jpg", (96, 64, 32))),
+        ),
+    ]
+    face_calls: list[dict] = []
+
+    monkeypatch.setattr(pipeline, "extract_frames", lambda *args, **kwargs: frames)
+    monkeypatch.setattr(pipeline.detector_mod, "prepare", lambda: None)
+    monkeypatch.setattr(pipeline.detector_mod, "active_device", lambda: "cuda:0")
+    monkeypatch.setattr(pipeline.settings, "track_min_frames", 0)
+    monkeypatch.setattr(pipeline.tracker_mod, "reset_tracker", lambda session_id: True)
+    monkeypatch.setattr(pipeline.gallery_mod, "reset_gallery", lambda session_id: True)
+    monkeypatch.setattr(
+        pipeline.tracker_mod,
+        "track_objects",
+        lambda raw, session_id=None: {
+            "detections": [
+                {
+                    "label": "person",
+                    "track_id": 1,
+                    "box": [0, 0, 24, 24],
+                    "confidence": 0.95,
+                }
+            ],
+            "infer_ms": 1.0,
+            "track_ms": 1.0,
+        },
+    )
+    monkeypatch.setattr(pipeline.tracker_mod, "active_backend", lambda: "mock-tracker")
+    monkeypatch.setattr(
+        pipeline.reid_mod,
+        "assess_quality",
+        lambda crop: {"sharpness": 1.0, "area": 576},
+    )
+    monkeypatch.setattr(
+        pipeline.reid_mod,
+        "embed_dim",
+        lambda: (_ for _ in ()).throw(AssertionError("body identity must stay unloaded")),
+    )
+    monkeypatch.setattr(
+        pipeline.reid_mod,
+        "embed",
+        lambda crop: (_ for _ in ()).throw(AssertionError("body identity must stay unused")),
+    )
+    monkeypatch.setattr(
+        pipeline.reid_mod,
+        "active_backend",
+        lambda: (_ for _ in ()).throw(AssertionError("body backend must stay unresolved")),
+    )
+    monkeypatch.setattr(pipeline.gait_mod, "available", lambda: True)
+    monkeypatch.setattr(pipeline.gait_mod, "extract_persons", lambda image: [])
+    monkeypatch.setattr(pipeline.gait_mod, "load_error", lambda: None)
+
+    def fake_attach_faces(frames, tracks, identities, session_id, **kwargs):
+        face_calls.append(kwargs)
+        identities[1]["face"] = {"observed": True}
+
+    monkeypatch.setattr(pipeline, "_attach_faces", fake_attach_faces)
+
+    result = pipeline.analyze_event_stream(
+        video_path="ignored.mp4",
+        out_dir=runtime_dir / "analysis-no-body",
+        fps=1.0,
+        run_llm=False,
+        session_id="no-body-session",
+        with_body=False,
+        with_face=True,
+        with_gait=True,
+    )
+
+    assert result["with_body"] is False
+    assert result["reid_backend"] is None
+    assert result["reid_dim"] is None
+    assert result["with_face"] is True
+    assert result["with_gait"] is True
+    assert result["runtime"]["detector_device"] == "cuda:0"
+    assert "body_identity" not in result["stage_timings"]
+    assert result["stage_timings"]["object_detection"] == 0.002
+    assert result["stage_timings"]["multi_object_tracking"] == 0.002
+    assert face_calls == [
+        {
+            "body_embeddings": {},
+            "body_consistency_enabled": False,
+        }
+    ]

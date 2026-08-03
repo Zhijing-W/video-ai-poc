@@ -227,12 +227,12 @@ class Settings:
     face_fiqa_poor_thresh: float = float(_get("FACE_FIQA_POOR_THRESH", "0.3"))
     face_fiqa_clear_thresh: float = float(_get("FACE_FIQA_CLEAR_THRESH", "0.6"))
 
-    # 攻"人脸模糊"的可插拔进阶武器（Phase 4 · §3.8 / Step 27b）。默认全开；测试对比时可逐个关。
+    # 攻"人脸模糊"的可插拔能力（Phase 4 · §3.8 / Step 27b）：3D cue 默认开，生成式超分默认关。
     # ① 3D-68 几何 cue：打开 buffalo_l 自带的 1k3d68 landmark，用 3D 面部几何（颧骨/鼻梁/下巴
     #    等结构）做额外身份线索——纹理糊但几何还在，对姿态+中度模糊鲁棒。
     face_3d_cue: bool = _get("FACE_3D_CUE", "true").strip().lower() in {"1", "true", "yes", "on"}
     # ② 人脸超分：off 或任意已注册后端名称；内置 gfpgan，其他算法通过注册表接入。
-    face_superres: str = _get("FACE_SUPERRES", "gfpgan").strip().lower()
+    face_superres: str = _get("FACE_SUPERRES", "off").strip().lower()
     face_recoverable_min_size: int = int(_get("FACE_RECOVERABLE_MIN_SIZE", "20"))
     face_superres_max_size: int = int(
         _get("FACE_SUPERRES_MAX_SIZE", _get("FACE_SUPERRES_MIN_SIZE", "90"))
@@ -258,8 +258,8 @@ class Settings:
             "RealESRGAN_x2plus-v0.2.1.pth",
         ),
     )
-    # ③ AdaFace：质量自适应人脸识别后端（低清脸更强）。arcface / adaface（默认 adaface，最强）。
-    face_rec_backend: str = _get("FACE_REC_BACKEND", "adaface").strip().lower()
+    # 人脸识别后端：正式实验阈值基于 ArcFace；AdaFace 保留为可切换项，需单独校准阈值。
+    face_rec_backend: str = _get("FACE_REC_BACKEND", "arcface").strip().lower()
     face_adaface_root: str = _get(
         "FACE_ADAFACE_ROOT",
         _model_asset("face", "adaface", "source"),

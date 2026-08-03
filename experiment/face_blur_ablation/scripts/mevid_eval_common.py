@@ -1,4 +1,4 @@
-"""兼容旧导入路径：共享实现已迁到 experiment/糊脸消融实验/common。"""
+"""Compatibility import for experiment/face_blur_ablation/common."""
 from __future__ import annotations
 
 import sys

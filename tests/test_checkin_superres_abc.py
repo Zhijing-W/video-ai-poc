@@ -14,8 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = (
     ROOT
     / "experiment"
-    / "糊脸消融实验"
-    / "超分实验"
+    / "face_blur_ablation"
+    / "super_resolution"
     / "scripts"
     / "run_checkin_superres_abc.py"
 )

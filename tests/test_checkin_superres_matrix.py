@@ -11,7 +11,7 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 SUPERRES_DIR = (
-    ROOT / "experiment" / "糊脸消融实验" / "超分实验"
+    ROOT / "experiment" / "face_blur_ablation" / "super_resolution"
 )
 EXPERIMENT_DIR = SUPERRES_DIR.parent
 for import_root in (ROOT, EXPERIMENT_DIR, SUPERRES_DIR):

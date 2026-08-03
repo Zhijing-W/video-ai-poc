@@ -22,6 +22,7 @@ def test_router_generates_unique_run_and_session_ids(monkeypatch) -> None:
                 "video_path": str(video_path),
                 "run_dir": str(run_dir),
                 "session_id": kwargs["session_id"],
+                "with_body": kwargs["with_body"],
             }
         )
         return {
@@ -72,6 +73,7 @@ def test_router_generates_unique_run_and_session_ids(monkeypatch) -> None:
     assert calls[0]["run_dir"].endswith(body1["run_id"])
     assert calls[1]["run_dir"].endswith(body2["run_id"])
     assert calls[0]["run_dir"] != calls[1]["run_dir"]
+    assert all(call["with_body"] is True for call in calls)
 
     for call in calls:
         shutil.rmtree(Path(call["run_dir"]), ignore_errors=True)
@@ -88,6 +90,13 @@ def test_fastapi_health_page_and_openapi_are_available() -> None:
     assert health.json() == {"status": "ok", "feature": "event-monitor"}
     assert page.status_code == 200
     assert "event-monitor" in page.text.lower()
+    assert 'id="withBody" checked' in page.text
+    assert "默认（ArcFace）" in page.text
+    assert "默认（关闭）" in page.text
+    assert '<option value="osnet" selected>OSNet-AIN MSMT17（默认）</option>' in page.text
+    assert '<option value="auto">' not in page.text
+    assert '<option value="resnet50">' not in page.text
+    assert '<option value="coarse">' not in page.text
     assert openapi.status_code == 200
     assert "/api/event-monitor/understand" in openapi.text
 
@@ -104,6 +113,7 @@ def test_superres_backend_catalog_and_unknown_request_validation() -> None:
 
     assert catalog.status_code == 200
     catalog_body = catalog.json()
+    assert catalog_body["default"] == "off"
     assert {
         "off",
         "gfpgan",
@@ -118,6 +128,50 @@ def test_superres_backend_catalog_and_unknown_request_validation() -> None:
     }
     assert invalid.status_code == 400
     assert "未知人脸超分后端" in invalid.json()["detail"]
+
+
+def test_router_propagates_explicit_body_identity_disable(monkeypatch) -> None:
+    calls = []
+
+    def fake_analyze(video_path, run_dir, **kwargs):
+        calls.append(kwargs)
+        return {
+            "video": str(video_path),
+            "fps": kwargs["fps"],
+            "frames_total": 0,
+            "img_size": [0, 0],
+            "session_id": kwargs["session_id"],
+            "tracker_backend": "mock",
+            "reid_backend": None,
+            "reid_dim": None,
+            "with_body": kwargs["with_body"],
+            "with_face": kwargs["with_face"],
+            "with_gait": kwargs["with_gait"],
+            "with_ocr": kwargs["with_ocr"],
+            "with_objects": kwargs["with_objects"],
+            "dry_run": True,
+            "elapsed_seconds": 0.0,
+            "stage_timings": {},
+            "runtime": {"execution": "server", "detector_device": "cpu"},
+            "tracks": {},
+            "windows": [],
+            "overall": None,
+        }
+
+    monkeypatch.setattr(event_monitor, "analyze_event_stream", fake_analyze)
+    response = TestClient(app).post(
+        "/api/event-monitor/understand",
+        files={"file": ("clip.mp4", b"fake video bytes", "video/mp4")},
+        data={"dry_run": "true", "with_body": "false"},
+    )
+
+    assert response.status_code == 200
+    assert calls[0]["with_body"] is False
+    assert response.json()["config_used"]["with_body"] is False
+    shutil.rmtree(
+        event_monitor.OUT_DIR / response.json()["run_id"],
+        ignore_errors=True,
+    )
 
 
 def test_reid_backend_catalog_and_unknown_request_validation() -> None:

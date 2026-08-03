@@ -44,6 +44,7 @@ _active_backend: str | None = None
 _ALIASES = {
     "clip_reid": "clipreid",
     "siglip_2": "siglip2",
+    "siglip2_person_reid": "siglip2",
     "color": "coarse",
 }
 _AUTO_ORDER = ("osnet", "resnet50", "coarse")

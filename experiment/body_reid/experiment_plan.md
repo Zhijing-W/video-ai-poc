@@ -66,8 +66,11 @@
 在运行任何模型之前，先生成一份 `frozen_body_samples.csv`。每行至少记录：
 
 - `sample_id`；
+- 数据用途：`test` 或 `train_calibration`；
 - 人物真值 `person_id`；
-- 身份角色：`enroll_gallery`、`genuine_query` 或 `imposter_query`；
+- 身份角色：正式 test 使用 `enroll_gallery`、`genuine_query`、
+  `imposter_query`；阈值校准另用 `calibration_gallery`、
+  `calibration_genuine_query`、`calibration_imposter_query`；
 - 官方轨迹编号；
 - 摄像头编号；
 - 服装编号；
@@ -105,7 +108,7 @@
 MEVID 轨迹含有服装编号，因此额外建立一个换衣子集：
 
 - Gallery 与 Query 必须属于同一个人；
-- Gallery 服装编号与 Query 服装编号必须不同；
+- Query 服装编号不能出现在该身份任何一条已通过质量门控的 Gallery 轨迹中；
 - 样本是否合格只根据官方元数据确定，不能读取模型相似度；
 - 若某身份没有合格的跨衣组合，则在运行模型前从该子集排除；
 - 四个后端必须使用相同的身份和轨迹。
@@ -116,8 +119,8 @@ MEVID 轨迹含有服装编号，因此额外建立一个换衣子集：
 
 为了理解模型为什么成功或失败，再报告同衣子集：
 
-- Gallery 与 Query 服装编号相同；
-- 尽量要求摄像头不同；
+- Query 服装编号至少出现在该身份一条已通过质量门控的 Gallery 轨迹中；
+- Query 摄像头不能出现在这些同衣 Gallery 轨迹中；
 - 与 P2 使用相同的抽帧、聚合和评分方式。
 
 P2 和 P3 是诊断结果，P1 仍是总体主结果。
@@ -220,11 +223,16 @@ REID_DEVICE
 
 每次切换后端后必须执行 `reset_backend()`，再检查 `active_backend()` 是否与请求一致。
 
-### 6.3 建议的脚本结构
+### 6.3 已实现的脚本结构
 
 ```text
-experiment\人形ReID实验\
-├── 实验计划.md
+experiment\body_reid\
+├── experiment_plan.md
+├── body_reid_experiment\
+│   ├── common.py
+│   ├── protocol.py
+│   ├── runner.py
+│   └── summary.py
 ├── manifests\
 │   ├── frozen_body_samples.csv
 │   └── frozen_protocol.json
@@ -236,34 +244,65 @@ experiment\人形ReID实验\
     └── final\
 ```
 
-这里只先创建计划文档。其余文件在正式实现阶段生成。
+三个入口脚本及共享实现已经完成。`manifests` 中的冻结 CSV/JSON 必须在真实 MEVID
+数据上运行 `freeze_mevid_body_protocol.py` 后才生成；当前不会伪造或提交数据清单。
+冻结命令默认拒绝覆盖已有协议，只有确认重建时才允许显式传 `--force`。
 
 通用的 MEVID 加载、固定随机划分、均匀抽帧和质量门控应复用现有实现，必要时提取到共享模块，
 不要复制一套稍有差异的新逻辑。
 
-### 6.4 预期命令
+### 6.4 实际命令
 
-以下命令是后续脚本的目标用法，不代表当前已经实现：
+先冻结 test 正式协议和完全独立的 train 阈值校准协议：
 
 ```powershell
-python .\experiment\人形ReID实验\scripts\freeze_mevid_body_protocol.py `
+python .\experiment\body_reid\scripts\freeze_mevid_body_protocol.py `
   --data <MEVID_ROOT> `
   --seed 0 `
   --enroll-subjects 27 `
   --imposter-subjects 25 `
   --frames-per-track 8 `
   --max-gallery-tracks 3 `
-  --max-query-tracks 4
+  --max-query-tracks 4 `
+  --calibration-enroll-subjects 50 `
+  --calibration-imposter-subjects -1
+```
 
-python .\experiment\人形ReID实验\scripts\run_body_reid_matrix.py `
-  --manifest .\experiment\人形ReID实验\manifests\frozen_body_samples.csv `
+四后端先对同一小批 Query 做冒烟测试：
+
+```powershell
+python .\experiment\body_reid\scripts\run_body_reid_matrix.py `
+  --data <MEVID_ROOT> `
+  --manifest .\experiment\body_reid\manifests\frozen_body_samples.csv `
+  --protocol .\experiment\body_reid\manifests\frozen_protocol.json `
+  --backends osnet,clipreid,siglip2_person_reid,differ `
+  --device cuda `
+  --smoke-samples 2
+```
+
+冒烟通过后运行正式矩阵；脚本逐个加载模型，不会让四个大模型同时占用显存：
+
+```powershell
+python .\experiment\body_reid\scripts\run_body_reid_matrix.py `
+  --data <MEVID_ROOT> `
+  --manifest .\experiment\body_reid\manifests\frozen_body_samples.csv `
+  --protocol .\experiment\body_reid\manifests\frozen_protocol.json `
   --backends osnet,clipreid,siglip2_person_reid,differ `
   --device cuda
-
-python .\experiment\人形ReID实验\scripts\summarize_body_reid.py `
-  --protocol .\experiment\人形ReID实验\manifests\frozen_protocol.json `
-  --results .\experiment\人形ReID实验\results
 ```
+
+最后校验四个后端确实使用相同 Query/P2/P3/Gallery，并生成最终对比表：
+
+```powershell
+python .\experiment\body_reid\scripts\summarize_body_reid.py `
+  --protocol .\experiment\body_reid\manifests\frozen_protocol.json `
+  --results .\experiment\body_reid\results\runs
+```
+
+逐帧 embedding 只写入被 Git 忽略的 content-addressed NPZ cache；正式后端 JSON
+只保留指标、每条 Query 的预测、阈值、耗时、显存和模型 provenance，不保存中间图片。
+缓存键同时绑定冻结协议、样本 CSV 哈希、设备请求、实际设备、权重/源码 provenance 和
+样本顺序；FMR 目标改变时不得复用旧评测结果。
 
 ---
 
@@ -281,13 +320,19 @@ python .\experiment\人形ReID实验\scripts\summarize_body_reid.py `
 
 这些指标先回答“模型会不会排序”。
 
+由于主协议先把每个身份聚合成一个身份均值模板，这里的
+`mAP_identity_template` 数值等于各 genuine Query 倒数排名的均值；它不是把每张
+Gallery 图片分别作为检索项的传统 image-level mAP，报告中必须保留这个名称。
+
 ### 需要阈值的开放集指标
 
 - 陌生人误识率 FMR；
 - 在 FMR 不超过 1%、5%、10% 时，库内人员正确识别并接受率 TPIR；
 - 拒绝率。
 
-阈值只使用 MEVID 官方 train 身份建立的独立校准集确定。校准集中的身份不能出现在正式 test；
+阈值只使用 MEVID 官方 train 身份建立的独立校准集确定。train 没有官方
+Gallery/Query 划分，因此脚本在冻结阶段按固定身份、轨迹排序和 seed 建立互不重叠的
+校准 Gallery、库内 Query 与陌生 Query。校准集中的身份不能出现在正式 test；
 校准完成后冻结每个后端的阈值，再运行一次 test。这个过程不更新模型参数，因此应表述为
 “零样本特征 + 目标域阈值校准”，而不是完全不接触目标域。
 
@@ -330,7 +375,7 @@ python .\experiment\人形ReID实验\scripts\summarize_body_reid.py `
 - 向量没有 NaN 或无穷大；
 - 向量范数接近 1；
 - 同一图片重复计算结果稳定；
-- 批处理和单张处理结果一致。
+- 实际激活后端与请求名称一致，禁止任何静默回退。
 
 ### 阶段 3：完整提取
 
@@ -367,6 +412,8 @@ python .\experiment\人形ReID实验\scripts\summarize_body_reid.py `
 - 每个后端都记录了真实名称和权重哈希；
 - 没有后端发生静默回退；
 - 所有比较使用同一评分与聚合代码；
+- 冻结协议内容可重新计算出同一 `protocol_id`，且结果绑定同一 CSV 哈希；
+- 四个结果的实验代码、Python/依赖、Git 状态、设备和 GPU 环境指纹一致；
 - P2 的 Gallery 与 Query 服装编号确实不同；
 - 原始数据、权重、embedding 和中间图片不提交到仓库；
 - 只保存冻结清单、最终统计结果和必要的最终图表。

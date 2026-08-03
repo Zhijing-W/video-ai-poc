@@ -40,8 +40,10 @@ spec:
           value: cuda
         - name: GAIT_DEVICE
           value: cuda
+        - name: FACE_REC_BACKEND
+          value: "{{ .Values.config.faceRecBackend }}"
         - name: FACE_SUPERRES
-          value: gfpgan
+          value: "off"
         - name: OCR_ENABLED
           value: "false"           # OCR 让 CPU pod 干，GPU pod 只做人脸/步态/ReID
         - name: INSIGHTFACE_HOME
