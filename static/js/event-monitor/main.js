@@ -1,5 +1,11 @@
 import { downloadJson, openLightbox, closeLightbox, sendDryRunToLlm, toggleJson } from "./actions.js";
-import { health, listSamples, listSuperresBackends, runAnalysis } from "./api.js";
+import {
+  health,
+  listReidBackends,
+  listSamples,
+  listSuperresBackends,
+  runAnalysis,
+} from "./api.js";
 import { finishProgress, startProgress } from "./progress.js";
 import {
   prepareForRun,
@@ -13,10 +19,11 @@ import {
   closeSettings,
   collectAnalysisRequest,
   openSettings,
+  renderReidBackends,
   renderSuperresBackends,
   wireDropzone,
   wireSuperresSettings,
-} from "./settings.js";
+} from "./settings.js?v=20260730-reid-models";
 import { $ } from "./utils.js";
 
 function tickClock() {
@@ -36,6 +43,14 @@ async function loadSuperresOptions() {
     renderSuperresBackends(await listSuperresBackends());
   } catch (_) {
     renderSuperresBackends();
+  }
+}
+
+async function loadReidOptions() {
+  try {
+    renderReidBackends(await listReidBackends());
+  } catch (_) {
+    renderReidBackends();
   }
 }
 
@@ -111,3 +126,4 @@ bindEvents();
 checkBackend();
 loadSampleOptions();
 loadSuperresOptions();
+loadReidOptions();

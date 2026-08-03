@@ -13,14 +13,17 @@ load_dotenv(BASE_DIR / ".env")
 DATA_DIR = Path(os.getenv("DATA_DIR") or BASE_DIR / "data").expanduser()
 OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR") or BASE_DIR / "out").expanduser()
 GALLERY_DIR = Path(os.getenv("GALLERY_DIR") or BASE_DIR / "gallery").expanduser()
+MODEL_ROOT = Path(
+    os.getenv("MODEL_ROOT")
+    or Path.home() / ".cache" / "event-monitor" / "models"
+).expanduser()
 TEMPLATES_DIR = BASE_DIR / "templates"
 STATIC_DIR = BASE_DIR / "static"
 ALLOWED_VIDEO_SUFFIXES = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
 
 
-def _shared_asset(name: str) -> str:
-    candidate = BASE_DIR / "models" / name
-    return str(candidate) if candidate.exists() else name
+def _model_asset(*parts: str) -> str:
+    return str(MODEL_ROOT.joinpath(*parts))
 
 
 def _get(name: str, default: str | None = None, required: bool = False) -> str | None:
@@ -34,6 +37,8 @@ def _get(name: str, default: str | None = None, required: bool = False) -> str |
 
 @dataclass
 class Settings:
+    model_root: str = str(MODEL_ROOT)
+
     azure_openai_endpoint: str | None = _get("AZURE_OPENAI_ENDPOINT")
     azure_openai_api_key: str | None = _get("AZURE_OPENAI_API_KEY")
     azure_openai_deployment: str | None = _get("AZURE_OPENAI_DEPLOYMENT")
@@ -51,7 +56,10 @@ class Settings:
 
     ffmpeg_path: str = _get("FFMPEG_PATH") or "ffmpeg"
 
-    yolo_model: str = _get("YOLO_MODEL", _shared_asset("yolov8m.pt"))
+    yolo_model: str = _get(
+        "YOLO_MODEL",
+        _model_asset("detection", "yolo", "yolov8m.pt"),
+    )
     yolo_conf: float = float(_get("YOLO_CONF", "0.4"))
 
     # 多目标跟踪 MOT（Phase 3 · Step 11 / Phase 4 升级）：可切换 ByteTrack / BoT-SORT / BoT-SORT+ReID。
@@ -71,15 +79,74 @@ class Settings:
     # 细粒度感知（Phase 3 · Step 13）：YOLO-Pose 派生躯干区取色，修 Phase 2 颜色误判。
     # 仅在画面有人时跑；不可用/几何反常自动回落到写死比例 torso（不劣于原行为）。
     pose_color: bool = _get("POSE_COLOR", "true").strip().lower() in {"1", "true", "yes", "on"}
-    pose_model: str = _get("POSE_MODEL", _shared_asset("yolov8n-pose.pt"))   # 与检测的 yolov8m 独立的姿态模型
+    pose_model: str = _get(
+        "POSE_MODEL",
+        _model_asset("detection", "yolo", "yolov8n-pose.pt"),
+    )   # 与检测的 yolov8m 独立的姿态模型
     pose_conf: float = float(_get("POSE_CONF", "0.3"))         # Pose 人体检测置信度
     pose_kpt_conf: float = float(_get("POSE_KPT_CONF", "0.3")) # 单个关键点的可信阈值（低于则视为不可见）
 
     # 主体记忆 / ReID 向量库（Phase 3 · Step 14）：认过一次就记住、命中即复用、不调 LLM。
     # backend: auto 自动择优（osnet→resnet50→coarse）；也可固定为某一档。
     reid_backend: str = _get("REID_BACKEND", "auto")
-    reid_osnet_weights: str = _get("REID_OSNET_WEIGHTS", "osnet_ain_x1_0_msmt17.pt")  # boxmot OSNet 域泛化权重
+    reid_osnet_weights: str = _get(
+        "REID_OSNET_WEIGHTS",
+        _model_asset("reid", "osnet", "osnet_ain_x1_0_msmt17.pt"),
+    )
+    reid_resnet50_weights: str = _get(
+        "REID_RESNET50_WEIGHTS",
+        _model_asset("reid", "resnet50", "resnet50-11ad3fa6.pth"),
+    )
     reid_device: str = _get("REID_DEVICE", "auto")  # auto/cuda/cpu：ReID 推理设备（auto=有 GPU 用 GPU）
+    reid_clipreid_root: str = _get(
+        "REID_CLIPREID_ROOT",
+        _model_asset("reid", "clipreid", "source"),
+    )
+    reid_clipreid_config: str = _get(
+        "REID_CLIPREID_CONFIG",
+        _model_asset(
+            "reid",
+            "clipreid",
+            "source",
+            "configs",
+            "person",
+            "vit_clipreid.yml",
+        ),
+    )
+    reid_clipreid_weights: str = _get(
+        "REID_CLIPREID_WEIGHTS",
+        _model_asset("reid", "clipreid", "ViT-B-16_msmt17_60.pth"),
+    )
+    reid_clipreid_base_weights: str = _get(
+        "REID_CLIPREID_BASE_WEIGHTS",
+        _model_asset("reid", "clipreid", "ViT-B-16.pt"),
+    )
+    reid_clipreid_num_classes: int = int(
+        _get("REID_CLIPREID_NUM_CLASSES", "1041")
+    )
+    reid_clipreid_camera_count: int = int(
+        _get("REID_CLIPREID_CAMERA_COUNT", "15")
+    )
+    reid_siglip2_model: str = _get(
+        "REID_SIGLIP2_MODEL",
+        _model_asset("reid", "siglip2", "model"),
+    )
+    reid_siglip2_revision: str = _get(
+        "REID_SIGLIP2_REVISION",
+        "196e5d6",
+    )
+    reid_differ_root: str = _get(
+        "REID_DIFFER_ROOT",
+        _model_asset("reid", "differ", "source"),
+    )
+    reid_differ_config: str = _get(
+        "REID_DIFFER_CONFIG",
+        _model_asset("reid", "differ", "config.yml"),
+    )
+    reid_differ_weights: str = _get(
+        "REID_DIFFER_WEIGHTS",
+        _model_asset("reid", "differ", "eva02_l_bio_best.pth"),
+    )
     # 余弦判定阈值（注意：不同 backend 的相似度分布不同，换 backend 需重调）。
     reid_hit_thresh: float = float(_get("REID_HIT_THRESH", "0.6"))     # ≥ 此分 → 认出已知主体
     reid_new_thresh: float = float(_get("REID_NEW_THRESH", "0.4"))     # < 此分 → 判为新主体（开放集登记）
@@ -118,6 +185,10 @@ class Settings:
     face_backend: str = _get("FACE_BACKEND", "insightface")
     face_device: str = _get("FACE_DEVICE", "auto")  # auto/cuda/cpu：人脸(InsightFace/AdaFace)推理设备
     face_model: str = _get("FACE_MODEL", "buffalo_l")            # InsightFace 模型包
+    face_insightface_root: str = _get(
+        "FACE_INSIGHTFACE_ROOT",
+        _model_asset("face", "insightface"),
+    )
     face_det_size: int = int(_get("FACE_DET_SIZE", "640"))       # 检测输入边长（小→快、精度略降）
     face_min_det_score: float = float(_get("FACE_MIN_DET_SCORE", "0.5"))   # 低于此检测分不可信
     face_min_size: int = int(_get("FACE_MIN_SIZE", "28"))        # 人脸框最小边（像素），太小不入库
@@ -144,11 +215,11 @@ class Settings:
     face_fiqa_backend: str = _get("FACE_FIQA_BACKEND", "off").strip().lower()
     face_fiqa_root: str = _get(
         "FACE_FIQA_ROOT",
-        str(BASE_DIR / "models" / "CR-FIQA" / "source"),
+        _model_asset("face", "cr_fiqa", "source"),
     )
     face_fiqa_weights: str = _get(
         "FACE_FIQA_WEIGHTS",
-        str(BASE_DIR / "models" / "CR-FIQA" / "32572backbone.pth"),
+        _model_asset("face", "cr_fiqa", "32572backbone.pth"),
     )
     face_fiqa_arch: str = _get("FACE_FIQA_ARCH", "iresnet50").strip().lower()
     face_fiqa_device: str = _get("FACE_FIQA_DEVICE", "auto").strip().lower()
@@ -156,12 +227,12 @@ class Settings:
     face_fiqa_poor_thresh: float = float(_get("FACE_FIQA_POOR_THRESH", "0.3"))
     face_fiqa_clear_thresh: float = float(_get("FACE_FIQA_CLEAR_THRESH", "0.6"))
 
-    # 攻"人脸模糊"的可插拔进阶武器（Phase 4 · §3.8 / Step 27b）。默认全开；测试对比时可逐个关。
+    # 攻"人脸模糊"的可插拔能力（Phase 4 · §3.8 / Step 27b）：3D cue 默认开，生成式超分默认关。
     # ① 3D-68 几何 cue：打开 buffalo_l 自带的 1k3d68 landmark，用 3D 面部几何（颧骨/鼻梁/下巴
     #    等结构）做额外身份线索——纹理糊但几何还在，对姿态+中度模糊鲁棒。
     face_3d_cue: bool = _get("FACE_3D_CUE", "true").strip().lower() in {"1", "true", "yes", "on"}
     # ② 人脸超分：off 或任意已注册后端名称；内置 gfpgan，其他算法通过注册表接入。
-    face_superres: str = _get("FACE_SUPERRES", "gfpgan").strip().lower()
+    face_superres: str = _get("FACE_SUPERRES", "off").strip().lower()
     face_recoverable_min_size: int = int(_get("FACE_RECOVERABLE_MIN_SIZE", "20"))
     face_superres_max_size: int = int(
         _get("FACE_SUPERRES_MAX_SIZE", _get("FACE_SUPERRES_MIN_SIZE", "90"))
@@ -170,17 +241,33 @@ class Settings:
     face_candidate_top_k: int = int(_get("FACE_CANDIDATE_TOP_K", "3"))
     face_candidate_min_gap_frames: int = int(_get("FACE_CANDIDATE_MIN_GAP_FRAMES", "2"))
     face_track_consistency_thresh: float = float(_get("FACE_TRACK_CONSISTENCY_THRESH", "0.82"))
-    face_gfpgan_weights: str = _get("FACE_GFPGAN_WEIGHTS", "")               # 留空自动下载/默认路径
-    face_codeformer_weights: str = _get("FACE_CODEFORMER_WEIGHTS", "")
+    face_gfpgan_weights: str = _get(
+        "FACE_GFPGAN_WEIGHTS",
+        _model_asset("superres", "gfpgan", "GFPGANv1.3.pth"),
+    )
+    face_codeformer_weights: str = _get(
+        "FACE_CODEFORMER_WEIGHTS",
+        _model_asset("superres", "codeformer", "codeformer-v0.1.0.pth"),
+    )
     face_codeformer_fidelity: float = float(_get("FACE_CODEFORMER_FIDELITY", "1.0"))
-    face_realesrgan_x2plus_weights: str = _get("FACE_REALESRGAN_X2PLUS_WEIGHTS", "")
-    # ③ AdaFace：质量自适应人脸识别后端（低清脸更强）。arcface / adaface（默认 adaface，最强）。
-    face_rec_backend: str = _get("FACE_REC_BACKEND", "adaface").strip().lower()
-    face_adaface_root: str = _get("FACE_ADAFACE_ROOT", str(BASE_DIR / "models" / "AdaFace"))
+    face_realesrgan_x2plus_weights: str = _get(
+        "FACE_REALESRGAN_X2PLUS_WEIGHTS",
+        _model_asset(
+            "superres",
+            "realesrgan",
+            "RealESRGAN_x2plus-v0.2.1.pth",
+        ),
+    )
+    # 人脸识别后端：正式实验阈值基于 ArcFace；AdaFace 保留为可切换项，需单独校准阈值。
+    face_rec_backend: str = _get("FACE_REC_BACKEND", "arcface").strip().lower()
+    face_adaface_root: str = _get(
+        "FACE_ADAFACE_ROOT",
+        _model_asset("face", "adaface", "source"),
+    )
     face_adaface_arch: str = _get("FACE_ADAFACE_ARCH", "ir_101")
     face_adaface_weights: str = _get(
         "FACE_ADAFACE_WEIGHTS",
-        str(BASE_DIR / "models" / "AdaFace" / "pretrained" / "pretrained_model" / "model.pt"),
+        _model_asset("face", "adaface", "model.pt"),
     )
 
     # 多帧事件理解（Phase 4 · Step 23 / 3.4，本阶段灵魂）：多帧关键帧 + 身份上下文 → 跨帧事件叙述。
@@ -231,22 +318,23 @@ class Settings:
     # 步态识别分支（Phase 4 · Step 27）：SkeletonGait++（OpenGait，GREW 权重）。本机纯 CPU 跑（慢，
     # 效果与 GPU 相同）；上云换 device='cuda'。OpenGait 仓库与 726MB 权重在 git 仓库外，路径可配。
     gait_enabled: bool = _get("GAIT_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
-    gait_opengait_root: str = _get("GAIT_OPENGAIT_ROOT", str(BASE_DIR / "models" / "OpenGait"))
+    gait_opengait_root: str = _get(
+        "GAIT_OPENGAIT_ROOT",
+        _model_asset("gait", "opengait", "source"),
+    )
     gait_ckpt: str = _get(
         "GAIT_CKPT",
         str(
-            BASE_DIR
-            / "models"
-            / "OpenGait"
-            / "checkpoints"
-            / "GREW"
-            / "SkeletonGaitPP"
-            / "SkeletonGaitPP"
-            / "checkpoints"
+            MODEL_ROOT
+            / "gait"
+            / "opengait"
             / "SkeletonGaitPP-180000.pt"
         ),
     )
-    gait_seg_model: str = _get("GAIT_SEG_MODEL", _shared_asset("yolov8m-seg.pt"))   # 剪影分割（ultralytics 实例分割）
+    gait_seg_model: str = _get(
+        "GAIT_SEG_MODEL",
+        _model_asset("detection", "yolo", "yolov8m-seg.pt"),
+    )   # 剪影分割（ultralytics 实例分割）
     gait_min_frames: int = int(_get("GAIT_MIN_FRAMES", "10"))        # 一条 track 至少几帧才算步态（帧太少不可靠）
     gait_device: str = _get("GAIT_DEVICE", "cpu")                    # 本地 cpu；上云改 cuda
 
@@ -360,6 +448,7 @@ __all__ = [
     "BASE_DIR",
     "DATA_DIR",
     "GALLERY_DIR",
+    "MODEL_ROOT",
     "OUTPUT_DIR",
     "STATIC_DIR",
     "Settings",

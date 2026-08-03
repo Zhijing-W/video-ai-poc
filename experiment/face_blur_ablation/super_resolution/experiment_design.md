@@ -1,0 +1,88 @@
+# Actor check-in 固定 Gallery 超分 A/B/C 实验
+
+## 1. 目标与结论边界
+
+本实验只回答：在 Event Monitor 当前人脸质量门控、ArcFace、MEVID 和 actor
+check-in 建档照条件下，三种冻结超分后端是否改善身份识别。正式矩阵固定使用
+manifest `83e51f3a5bf3879b5214557a9cbfe6df20e36f3cef57acb805c993c2a53b7921`，
+不得重新 prepare 或重选样本。
+
+> GFPGAN is not justified as default identity preprocessing for this
+> product/MEVID regime.
+
+不能据此宣称 GFPGAN 在所有数据、模型或任务上都无效。
+
+## 2. 固定身份协议
+
+- 人脸 Gallery **只**来自 actor check-in 中大小写不敏感的 `-F` 正脸照。
+- 文件名前缀按 `prefix -> MEVID PID` 使用；`prepare` 同时审计 Train、Test 和
+  官方 Query PID 覆盖，任何 Query PID 缺失立即失败。
+- 官方 person-ReID Gallery 绝不作为人脸 Gallery。
+- check-in 原图必须经产品 SCRFD、五点对齐和质量评估；仅
+  `eligibility=direct && category=clear && can_enroll=true` 可建档，GFPGAN
+  结果永不建档。
+- 每个官方 Query tracklet 都保留，不能只取 recoverable 子集。
+
+## 3. schema-v3 `prepare`
+
+正式默认每条 Query 确定性均匀抽 24 帧，在这些帧上计算便宜的人形质量和产品
+face-candidate proxy，保留时序分散的 Top-3，并强制加入 `body_best` fallback。
+只对这个有界候选集运行人脸检测/质量，不运行 ArcFace、GFPGAN 或身份结果筛选。
+`face_best` 使用产品公开的 `face_evidence_rank`，因此与 `body_best` 独立。
+
+manifest 固定全部 Query（direct/recoverable/unusable/none）、候选来源、配置快照及
+hash、源图/对齐图 hash、bbox、质量、eligibility、face_best 帧和模型 provenance。
+Test 集不调阈值。
+
+## 4. 固定 A/B/C
+
+同一个 check-in Gallery 和 Query manifest 用于全部组：
+
+| 组 | 语义 |
+|---|---|
+| A_original | 每个检测且对齐的 Query 都提原图 embedding，即使产品会拒绝；仅为诊断控制 |
+| B1/B2/B3 | 每个对齐 Query 分别跑 GFPGAN、CodeFormer w=1、raw RealESRGAN_x2plus；失败时无向量，禁止回退 A |
+| C1/C2/C3 | direct 复用 A；recoverable 在对应 B 的变换与 normalize112 embedding 成功时复用 B；unusable/none 无向量；FIQA 仅作诊断 |
+| P_off_original | 描述性产品关闭组：direct/recoverable=A，unusable/none 无向量 |
+| R_resize512/R_resize_x2 | 112→512 bilinear→normalize112 和 112→224 bicubic→normalize112 诊断控制 |
+
+Gallery 始终为原始 check-in。A/B embedding、C 派生向量、原始/SR 对齐图、稳定样本
+顺序和 provenance 写入压缩 NPZ/JSON；后续 `evaluate` 默认复用 cache。只有显式
+`--force-recompute` 才重跑后端。冻结 recoverable 子组中，后端成功时 B 与 C
+必然相同；正式实验仍保留广义 Query 宇宙，用全 aligned B-vs-C 展示产品路由价值，
+并把 recoverable A-vs-C 作为 SR 因果主子组。
+
+## 5. 报告与审计
+
+- 全体及 eligibility/category 子组 Rank-1、Rank-5。
+- 固定 `FACE_HIT_THRESH` 的正确接受和错误接受。后者是 genuine Query 上的
+  wrong-accept，**不是**开放集 true FMR。
+- A↔B、A↔C、B↔C 配对转移、配对 bootstrap 95% CI 和 exact paired test。
+- embedding cosine drift、FIQA before/after诊断、各后端成功/失败/耗时。
+- 每个 B 尝试样本都生成 GT check-in | 原 Query | GFPGAN Query 比较图；A/B
+  错认时追加预测身份的 check-in。none/未对齐样本只写明确的 non-processed
+  image-manifest 记录，不伪造 SR 图。
+
+所有 Gallery、A、后端输出和控制都经过显式 `normalize112`：112×112 输入逐字节保留，
+其他尺寸用 Pillow LANCZOS。ArcFace 与 FIQA 只消费该 112×112 RGB uint8 图。
+正式主表只包含冻结 recoverable 40 的 A/C1/C2/C3；B/C 的全 aligned cohort 和
+eligibility 分组另报，不能把 B/C 重复放进主表。
+
+## 6. VM 上稍后执行
+
+```bash
+python experiment/face_blur_ablation/super_resolution/scripts/run_checkin_superres_abc.py evaluate-matrix \
+  --manifest /results/checkin_superres_abc_v3.json \
+  --artifact-root /results/checkin_superres_matrix_artifacts \
+  --output /results/checkin_superres_matrix_result.json \
+  --seed 0 \
+  --bootstrap-samples 2000 \
+  --permutation-samples 20000
+```
+
+`evaluate-matrix` 拒绝其他 manifest ID、旧 GFPGAN embedding cache 和
+316/156/40 cohort 计数不一致。共享 Gallery/A cache 与每个后端/控制的
+content-addressed schema-v3 cache 完全隔离；仅 `--force-recompute` 重算。
+旧 `prepare`/`evaluate` 命令、schema 和路径继续兼容，但不用于本次正式矩阵。
+
+不得在本地开发阶段启动 Azure、连接 VM 或运行正式模型/数据。

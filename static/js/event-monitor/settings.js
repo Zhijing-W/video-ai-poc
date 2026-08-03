@@ -17,6 +17,7 @@ export function collectAnalysisRequest() {
   formData.append("fps", $("fps").value || "2");
   formData.append("max_keyframes", $("maxKeyframes").value || "8");
   appendIfValue(formData, "objective", objective);
+  formData.append("with_body", $("withBody").checked ? "true" : "false");
   formData.append("with_face", $("withFace").checked ? "true" : "false");
   formData.append("with_gait", $("withGait").checked ? "true" : "false");
   formData.append("with_ocr", $("withOcr").checked ? "true" : "false");
@@ -67,7 +68,7 @@ export function renderSuperresBackends(catalog = {}) {
     codeformer: "CodeFormer",
     realesrgan_x2plus: "Real-ESRGAN x2plus",
   };
-  const defaultBackend = catalog.default || "gfpgan";
+  const defaultBackend = catalog.default || "off";
   select.dataset.defaultBackend = defaultBackend;
   select.replaceChildren();
   select.add(new Option(`默认（${labels[defaultBackend] || defaultBackend}）`, ""));
@@ -77,6 +78,31 @@ export function renderSuperresBackends(catalog = {}) {
   const input = $("faceCodeformerFidelity");
   if (input && Number.isFinite(Number(fidelity))) input.value = String(fidelity);
   updateCodeFormerFidelityVisibility();
+}
+
+export function renderReidBackends(catalog = {}) {
+  const select = $("reidBackend");
+  if (!select) return;
+  const names = Array.isArray(catalog.backends) ? catalog.backends : [];
+  const productBackends = ["osnet", "clipreid", "siglip2", "differ"];
+  const registered = new Set(names);
+  const allowed = names.length
+    ? productBackends.filter((name) => registered.has(name))
+    : productBackends;
+  const fallbackLabels = {
+    osnet: "OSNet-AIN MSMT17",
+    clipreid: "CLIP-ReID ViT-B/16",
+    siglip2: "SigLIP2 Person ReID",
+    differ: "DIFFER EVA02-L",
+  };
+  const metadata = catalog.metadata || {};
+  const labelFor = (name) => metadata[name]?.label || fallbackLabels[name] || name;
+  select.replaceChildren();
+  allowed.forEach((name) => {
+    const label = name === "osnet" ? `${labelFor(name)}（默认）` : labelFor(name);
+    select.add(new Option(label, name));
+  });
+  select.value = allowed.includes("osnet") ? "osnet" : (allowed[0] || "");
 }
 
 export function wireSuperresSettings() {

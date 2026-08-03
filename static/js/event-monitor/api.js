@@ -15,6 +15,12 @@ export async function listSuperresBackends() {
   return response.json();
 }
 
+export async function listReidBackends() {
+  const response = await fetch("/api/event-monitor/reid-backends");
+  if (!response.ok) await readError(response);
+  return response.json();
+}
+
 export async function runAnalysis(formData) {
   const response = await fetch("/api/event-monitor/understand", {
     method: "POST",

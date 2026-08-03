@@ -30,6 +30,7 @@ OUT_DIR = OUTPUT_DIR / "event-monitor"
 _RUN_LOCK = asyncio.Lock()
 _STARTUP_FACE_SUPERRES = settings.face_superres
 _STARTUP_CODEFORMER_FIDELITY = settings.face_codeformer_fidelity
+_STARTUP_REID_BACKEND = settings.reid_backend
 
 
 @router.get("/samples")
@@ -56,6 +57,15 @@ def list_superres_backends() -> dict:
                 "fidelity_max": 1.0,
             },
         },
+    }
+
+
+@router.get("/reid-backends")
+def list_reid_backends() -> dict:
+    return {
+        "default": _STARTUP_REID_BACKEND,
+        "backends": ["auto", *reid_mod.available_backends()],
+        "metadata": reid_mod.backend_metadata(),
     }
 
 
@@ -97,6 +107,7 @@ async def understand(
     fps: float = Form(2.0),
     max_keyframes: int = Form(8),
     objective: str | None = Form(None),
+    with_body: bool = Form(True),
     with_face: bool = Form(False),
     with_gait: bool = Form(False),
     with_ocr: bool = Form(False),
@@ -107,7 +118,7 @@ async def understand(
     face_superres: str | None = Form(None),      # off | registered backend
     face_codeformer_fidelity: float | None = Form(None),
     face_3d_cue: bool | None = Form(None),
-    reid_backend: str | None = Form(None),       # auto | osnet | resnet50 | coarse
+    reid_backend: str | None = Form(None),       # auto | registered backend
     reid_decision_top_k: int | None = Form(None),
     reid_consistency_enabled: bool | None = Form(None),
     reid_vote_score_thresh: float | None = Form(None),
@@ -135,6 +146,12 @@ async def understand(
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
+    try:
+        selected_reid_backend = reid_mod.validate_backend(
+            reid_backend if reid_backend is not None else settings.reid_backend
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
     run_id = uuid.uuid4().hex[:12]
     run_dir = OUT_DIR / run_id
@@ -169,7 +186,7 @@ async def understand(
             "face_superres": selected_face_superres,
             "face_codeformer_fidelity": face_codeformer_fidelity,
             "face_3d_cue": face_3d_cue,
-            "reid_backend": (reid_backend or None),
+            "reid_backend": selected_reid_backend,
             "reid_decision_top_k": reid_decision_top_k,
             "reid_consistency_enabled": reid_consistency_enabled,
             "reid_vote_score_thresh": reid_vote_score_thresh,
@@ -179,9 +196,10 @@ async def understand(
         }
         try:
             with settings.override(**overrides):
-                if reid_backend:
+                if selected_reid_backend != settings.reid_backend or reid_backend:
                     reid_mod.reset_backend()
                 config_used = {
+                    "with_body": with_body,
                     "with_face": with_face,
                     "with_gait": with_gait,
                     "with_ocr": with_ocr,
@@ -204,6 +222,7 @@ async def understand(
                     run_dir,
                     fps=fps,
                     run_llm=not dry_run,
+                    with_body=with_body,
                     with_face=with_face,
                     with_gait=with_gait,
                     with_ocr=with_ocr,
@@ -218,7 +237,7 @@ async def understand(
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(500, f"事件理解失败：{exc}") from exc
         finally:
-            if reid_backend:
+            if selected_reid_backend != _STARTUP_REID_BACKEND or reid_backend:
                 reid_mod.reset_backend()
 
     payload["run_id"] = run_id

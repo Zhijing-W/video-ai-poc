@@ -40,6 +40,8 @@ spec:
           value: "{{ .Values.config.reidDevice }}"
         - name: GAIT_DEVICE
           value: "{{ .Values.config.gaitDevice }}"
+        - name: FACE_REC_BACKEND
+          value: "{{ .Values.config.faceRecBackend }}"
         - name: FACE_SUPERRES
           value: "{{ .Values.config.faceSuperres }}"
         - name: FACE_FIQA_BACKEND

@@ -1,7 +1,7 @@
 import { completeDryRun } from "./api.js";
 import { startProgress, finishProgress } from "./progress.js";
 import { renderResult, setStatus } from "./render.js";
-import { getObjectiveValue } from "./settings.js";
+import { getObjectiveValue } from "./settings.js?v=20260730-reid-models";
 import { getKeyframe, getLastPayload } from "./state.js";
 import { boxesHtml } from "./timeline.js";
 import { $, baseName } from "./utils.js";

@@ -1,41 +1,57 @@
 {
+  "model_root": "~/.cache/event-monitor/models",
   "required": [
     {
-      "name": "yolov8m.pt",
+      "name": "detection/yolo/yolov8m.pt",
       "provider": "ultralytics",
       "environment": "YOLO_MODEL"
     }
   ],
   "optional": [
     {
-      "name": "yolov8n-pose.pt",
+      "name": "detection/yolo/yolov8n-pose.pt",
       "provider": "ultralytics",
       "environment": "POSE_MODEL"
     },
     {
-      "name": "yolov8m-seg.pt",
+      "name": "detection/yolo/yolov8m-seg.pt",
       "provider": "ultralytics",
       "environment": "GAIT_SEG_MODEL"
     },
     {
-      "name": "buffalo_l",
+      "name": "face/insightface/models/buffalo_l",
       "provider": "insightface",
       "environment": "FACE_MODEL"
     },
     {
-      "name": "AdaFace model.pt",
+      "name": "face/adaface/model.pt",
       "provider": "AdaFace",
       "environment": "FACE_ADAFACE_WEIGHTS"
     },
     {
-      "name": "CR-FIQA 32572backbone.pth + official source",
+      "name": "face/cr_fiqa/32572backbone.pth + official source",
       "provider": "CR-FIQA",
       "environment": "FACE_FIQA_WEIGHTS"
     },
     {
-      "name": "SkeletonGaitPP-180000.pt",
+      "name": "gait/opengait/SkeletonGaitPP-180000.pt",
       "provider": "OpenGait",
       "environment": "GAIT_CKPT"
+    },
+    {
+      "name": "reid/clipreid/ViT-B-16_msmt17_60.pth + official source",
+      "provider": "Syliz517/CLIP-ReID",
+      "environment": "REID_CLIPREID_WEIGHTS"
+    },
+    {
+      "name": "reid/siglip2/model",
+      "provider": "MarketaJu/siglip2-person-description-reid",
+      "environment": "REID_SIGLIP2_MODEL"
+    },
+    {
+      "name": "reid/differ/eva02_l_bio_best.pth + training config + official source",
+      "provider": "xliangp/DIFFER",
+      "environment": "REID_DIFFER_WEIGHTS"
     }
   ]
 }
