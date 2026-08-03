@@ -352,3 +352,23 @@ def test_attach_faces_contains_finalizer_error_to_one_track(
     assert record["observed"] is True
     assert record["match_ready"] is False
     assert "plugin failed" in record["face_error"]
+
+
+def test_disabled_body_consistency_does_not_call_reid(monkeypatch) -> None:
+    monkeypatch.setattr(
+        face_attachment.reid_mod,
+        "embed",
+        lambda crop: (_ for _ in ()).throw(
+            AssertionError("disabled body consistency must not use ReID")
+        ),
+    )
+
+    result = face_attachment._track_consistency(
+        {"frame_index": 2, "person_bbox": [0, 0, 8, 8]},
+        {"body_best": {"frame_index": 0}},
+        None,
+        Image.new("RGB", (16, 16)),
+        enabled=False,
+    )
+
+    assert result == (True, None, "not_applicable")

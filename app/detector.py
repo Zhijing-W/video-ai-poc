@@ -39,6 +39,23 @@ def _load_model():
     return _model
 
 
+def prepare() -> None:
+    """Load detector weights without running inference."""
+    _load_model()
+
+
+def active_device() -> str | None:
+    """Return the device used by the loaded detector without triggering a load."""
+    model = _model
+    if model is None:
+        return None
+    device = getattr(model, "device", None)
+    if device is None:
+        predictor = getattr(model, "predictor", None)
+        device = getattr(predictor, "device", None)
+    return str(device) if device is not None else None
+
+
 def class_names() -> list[str]:
     """返回当前模型的全部类别名（COCO 80 类），供目标编译时让 LLM 从合法类别里选。"""
     model = _load_model()

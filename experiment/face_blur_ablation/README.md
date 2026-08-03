@@ -6,7 +6,7 @@ Market-1501、ChokePoint以及早期B/B2结果仅作为历史记录。
 ## 目录结构
 
 ```text
-糊脸消融实验/
+face_blur_ablation/
 ├─ scripts/                         # 所有实验与绘图脚本
 │  ├─ run_mevid_e2e.py             # 协议A：人脸/人形/步态消融
 │  ├─ run_mevid_face_b3.py         # 协议B3：独立训练身份校准
@@ -14,16 +14,16 @@ Market-1501、ChokePoint以及早期B/B2结果仅作为历史记录。
 │  ├─ plot_paper_results.py        # 从正式JSON生成论文图
 │  └─ ...                          # 旧协议及历史实验脚本
 ├─ docs/
-│  ├─ 实习论文_MEVID多模态身份识别实验.md
-│  ├─ 实验设计_MEVID多模态.md
+│  ├─ internship_thesis_mevid_multimodal_identity.md
+│  ├─ mevid_multimodal_experiment_design.md
 │  └─ history/                     # Market/ChokePoint及旧设计
 ├─ results/
 │  ├─ runs/                        # MEVID实验JSON
 │  ├─ paper_figures/               # 论文PNG/SVG
 │  └─ legacy_market/               # Market/ChokePoint旧结果
 ├─ dataset/                        # 旧实验人工分桶样例
-└─ 超分实验/
-   ├─ 实验设计.md
+└─ super_resolution/
+   ├─ experiment_design.md
    ├─ scripts/
    │  └─ run_checkin_superres_abc.py # 兼容CLI入口
    └─ checkin_superres/              # schema-v3正式实现
@@ -48,7 +48,7 @@ results/runs/mevid_face_b3_train50_r5_test27_20260713_090421.json
 从仓库根目录执行：
 
 ```powershell
-python .\experiment\糊脸消融实验\scripts\plot_paper_results.py
+python .\experiment\face_blur_ablation\scripts\plot_paper_results.py
 ```
 
 输出到：
@@ -59,7 +59,7 @@ results/paper_figures/
 
 ## Check-in 超分实验
 
-正式协议见 `超分实验/实验设计.md`。`run_checkin_superres_abc.py prepare` 冻结
+正式协议见 `super_resolution/experiment_design.md`。`run_checkin_superres_abc.py prepare` 冻结
 check-in 正脸 Gallery 与全部官方 Query；`evaluate` 计算 A/B 一次并从缓存派生 C，
 同时输出压缩 embedding、全量比较图和 image manifest。旧
 `run_superres_gate.py` 仅保留作历史诊断，不代表当前正式协议。
@@ -76,5 +76,5 @@ recoverable 40条Query的Rank-1为：
 | C3 Real-ESRGAN | 18/40（45.0%） |
 
 两种纯缩放控制均为26/40。2,126项结果checksum全部通过；正式报告见
-`paper/多超分算法适用性报告.pdf`。原始结果归档保存在外部结果目录，不提交模型输出图片和
+`paper/multi_superres_applicability_report.pdf`。原始结果归档保存在外部结果目录，不提交模型输出图片和
 embedding缓存。

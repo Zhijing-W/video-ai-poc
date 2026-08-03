@@ -75,14 +75,14 @@
 ## 文档与实验
 
 - Phase 4 流程图：`docs/phase4-logic-flow.*`
-- 身份和人脸质量：`docs/人脸质量与身份融合逻辑.md`
+- 身份和人脸质量：`docs/face-quality-and-identity-fusion.md`
 - 云部署：`docs/cloud-deploy/`、`docs/AZURE_DEPLOY.md`
-- 糊脸与身份实验：`experiment/糊脸消融实验/`
-- MEVID公共实验工具：`experiment/糊脸消融实验/common/mevid_eval_common.py`
-- 超分门控A/B/C：`experiment/糊脸消融实验/超分实验/scripts/run_superres_gate.py`
+- 糊脸与身份实验：`experiment/face_blur_ablation/`
+- MEVID公共实验工具：`experiment/face_blur_ablation/common/mevid_eval_common.py`
+- 超分门控A/B/C：`experiment/face_blur_ablation/super_resolution/scripts/run_superres_gate.py`
 - actor check-in固定Gallery超分schema-v3入口：
-  `experiment/糊脸消融实验/超分实验/scripts/run_checkin_superres_abc.py`
-- schema-v3实现包：`experiment/糊脸消融实验/超分实验/checkin_superres/`
+  `experiment/face_blur_ablation/super_resolution/scripts/run_checkin_superres_abc.py`
+- schema-v3实现包：`experiment/face_blur_ablation/super_resolution/checkin_superres/`
   - `common.py`：常量、路径、hash、coverage、manifest identity与image-manifest行构造；
   - `preparation.py`：check-in Gallery和face-best Query冻结；
   - `embeddings.py`：A/B/C embedding cache、provenance与重载校验；

@@ -2,7 +2,7 @@
    新增：进度条 / 身份画廊 / 配置回显 / 灯箱
    ======================================== */
 
-/* ---------- 分阶段进度条 ---------- */
+/* ---------- 同步任务等待状态 ---------- */
 .em-progress {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -32,6 +32,15 @@
   border-radius: 999px;
   background: linear-gradient(90deg, var(--accent), var(--accent2));
   transition: width .28s ease;
+}
+.em-progress-bar.indeterminate {
+  width: 28%;
+  transition: none;
+  animation: em-progress-indeterminate 1.25s ease-in-out infinite;
+}
+@keyframes em-progress-indeterminate {
+  from { transform: translateX(-115%); }
+  to { transform: translateX(365%); }
 }
 .em-progress-steps {
   display: flex;

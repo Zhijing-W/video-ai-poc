@@ -71,7 +71,7 @@ eligibility 分组另报，不能把 B/C 重复放进主表。
 ## 6. VM 上稍后执行
 
 ```bash
-python experiment/糊脸消融实验/超分实验/scripts/run_checkin_superres_abc.py evaluate-matrix \
+python experiment/face_blur_ablation/super_resolution/scripts/run_checkin_superres_abc.py evaluate-matrix \
   --manifest /results/checkin_superres_abc_v3.json \
   --artifact-root /results/checkin_superres_matrix_artifacts \
   --output /results/checkin_superres_matrix_result.json \

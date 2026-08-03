@@ -9,9 +9,9 @@ import cairosvg
 
 
 HERE = Path(__file__).resolve().parent
-SVG = HERE / "当前人脸质量门控分类规则.svg"
-PNG = HERE / "当前人脸质量门控分类规则.png"
-EXCALIDRAW = HERE / "当前人脸质量门控分类规则.excalidraw"
+SVG = HERE / "current_face_quality_gate_rules.svg"
+PNG = HERE / "current_face_quality_gate_rules.png"
+EXCALIDRAW = HERE / "current_face_quality_gate_rules.excalidraw"
 
 W, H = 1700, 2520
 

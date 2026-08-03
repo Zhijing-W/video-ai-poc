@@ -107,6 +107,7 @@ async def understand(
     fps: float = Form(2.0),
     max_keyframes: int = Form(8),
     objective: str | None = Form(None),
+    with_body: bool = Form(True),
     with_face: bool = Form(False),
     with_gait: bool = Form(False),
     with_ocr: bool = Form(False),
@@ -198,6 +199,7 @@ async def understand(
                 if selected_reid_backend != settings.reid_backend or reid_backend:
                     reid_mod.reset_backend()
                 config_used = {
+                    "with_body": with_body,
                     "with_face": with_face,
                     "with_gait": with_gait,
                     "with_ocr": with_ocr,
@@ -220,6 +222,7 @@ async def understand(
                     run_dir,
                     fps=fps,
                     run_llm=not dry_run,
+                    with_body=with_body,
                     with_face=with_face,
                     with_gait=with_gait,
                     with_ocr=with_ocr,

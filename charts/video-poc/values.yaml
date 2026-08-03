@@ -85,7 +85,8 @@ config:
   reidDevice: cpu
   gaitDevice: cpu
   # FIQA / 超分 / OCR 开关
-  faceSuperres: gfpgan
+  faceRecBackend: arcface
+  faceSuperres: "off"
   faceFiqaBackend: "off"
   ocrEnabled: "true"
 

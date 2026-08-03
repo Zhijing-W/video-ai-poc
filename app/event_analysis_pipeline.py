@@ -30,6 +30,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from . import detector as detector_mod
 from . import face as face_mod
 from . import gait as gait_mod
 from . import ocr as ocr_mod
@@ -139,6 +140,7 @@ def analyze_event_stream(
     max_frames: int = 300,
     session_id: str = "event-demo",
     run_llm: bool = True,
+    with_body: bool = True,
     with_face: bool = False,
     with_gait: bool = False,
     with_ocr: bool = False,
@@ -155,18 +157,11 @@ def analyze_event_stream(
     video_path = Path(video_path)
     out_dir = Path(out_dir)
     frames_dir = out_dir / "frames"
-    t_start = time.time()
-
+    t_start = time.perf_counter()
     stage_timings: dict[str, float] = {}
-    _cursor = [time.time()]
-
-    def _lap(name: str) -> None:
-        now = time.time()
-        stage_timings[name] = round(now - _cursor[0], 2)
-        _cursor[0] = now
-
+    stage_started = time.perf_counter()
     frames = extract_frames(video_path, frames_dir, max_frames=max_frames, fps=fps)
-    _lap("extract_frames")
+    stage_timings["extract_frames"] = time.perf_counter() - stage_started
 
     session = EventAnalysisSession(
         video_path=video_path,
@@ -179,6 +174,7 @@ def analyze_event_stream(
             fps=fps,
             session_id=session_id,
             run_llm=run_llm,
+            with_body=with_body,
             with_face=with_face,
             with_gait=with_gait,
             with_ocr=with_ocr,
@@ -192,7 +188,6 @@ def analyze_event_stream(
             overall_summary=overall_summary,
             stage_timings=stage_timings,
             t_start=t_start,
-            cursor_start=_cursor[0],
         ),
     )
     for frame in frames:
@@ -208,6 +203,7 @@ def _finish_session(
     fps: float,
     session_id: str,
     run_llm: bool,
+    with_body: bool,
     with_face: bool,
     with_gait: bool,
     with_ocr: bool,
@@ -221,21 +217,23 @@ def _finish_session(
     overall_summary: bool | None,
     stage_timings: dict[str, float],
     t_start: float,
-    cursor_start: float,
 ) -> dict:
     video_path = Path(video_path)
     out_dir = Path(out_dir)
     step = 1.0 / float(fps)
-    _cursor = [cursor_start]
 
-    def _lap(name: str) -> None:
-        now = time.time()
-        stage_timings[name] = round(now - _cursor[0], 2)
-        _cursor[0] = now
+    def _record(name: str, started: float) -> None:
+        elapsed = time.perf_counter() - started
+        stage_timings[name] = stage_timings.get(name, 0.0) + elapsed
+
     # ---- 换视频：清掉旧的跟踪/记忆状态，保证干净的流 ----
+    setup_started = time.perf_counter()
     tracker_mod.reset_tracker(session_id)
     gallery_mod.reset_gallery(session_id)
-    dim = reid_mod.embed_dim()
+    if frames:
+        detector_mod.prepare()
+    dim = reid_mod.embed_dim() if with_body else None
+    _record("pipeline_setup", setup_started)
 
     # 逐帧累积的语义元数据 + 每条 track 的最佳 crop（给认人用）
     metas: list[FrameMeta] = []
@@ -256,12 +254,17 @@ def _finish_session(
     obj_use = bool(with_objects or settings.object_detect)
     obj_classes = settings.object_class_set() if obj_use else set()
 
+    frame_stage_started = time.perf_counter()
+    detector_inference_seconds = 0.0
+    tracker_association_seconds = 0.0
     for i, fr in enumerate(frames):
         pil = Image.open(fr.local_path).convert("RGB")
         if not img_w:
             img_w, img_h = pil.size
         raw = Path(fr.local_path).read_bytes()
         res = tracker_mod.track_objects(raw, session_id=session_id)
+        detector_inference_seconds += float(res.get("infer_ms") or 0.0) / 1000.0
+        tracker_association_seconds += float(res.get("track_ms") or 0.0) / 1000.0
 
         persons = [d for d in res["detections"] if d.get("label") == "person" and d.get("track_id") is not None]
         active = [int(d["track_id"]) for d in persons]
@@ -398,10 +401,17 @@ def _finish_session(
         return True
 
     skip_tracks = {tid for tid, t in tracks.items() if not _track_worth_identity(t)}
-    _lap("detect_track")
+    frame_stage_seconds = time.perf_counter() - frame_stage_started
+    stage_timings["object_detection"] = detector_inference_seconds
+    stage_timings["multi_object_tracking"] = tracker_association_seconds
+    stage_timings["frame_preprocess"] = max(
+        0.0,
+        frame_stage_seconds - detector_inference_seconds - tracker_association_seconds,
+    )
 
     # ---- 步态采集（第二遍·仅活动窗帧，且跳过被门控掉的 track）：把最重的逐帧 YOLO-Pose+Seg 只在需要处跑 ----
     if gait_use:
+        gait_collect_started = time.perf_counter()
         for i in windowed_frames:
             present = [(tid, t["boxes"][i]) for tid, t in tracks.items()
                        if i in t.get("boxes", {}) and tid not in skip_tracks]
@@ -422,10 +432,10 @@ def _finish_session(
                         t.setdefault("sil_seq", []).append(best["mask"])
             except Exception as exc:  # 步态采集失败不致命
                 gait_collect_error = str(exc)
+        _record("gait_collect", gait_collect_started)
 
     # ---- 认人：每条 track 用最佳 crop 提指纹、查/登记主体记忆库 → 身份 ----
-    if gait_use:
-        _lap("gait_collect")
+    body_identity_started = time.perf_counter()
     identities: dict[int, dict] = {}
     track_emb: dict[int, np.ndarray] = {}   # track_id -> ReID 向量（缝合用）
     for tid, t in tracks.items():
@@ -438,7 +448,7 @@ def _finish_session(
             continue
         body_best = t.get("body_best") or {}
         crop = body_best.get("crop") or t.get("best_crop")
-        if crop is not None:
+        if with_body and crop is not None:
             try:
                 vec = reid_mod.embed(crop)
                 track_emb[tid] = np.asarray(vec, dtype=np.float32).reshape(-1)
@@ -467,7 +477,7 @@ def _finish_session(
     # 动机：gallery 阈值是为"跨摄像头开放集"的安全设的；同一段视频里 ByteTrack 把一个连续的人
     # 断成几段，先验很强（同场景、时间连续），可更大胆地合并。只在编排层做，不动 gallery 语义。
     thr = settings.event_stitch_thresh if stitch_thresh is None else stitch_thresh
-    if thr and thr > 0:
+    if with_body and thr and thr > 0:
         _stitch_orphans(tracks, identities, track_emb, thr)
 
     # 身份命中 → 在该 track 首帧补 identity_hit 语义事件
@@ -475,16 +485,26 @@ def _finish_session(
         if ident.get("reused") and ident.get("subject_id") is not None:
             fi = tracks[tid]["first"]
             metas[fi].events.append(f"identity_hit:主体#{ident['subject_id']}")
+    if with_body:
+        _record("body_identity", body_identity_started)
 
     # ---- 可选人脸分支：每条 track 独立选择有界 face-best，不再复用 body-best ----
-    _lap("reid_identify")
     if with_face:
-        _attach_faces(frames, tracks, identities, session_id, body_embeddings=track_emb)
-        _lap("face")
+        face_identity_started = time.perf_counter()
+        _attach_faces(
+            frames,
+            tracks,
+            identities,
+            session_id,
+            body_embeddings=track_emb,
+            body_consistency_enabled=with_body,
+        )
+        _record("face_identity", face_identity_started)
 
     # ---- 步态认人：每条 track 用累积的(姿态+剪影)序列提步态向量 → 步态库 → 写 gait_cue ----
     gait_dim = None
     if gait_use:
+        gait_identity_started = time.perf_counter()
         gait_sess = f"{session_id}-gait"
         gallery_mod.reset_gallery(gait_sess)
         for tid, t in tracks.items():
@@ -516,10 +536,10 @@ def _finish_session(
                     }
             except Exception as exc:  # 步态认人失败不致命
                 identities[tid].setdefault("gait_error", str(exc))
+        _record("gait_identity", gait_identity_started)
 
     # ---- 跨 track 三路合并：人脸库/人形库/步态库 任一路认出同一人 → 并成一个 subject ----
-    if gait_use:
-        _lap("gait_embed")
+    identity_fusion_started = time.perf_counter()
     if identities:
         _merge_tracks_cross_route(identities)
         _split_subject_time_conflicts(tracks, identities)
@@ -528,7 +548,7 @@ def _finish_session(
     for tid in identities:
         score_identity_confidence(identities[tid])
         identities[tid]["evidence"] = {
-            "body": public_evidence(tracks[tid].get("body_best")),
+            "body": public_evidence(tracks[tid].get("body_best")) if with_body else None,
             "face": public_evidence(tracks[tid].get("face_best")),
         }
 
@@ -539,14 +559,17 @@ def _finish_session(
                 thumb = _pil_to_thumb_uri(t["best_crop"])
                 if thumb:
                     identities[tid]["thumb"] = thumb
-                    identities[tid]["thumb_source"] = "body_best"
+                    identities[tid]["thumb_source"] = "person_crop"
+    _record("identity_fusion", identity_fusion_started)
 
     # 事件窗已在前面（重活之前）切好；此处直接逐窗选帧②并做多帧事件理解
-    _lap("merge_fusion_thumb")
     idx2frame = {i: fr for i, fr in enumerate(frames)}
     ocr_cache: dict[int, list[dict]] = {}  # 帧 index → OCR 结果，避免重复 OCR
     out_windows: list[dict] = []
+    event_prepare_seconds = 0.0
+    event_understanding_seconds = 0.0
     for w, win_idx in enumerate(windows):
+        event_prepare_started = time.perf_counter()
         win_metas = [metas[i] for i in win_idx]
         sel = select_keyframes(win_metas, max_frames=max_keyframes)
         if not sel:
@@ -608,23 +631,41 @@ def _finish_session(
                 for i in sel
             ]
         if run_llm:
+            event_prepare_seconds += time.perf_counter() - event_prepare_started
+            event_understanding_started = time.perf_counter()
             window_out["event"] = understand_event(
                 kf, identity_text, objective=objective,
                 scene_context=scene_context or None, object_context=object_context or None,
             )
+            event_understanding_seconds += time.perf_counter() - event_understanding_started
+        else:
+            event_prepare_seconds += time.perf_counter() - event_prepare_started
         out_windows.append(window_out)
 
     # ---- 跨窗整段事件总结：所有窗理解完后，纯文本把多窗串成整段连贯故事（便宜；dry-run 跳过）----
-    _lap("windows_llm" if run_llm else "windows_select")
+    stage_timings["event_preparation"] = event_prepare_seconds
+    if run_llm:
+        stage_timings["event_understanding"] = event_understanding_seconds
     overall = None
     do_overall = settings.event_overall_summary if overall_summary is None else overall_summary
     if run_llm and do_overall and out_windows:
+        overall_started = time.perf_counter()
         try:
             overall = summarize_event_windows(out_windows) or None
         except Exception as exc:  # 总结失败不致命：逐窗结果仍在
             overall = {"error": str(exc)}
-    if overall is not None:
-        _lap("overall_summary")
+        _record("overall_summary", overall_started)
+
+    elapsed_seconds = time.perf_counter() - t_start
+    measured_seconds = sum(stage_timings.values())
+    other_seconds = max(0.0, elapsed_seconds - measured_seconds)
+    if other_seconds >= 0.0005:
+        stage_timings["other_overhead"] = other_seconds
+    stage_timings = {
+        name: round(seconds, 6)
+        for name, seconds in stage_timings.items()
+        if seconds > 0.0
+    }
 
     return {
         "video": str(video_path),
@@ -634,8 +675,9 @@ def _finish_session(
         "session_id": session_id,
         "evidence_schema_version": 2,
         "tracker_backend": tracker_mod.active_backend(),
-        "reid_backend": reid_mod.active_backend(),
+        "reid_backend": reid_mod.active_backend() if with_body else None,
         "reid_dim": dim,
+        "with_body": with_body,
         "with_face": with_face,
         "with_gait": gait_use,
         "with_ocr": ocr_use,
@@ -644,9 +686,13 @@ def _finish_session(
         "ocr_backend": (ocr_mod.active_backend() if ocr_use else None),
         "ocr_error": (ocr_mod.load_error() if ocr_use else None),
         "object_classes": (sorted(obj_classes) if obj_use else None),
+        "runtime": {
+            "execution": "server",
+            "detector_device": detector_mod.active_device() or "unknown",
+        },
         "model": settings.event_llm_deployment or settings.azure_openai_deployment,
         "dry_run": not run_llm,
-        "elapsed_seconds": round(time.time() - t_start, 1),
+        "elapsed_seconds": round(elapsed_seconds, 3),
         "stage_timings": stage_timings,
         "tracks": {str(tid): identities[tid] for tid in identities},
         "windows": out_windows,

@@ -1,6 +1,6 @@
 # Market-1501 / ChokePoint 糊脸实验（历史记录）
 
-> 本文档为早期实验记录，正式论文结论请查看`../实习论文_MEVID多模态身份识别实验.md`。
+> 本文档为早期实验记录，正式论文结论请查看`../internship_thesis_mevid_multimodal_identity.md`。
 > 本文中的结果文件现存放在`../../results/legacy_market/`，样例图片位于`../../dataset/`。
 
 > 在真实监控低清行人图上，量化「**人脸糊到认不出时，加哪些手段能把『认人』救回多少**」。
@@ -48,18 +48,18 @@
 | 顺序 | 图 | 一句话讲解 |
 |---|---|---|
 | 1 | `../../results/legacy_market/fig_headline.png` | 脸糊/无脸时，人形把识别从30%拉到93% |
-| 2 | `../../results/legacy_market/实验流程.png` | 两阶段：只用脸分桶，再比较不同认人方案 |
+| 2 | `../../results/legacy_market/experiment_flow.png` | 两阶段：只用脸分桶，再比较不同认人方案 |
 | 3 | `../../results/legacy_market/fig_ablation.png` | AdaFace、超分和人形的早期消融结果 |
 
 ### 方法流程图
-![流程](../../results/legacy_market/实验流程.png)
+![流程](../../results/legacy_market/experiment_flow.png)
 
 
 ---
 
-## 2. 方法（见 `../../results/legacy_market/实验流程.svg`）
+## 2. 方法（见 `../../results/legacy_market/experiment_flow.svg`）
 
-两阶段，重活全部 **call 产品代码**（人脸过滤逻辑详见 `docs/人脸质量与身份融合逻辑.md`）：
+两阶段，重活全部 **call 产品代码**（人脸过滤逻辑详见 `docs/face-quality-and-identity-fusion.md`）：
 - **阶段 A · 质量分桶（只用人脸）**：`app.face.detect(with_quality)` 检测脸 + `assess_quality`（**对齐客户人脸过滤：主看模糊+角度**）→ 分桶 `clear / marginal / poor` + 无脸 `none`。人形步态**不参与判质量**。
 - **阶段 B · arm 矩阵（认人对比）**：在差脸桶上比各 arm 的闭集 Rank-1。各 arm 只切产品开关：
   - 人脸识别后端 `FACE_REC_BACKEND`（arcface / adaface）
@@ -74,15 +74,15 @@
 ## 3. 文件
 
 ```
-糊脸消融实验/
+face_blur_ablation/
   run_eval.py        # 评测主脚本（Market loader + arm 矩阵，薄薄 call 产品代码）
   dump_bins.py       # 把 probe 图按质量桶落盘到 dataset/<运行名>/（人眼查看糊脸样本）
   gen_flow.py        # 生成实验流程图
   gen_report_figs.py # 从结果 JSON 生成汇报用图（秒出，无需重跑）
-  对比实验.md         # 总体对比实验指导手册（两条轴：精度 / 部署）
+  comparative_experiments.md  # 总体对比实验指导手册（两条轴：精度 / 部署）
   README.md          # 本文件
   results/
-    实验流程.svg/.png            # 方法流程图
+    experiment_flow.svg/.png   # 方法流程图
     fig_headline.svg/.png        # 汇报图1：S0 vs S5 头条
     fig_ablation.svg/.png        # 汇报图3：5 方案完整消融
     face_blur_eval_results.json  # 本次结果数据
@@ -102,8 +102,8 @@
 # 数据集（git 仓库外）：data/external/Market-1501-v15.09.15
 # 来源：HF 镜像 huggingface.co/datasets/e8035669/reid-datasets
 
-# 从仓库根运行（注意中文路径用相对路径）
-.\.venv\Scripts\python.exe -u .\experiment\糊脸消融实验\scripts\run_eval.py `
+# Run from the repository root.
+.\.venv\Scripts\python.exe -u .\experiment\face_blur_ablation\scripts\run_eval.py `
     --data .\data\external\Market-1501-v15.09.15 `
     --arms S0,S1,S2,S5,full --max-subjects 25 --gallery-per-subject 3 --probe-per-subject 8
 

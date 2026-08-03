@@ -717,7 +717,7 @@ GFPGAN和CodeFormer没有救回任何原图错误样本，却损害了大量原�
 上图按冻结质量分层选择真实样本，不读取识别结果。生成式后端可以让五官更自然、画面更锐利，
 但视觉改善不等于身份稳定。当前产品应默认保留原始对齐脸作为ArcFace输入；三种超分只保留为
 人工查看或离线诊断选项，处理后图片不得自动写入人脸Gallery。完整协议、校验和与限制见
-[`多超分算法适用性报告`](../paper/多超分算法适用性报告.pdf)。
+[`多超分算法适用性报告`](../paper/multi_superres_applicability_report.pdf)。
 
 ---
 
@@ -832,19 +832,19 @@ https://arxiv.org/abs/2107.10833
 协议A：
 
 ```text
-experiment/糊脸消融实验/results/runs/mevid_e2e_e27_i25_20260710_081808.json
+experiment/face_blur_ablation/results/runs/mevid_e2e_e27_i25_20260710_081808.json
 ```
 
 协议B3：
 
 ```text
-experiment/糊脸消融实验/results/runs/mevid_face_b3_train50_r5_test27_20260713_090421.json
+experiment/face_blur_ablation/results/runs/mevid_face_b3_train50_r5_test27_20260713_090421.json
 ```
 
 固定Check-in Gallery多后端超分实验：
 
 ```text
-experiment/糊脸消融实验/paper/多超分算法适用性报告.pdf
+experiment/face_blur_ablation/paper/multi_superres_applicability_report.pdf
 ```
 
 多后端原始图片、embedding与逐样本长表保存在外部结果归档；仓库只保留最终论文图、报告和

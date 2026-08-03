@@ -6,7 +6,7 @@
 不提认人特征（不跑 ReID/多 arm），所以比 run_eval 快很多。
 
 用法（从仓库根运行）：
-    python experiment/糊脸消融实验/scripts/dump_bins.py --data data/external/Market-1501-v15.09.15 --max-subjects 25
+    python experiment/face_blur_ablation/scripts/dump_bins.py --data data/external/Market-1501-v15.09.15 --max-subjects 25
 """
 from __future__ import annotations
 

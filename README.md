@@ -220,8 +220,8 @@ Runnable code under `experiment/` is included in CPU/GPU images; experiment data
 ### Experiments and documentation
 
 - [`docs/phase4-logic-flow.svg`](docs/phase4-logic-flow.svg): runtime logic flow.
-- [`docs/人脸质量与身份融合逻辑.md`](docs/人脸质量与身份融合逻辑.md): face quality and identity aggregation.
-- [`experiment/糊脸消融实验/`](experiment/糊脸消融实验/): face-quality and multimodal identity experiments.
+- [`docs/face-quality-and-identity-fusion.md`](docs/face-quality-and-identity-fusion.md): face quality and identity aggregation.
+- [`experiment/face_blur_ablation/`](experiment/face_blur_ablation/): face-quality and multimodal identity experiments.
 - Local-only papers and licensed datasets belong under `data/external/`.
 
 ### Reproducibility notes
@@ -372,8 +372,8 @@ python scripts\download_models.py --include-optional-yolo
 ### 实验与复现说明
 
 - Phase 4 主流程图：[`docs/phase4-logic-flow.svg`](docs/phase4-logic-flow.svg)。
-- 人脸质量与身份逻辑：[`docs/人脸质量与身份融合逻辑.md`](docs/人脸质量与身份融合逻辑.md)。
-- 糊脸和多模态身份实验：[`experiment/糊脸消融实验/`](experiment/糊脸消融实验/)。
+- 人脸质量与身份逻辑：[`docs/face-quality-and-identity-fusion.md`](docs/face-quality-and-identity-fusion.md)。
+- 糊脸和多模态身份实验：[`experiment/face_blur_ablation/`](experiment/face_blur_ablation/)。
 - 论文和受许可约束的数据仅保存在本地 `data/external/`。
 - LLM 报告必须配置有效的 Azure OpenAI/Foundry 凭据。
 - 当前 PoC 将事件分析请求串行执行，避免请求级模型设置与身份状态互相影响。

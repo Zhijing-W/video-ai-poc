@@ -64,7 +64,11 @@ def _track_consistency(
     track: dict,
     body_embedding: np.ndarray | None,
     image: Image.Image,
+    *,
+    enabled: bool = True,
 ) -> tuple[bool, float | None, str]:
+    if not enabled:
+        return True, None, "not_applicable"
     body_best = track.get("body_best") or {}
     if int(selected["frame_index"]) == int(body_best.get("frame_index", track.get("best_idx", -1))):
         return True, 1.0, "same_frame"
@@ -93,6 +97,8 @@ def attach_faces(
     identities: dict[int, dict],
     session_id: str,
     body_embeddings: dict[int, np.ndarray] | None = None,
+    *,
+    body_consistency_enabled: bool = True,
 ) -> None:
     """Select and finalize face evidence independently from body-best."""
     face_sess = f"{session_id}-face"
@@ -204,6 +210,7 @@ def attach_faces(
             track,
             body_embeddings.get(tid),
             image,
+            enabled=body_consistency_enabled,
         )
         selected["track_consistency_score"] = consistency_score
         selected["track_consistency_status"] = consistency_status

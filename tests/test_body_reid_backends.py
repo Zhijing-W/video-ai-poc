@@ -27,6 +27,7 @@ def test_registry_lists_new_backends_and_normalizes_aliases():
         body_reid.available_backends()
     )
     assert body_reid.validate_backend("clip-reid") == "clipreid"
+    assert body_reid.validate_backend("siglip2-person-reid") == "siglip2"
     assert body_reid.backend_metadata()["differ"]["dim"] == 1024
 
     with pytest.raises(ValueError, match="未知人形ReID后端"):
