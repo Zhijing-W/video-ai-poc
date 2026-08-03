@@ -8,18 +8,27 @@ on:
       - app/**
       - templates/**
       - static/**
+      - experiment/**
+      - licenses/**
       - requirements.txt
       - Dockerfile.gpu
+      - Dockerfile.gpu.base
       - .dockerignore
       - .github/workflows/build-gpu-image.yml
   workflow_dispatch:
+    inputs:
+      rebuild_dependency_base:
+        description: Rebuild dependencies from the NVIDIA image instead of the existing ACR image
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
   id-token: write
 
 concurrency:
-  group: build-gpu-image-main
+  group: build-gpu-image
   cancel-in-progress: false
 
 jobs:
@@ -38,13 +47,94 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Build and publish GPU image
+      - name: Resolve dependency image
+        id: dependency
         shell: bash
+        env:
+          ACR_NAME: ${{ vars.ACR_NAME }}
+          FORCE_BASE_REBUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.rebuild_dependency_base || false }}
         run: |
           set -euo pipefail
+          app_repository="video-poc-gpu"
+          base_repository="video-poc-gpu-base"
+          login_server="${ACR_NAME}.azurecr.io"
+
+          find_tag() {
+            local repository="$1"
+            local tag="$2"
+            local output
+
+            if output="$(
+              az acr repository show-tags \
+                --name "$ACR_NAME" \
+                --repository "$repository" \
+                --query "[?@ == '${tag}'] | [0]" \
+                --output tsv \
+                --only-show-errors 2>&1
+            )"; then
+              printf '%s' "$output"
+              return 0
+            fi
+            if [[ "$output" == *"repository "* &&
+                  "$output" == *" is not found."* ]]; then
+              return 0
+            fi
+            printf '%s\n' "$output" >&2
+            return 1
+          }
+
+          dependency_hash="$(
+            sha256sum Dockerfile.gpu.base requirements.txt |
+              sha256sum |
+              cut -c1-16
+          )"
+          dependency_tag="deps-${dependency_hash}"
+          dependency_image="${login_server}/${base_repository}:${dependency_tag}"
+
+          existing_tag="$(find_tag "$base_repository" "$dependency_tag")"
+
+          if [[ "$FORCE_BASE_REBUILD" == "true" && "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "A clean dependency rebuild may only run from main." >&2
+            exit 1
+          fi
+
+          if [[ "$FORCE_BASE_REBUILD" == "true" || "$existing_tag" != "$dependency_tag" ]]; then
+            runtime_image="nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04"
+            if [[ "$FORCE_BASE_REBUILD" != "true" ]]; then
+              current_app_tag="$(find_tag "$app_repository" "main")"
+              if [[ "$current_app_tag" == "main" ]]; then
+                runtime_image="${login_server}/${app_repository}:main"
+              fi
+            fi
+
+            echo "Building dependency image from ${runtime_image}"
+            az acr build \
+              --registry "$ACR_NAME" \
+              --file Dockerfile.gpu.base \
+              --build-arg "GPU_RUNTIME_IMAGE=${runtime_image}" \
+              --image "${base_repository}:${dependency_tag}" \
+              .
+          else
+            echo "Reusing dependency image ${dependency_image}"
+          fi
+
+          echo "image=${dependency_image}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and publish GPU application image
+        shell: bash
+        env:
+          ACR_NAME: ${{ vars.ACR_NAME }}
+          GPU_BASE_IMAGE: ${{ steps.dependency.outputs.image }}
+        run: |
+          set -euo pipefail
+          image_args=(--image "video-poc-gpu:${GITHUB_SHA}")
+          if [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
+            image_args+=(--image "video-poc-gpu:main")
+          fi
+
           az acr build \
-            --registry "${{ vars.ACR_NAME }}" \
+            --registry "$ACR_NAME" \
             --file Dockerfile.gpu \
-            --image "video-poc-gpu:${GITHUB_SHA}" \
-            --image "video-poc-gpu:main" \
+            --build-arg "GPU_BASE_IMAGE=${GPU_BASE_IMAGE}" \
+            "${image_args[@]}" \
             .
