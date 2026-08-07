@@ -281,3 +281,63 @@ console.log(JSON.stringify({{
     assert "class=\"em-gallery-panel\"" in result["html"]
     assert "Subject #7" in result["html"]
     assert "tracks: 1" in result["html"]
+
+
+def test_product_reid_selector_shows_one_default_and_four_validated_backends() -> None:
+    settings_url = json.dumps(
+        (ROOT / "static" / "js" / "event-monitor" / "settings.js").as_uri()
+    )
+    bundle = _bundle("en", "settings")
+    result = _run_module_script(
+        f"""
+globalThis.__EVENT_MONITOR_I18N__ = {bundle};
+globalThis.Option = class {{
+  constructor(text, value) {{
+    this.text = text;
+    this.value = value;
+  }}
+}};
+const select = {{
+  dataset: {{}},
+  disabled: true,
+  options: [],
+  value: null,
+  replaceChildren() {{ this.options = []; }},
+  add(option) {{ this.options.push({{ text: option.text, value: option.value }}); }},
+}};
+globalThis.document = {{
+  getElementById: (id) => id === "reidBackend" ? select : null,
+}};
+const {{ renderReidBackends }} = await import({settings_url});
+renderReidBackends({{
+  default: "differ",
+  backends: [
+    "auto",
+    "clipreid",
+    "coarse",
+    "differ",
+    "osnet",
+    "resnet50",
+    "siglip2",
+  ],
+  metadata: {{}},
+}});
+console.log(JSON.stringify({{
+  options: select.options,
+  defaultBackend: select.dataset.defaultBackend,
+  disabled: select.disabled,
+}}));
+"""
+    )
+
+    assert result["defaultBackend"] == "differ"
+    assert result["disabled"] is False
+    assert result["options"] == [
+        {
+            "text": "DIFFER EVA02-L (default · accuracy first)",
+            "value": "",
+        },
+        {"text": "CLIP-ReID ViT-B/16", "value": "clipreid"},
+        {"text": "SigLIP2 Person ReID", "value": "siglip2"},
+        {"text": "OSNet-AIN MSMT17", "value": "osnet"},
+    ]

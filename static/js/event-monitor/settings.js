@@ -90,46 +90,34 @@ export function renderReidBackends(catalog = {}) {
   if (!select) return;
   const catalogLoaded = Array.isArray(catalog.backends);
   const names = catalogLoaded ? catalog.backends : [];
-  const productBackends = ["differ", "clipreid", "siglip2", "osnet", "resnet50", "auto"];
+  const productBackends = ["differ", "clipreid", "siglip2", "osnet"];
   const registered = new Set(names);
   const allowed = catalogLoaded
-    ? [
-      ...productBackends.filter((name) => registered.has(name)),
-      ...names.filter((name) => !productBackends.includes(name)),
-    ]
+    ? productBackends.filter((name) => registered.has(name))
     : [];
   const fallbackLabels = {
     osnet: "OSNet-AIN MSMT17",
-    resnet50: "ResNet50 ImageNet",
-    coarse: uiLocale() === "en" ? "Color histogram" : "颜色直方图",
     clipreid: "CLIP-ReID ViT-B/16",
     siglip2: "SigLIP2 Person ReID",
     differ: "DIFFER EVA02-L",
-    auto: uiLocale() === "en" ? "Auto fallback (OSNet → ResNet50 → coarse)" : "自动回退（OSNet → ResNet50 → coarse）",
   };
   const metadata = catalog.metadata || {};
   const labelFor = (name) => metadata[name]?.label || fallbackLabels[name] || name;
   const configuredDefault = allowed.includes(catalog.default) ? catalog.default : "";
   select.replaceChildren();
   const defaultLabel = configuredDefault
-    ? `${uiLocale() === "en" ? "Use server default" : "使用服务端默认"} (${labelFor(configuredDefault)})`
+    ? `${labelFor(configuredDefault)}${
+      uiLocale() === "en" ? " (default · accuracy first)" : "（默认 · 精度优先）"
+    }`
     : (
       catalogLoaded
         ? (uiLocale() === "en" ? "Use server default" : "使用服务端默认")
         : (uiLocale() === "en" ? "Use server default (backend catalog unavailable)" : "使用服务端默认（后端目录不可用）")
     );
   select.add(new Option(defaultLabel, ""));
-  allowed.forEach((name) => {
-    const suffix = name === configuredDefault
-      ? (
-        uiLocale() === "en"
-          ? (name === "differ" ? " (default · accuracy first)" : " (configured default)")
-          : (name === "differ" ? "（默认·精度优先）" : "（配置默认）")
-      )
-      : "";
-    const label = `${labelFor(name)}${suffix}`;
-    select.add(new Option(label, name));
-  });
+  allowed
+    .filter((name) => name !== configuredDefault)
+    .forEach((name) => select.add(new Option(labelFor(name), name)));
   select.value = "";
   select.dataset.defaultBackend = configuredDefault;
   select.disabled = !catalogLoaded;
