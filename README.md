@@ -81,6 +81,7 @@ Linux/macOS users can replace `.\.venv\Scripts\python.exe` with `.venv/bin/pytho
 | `GET /api/event-monitor/samples` | List locally available sample videos |
 | `POST /api/event-monitor/understand` | Run the complete video-to-event pipeline |
 | `POST /api/event-monitor/complete` | Continue a dry run with the LLM without rerunning CV |
+| `GET /api/event-monitor/llm-models` | List active vision-capable Azure OpenAI deployments available to the UI |
 | `GET /api/event-monitor/reid-backends` | List registered body ReID backends |
 | `GET /api/event-monitor/superres-backends` | List registered face super-resolution backends |
 | `GET /health` | Service health |
@@ -322,6 +323,7 @@ Linux/macOS 将 `.\.venv\Scripts\python.exe` 替换为 `.venv/bin/python`。
 | `GET /api/event-monitor/samples` | 列出本地样片 |
 | `POST /api/event-monitor/understand` | 运行完整的视频事件理解流程 |
 | `POST /api/event-monitor/complete` | 在不重跑视觉链路的情况下继续完成 dry-run |
+| `GET /api/event-monitor/llm-models` | 列出 UI 可选择的、已启用且支持视觉输入的 Azure OpenAI deployment |
 | `GET /health` | 服务健康检查 |
 
 旧页面地址 `/eventmonitor` 会自动跳转到 `/event-monitor`。

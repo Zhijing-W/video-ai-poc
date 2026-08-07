@@ -2,11 +2,12 @@ import { downloadJson, openLightbox, closeLightbox, sendDryRunToLlm, toggleJson 
 import { clockLocale, t } from "./i18n.js";
 import {
   health,
+  listAiModels,
   listReidBackends,
   listSamples,
   listSuperresBackends,
   runAnalysis,
-} from "./api.js?v=20260807-bilingual-ui";
+} from "./api.js?v=20260807-ai-model-selector";
 import { finishProgress, startProgress } from "./progress.js";
 import {
   prepareForRun,
@@ -15,16 +16,17 @@ import {
   setBackendIndicator,
   setStatus,
   showRunFailure,
-} from "./render.js?v=20260807-bilingual-ui";
+} from "./render.js?v=20260807-ai-model-selector";
 import {
   closeSettings,
   collectAnalysisRequest,
   openSettings,
   renderReidBackends,
+  renderAiModels,
   renderSuperresBackends,
   wireDropzone,
   wireSuperresSettings,
-} from "./settings.js?v=20260807-bilingual-ui";
+} from "./settings.js?v=20260807-ai-model-selector";
 import { $ } from "./utils.js";
 
 function tickClock() {
@@ -52,6 +54,14 @@ async function loadReidOptions() {
     renderReidBackends(await listReidBackends());
   } catch (_) {
     renderReidBackends();
+  }
+}
+
+async function loadAiModelOptions() {
+  try {
+    renderAiModels(await listAiModels());
+  } catch (_) {
+    renderAiModels();
   }
 }
 
@@ -136,3 +146,4 @@ checkBackend();
 loadSampleOptions();
 loadSuperresOptions();
 loadReidOptions();
+loadAiModelOptions();

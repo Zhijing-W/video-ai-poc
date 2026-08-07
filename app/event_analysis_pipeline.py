@@ -178,6 +178,7 @@ def analyze_event_stream(
     stitch_thresh: float | None = None,
     overall_summary: bool | None = None,
     report_language: str | None = None,
+    llm_model: str | None = None,
 ) -> dict:
     """对一段视频做"身份感知·多帧事件理解"的完整端到端处理。"""
     video_path = Path(video_path)
@@ -213,6 +214,7 @@ def analyze_event_stream(
             stitch_thresh=stitch_thresh,
             overall_summary=overall_summary,
             report_language=report_language,
+            llm_model=llm_model,
             stage_timings=stage_timings,
             t_start=t_start,
         ),
@@ -267,6 +269,7 @@ def _finish_session(
     stitch_thresh: float | None,
     overall_summary: bool | None,
     report_language: str | None,
+    llm_model: str | None,
     stage_timings: dict[str, float],
     t_start: float,
 ) -> dict:
@@ -698,6 +701,7 @@ def _finish_session(
                 scene_context=scene_context or None,
                 object_context=object_context or None,
                 language=report_language,
+                model=llm_model,
             )
             event_understanding_seconds += time.perf_counter() - event_understanding_started
         else:
@@ -716,6 +720,7 @@ def _finish_session(
             overall = summarize_event_windows(
                 out_windows,
                 language=report_language,
+                model=llm_model,
             ) or None
         except Exception as exc:  # 总结失败不致命：逐窗结果仍在
             overall = {"error": str(exc)}
@@ -758,7 +763,11 @@ def _finish_session(
             "detector_device": detector_mod.active_device() or "unknown",
             "reid_device": effective_reid_device,
         },
-        "model": settings.event_llm_deployment or settings.azure_openai_deployment,
+        "model": (
+            llm_model
+            or settings.event_llm_deployment
+            or settings.azure_openai_deployment
+        ),
         "dry_run": not run_llm,
         "report_language": report_language or "zh-CN",
         "elapsed_seconds": round(elapsed_seconds, 3),

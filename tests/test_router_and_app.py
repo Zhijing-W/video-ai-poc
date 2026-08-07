@@ -169,6 +169,8 @@ def test_fastapi_health_page_and_openapi_are_available() -> None:
     assert '<option value="botsort_reid">' not in page.text
     assert "Off (default)" in page.text
     assert '<option value="off">' not in page.text
+    assert 'id="aiModel"' in page.text
+    assert "AI analysis" in page.text
     assert '<select id="reidBackend" class="em-input" disabled>' in page.text
     assert '<option value="">Use server default (loading…)</option>' in page.text
     assert '<option value="differ"' not in page.text
@@ -185,6 +187,7 @@ def test_fastapi_health_page_and_openapi_are_available() -> None:
     assert "结合计算机视觉进行跨帧人员识别，并通过多模态大语言模型推理生成事件报告。" in zh_page.text
     assert "ArcFace（默认）" in zh_page.text
     assert "关闭（默认）" in zh_page.text
+    assert "AI 分析" in zh_page.text
     assert "BoT-SORT（默认 · 运动+外观关联）" in zh_page.text
     assert 'href="/event-monitor"' in zh_page.text
     assert '"reportLanguage": "zh-CN"' in zh_page.text
@@ -346,14 +349,24 @@ def test_router_propagates_report_language_to_analysis(monkeypatch) -> None:
         }
 
     monkeypatch.setattr(event_monitor, "analyze_event_stream", fake_analyze)
+    monkeypatch.setattr(
+        event_monitor.llm_catalog_mod,
+        "resolve_event_llm_deployment",
+        lambda value: value or "gpt-4o",
+    )
     response = TestClient(app).post(
         "/api/event-monitor/understand",
         files={"file": ("clip.mp4", b"fake video bytes", "video/mp4")},
-        data={"dry_run": "true", "language": "en"},
+        data={
+            "dry_run": "true",
+            "language": "en",
+            "llm_model": "event-gpt41",
+        },
     )
 
     assert response.status_code == 200
     assert calls[0]["report_language"] == "en"
+    assert calls[0]["llm_model"] == "event-gpt41"
     assert response.json()["report_language"] == "en"
     shutil.rmtree(
         event_monitor.OUT_DIR / response.json()["run_id"],
@@ -386,6 +399,11 @@ def test_complete_route_propagates_language_to_llm_helpers(monkeypatch) -> None:
 
     monkeypatch.setattr(event_monitor, "understand_event", fake_understand)
     monkeypatch.setattr(event_monitor, "summarize_event_windows", fake_summary)
+    monkeypatch.setattr(
+        event_monitor.llm_catalog_mod,
+        "resolve_event_llm_deployment",
+        lambda value: value or "gpt-4o",
+    )
     response = TestClient(app).post(
         "/api/event-monitor/complete",
         json={
@@ -400,6 +418,7 @@ def test_complete_route_propagates_language_to_llm_helpers(monkeypatch) -> None:
                 ],
             },
             "language": "en",
+            "llm_model": "event-gpt41",
         },
     )
 
@@ -407,8 +426,153 @@ def test_complete_route_propagates_language_to_llm_helpers(monkeypatch) -> None:
     assert calls["understand"][0]["language"] == "en"
     assert calls["understand"][0]["scene_context"] == "scene"
     assert calls["understand"][0]["object_context"] == "objects"
+    assert calls["understand"][0]["model"] == "event-gpt41"
     assert calls["summary"][0]["language"] == "en"
+    assert calls["summary"][0]["model"] == "event-gpt41"
     assert response.json()["report_language"] == "en"
+    assert response.json()["model"] == "event-gpt41"
+
+
+def test_complete_route_rejects_non_inline_keyframe_images(
+    monkeypatch,
+) -> None:
+    called = False
+
+    def fake_understand(*args, **kwargs):
+        nonlocal called
+        called = True
+        return {}
+
+    monkeypatch.setattr(event_monitor, "understand_event", fake_understand)
+    response = TestClient(app).post(
+        "/api/event-monitor/complete",
+        json={
+            "payload": {
+                "windows": [
+                    {
+                        "keyframes": [
+                            {
+                                "image": "README.md",
+                                "timestamp": "00:00:01",
+                            }
+                        ]
+                    }
+                ]
+            },
+            "llm_model": None,
+        },
+    )
+
+    assert response.status_code == 400
+    assert "image data URI" in response.json()["detail"]
+    assert called is False
+
+
+def test_complete_route_can_switch_back_to_current_default_model(
+    monkeypatch,
+) -> None:
+    selected_values = []
+    model_calls = []
+
+    def resolve(value):
+        selected_values.append(value)
+        return "gpt-4o" if not value else value
+
+    monkeypatch.setattr(
+        event_monitor.llm_catalog_mod,
+        "resolve_event_llm_deployment",
+        resolve,
+    )
+    monkeypatch.setattr(
+        event_monitor,
+        "understand_event",
+        lambda *args, **kwargs: (
+            model_calls.append(kwargs["model"])
+            or {
+                "events": [],
+                "summary": "stub",
+                "subjects_involved": [],
+                "alert_level": "normal",
+                "notification": "",
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        event_monitor,
+        "summarize_event_windows",
+        lambda *args, **kwargs: {},
+    )
+    response = TestClient(app).post(
+        "/api/event-monitor/complete",
+        json={
+            "payload": {
+                "model": "event-gpt41",
+                "windows": [
+                    {
+                        "keyframes": [
+                            {
+                                "image": "data:image/png;base64,abc",
+                                "timestamp": "00:00:01",
+                            }
+                        ]
+                    }
+                ],
+            },
+            "llm_model": None,
+        },
+    )
+
+    assert response.status_code == 200
+    assert selected_values == [None]
+    assert model_calls == ["gpt-4o"]
+    assert response.json()["model"] == "gpt-4o"
+
+
+def test_llm_model_catalog_endpoint_and_unknown_model_validation(
+    monkeypatch,
+) -> None:
+    catalog = {
+        "default": "gpt-4o",
+        "models": [
+            {
+                "deployment": "gpt-4o",
+                "model": "gpt-4o",
+                "label": "gpt-4o",
+                "default": True,
+            }
+        ],
+        "source": "azure",
+        "warning": None,
+    }
+    monkeypatch.setattr(
+        event_monitor.llm_catalog_mod,
+        "event_llm_catalog",
+        lambda: catalog,
+    )
+
+    def resolve(value):
+        if value and value != "gpt-4o":
+            raise ValueError("未知或不可用的事件分析 AI deployment")
+        return "gpt-4o"
+
+    monkeypatch.setattr(
+        event_monitor.llm_catalog_mod,
+        "resolve_event_llm_deployment",
+        resolve,
+    )
+    client = TestClient(app)
+
+    response = client.get("/api/event-monitor/llm-models")
+    invalid = client.post(
+        "/api/event-monitor/understand",
+        files={"file": ("clip.mp4", b"fake video bytes", "video/mp4")},
+        data={"dry_run": "true", "llm_model": "not-deployed"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == catalog
+    assert invalid.status_code == 400
+    assert "未知或不可用" in invalid.json()["detail"]
 
 
 def test_reid_backend_catalog_and_unknown_request_validation() -> None:

@@ -2,7 +2,10 @@ import { completeDryRun } from "./api.js";
 import { reportLanguage, t } from "./i18n.js";
 import { startProgress, finishProgress } from "./progress.js";
 import { renderResult, setStatus } from "./render.js";
-import { getObjectiveValue } from "./settings.js?v=20260807-bilingual-ui";
+import {
+  getObjectiveValue,
+  getSelectedAiModel,
+} from "./settings.js?v=20260807-ai-model-selector";
 import { getKeyframe, getLastPayload } from "./state.js";
 import { boxesHtml } from "./timeline.js";
 import { $, baseName } from "./utils.js";
@@ -74,7 +77,12 @@ export async function sendDryRunToLlm() {
   setStatus(t("status.reusing_dry_run"));
 
   try {
-    const data = await completeDryRun(payload, getObjectiveValue(), reportLanguage());
+    const data = await completeDryRun(
+      payload,
+      getObjectiveValue(),
+      reportLanguage(),
+      getSelectedAiModel()
+    );
     finishProgress(true);
     renderResult(data);
     setStatus(t("status.llm_completed", {

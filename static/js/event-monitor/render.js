@@ -124,6 +124,9 @@ function renderConfigSummary(data) {
   chips.push(t("results.config_gait", { state: on(configUsed.with_gait) }));
   chips.push(t("results.config_ocr", { state: configUsed.with_ocr ? esc(data.ocr_backend || common("on")) : common("off") }));
   chips.push(t("results.config_objects", { state: on(configUsed.with_objects) }));
+  chips.push(t("results.config_ai", {
+    model: esc(data.model || configUsed.llm_model || common("unknown")),
+  }));
   if (data.gait_error) chips.push(`<span class="warn">${esc(t("results.config_warn_gait", { message: data.gait_error }))}</span>`);
   if (data.ocr_error) chips.push(`<span class="warn">${esc(t("results.config_warn_ocr", { message: data.ocr_error }))}</span>`);
 

@@ -176,6 +176,15 @@
         <span class="em-dryrun-hint">{{ ui.panel.dry_run_hint }}</span>
       </label>
 
+      <section class="em-ai-module" aria-labelledby="aiModuleTitle">
+        <div id="aiModuleTitle" class="em-ai-title">{{ ui.panel.ai_title }}</div>
+        <label class="em-label" for="aiModel">{{ ui.panel.ai_label }}</label>
+        <select id="aiModel" class="em-input" disabled>
+          <option value="">{{ ui.panel.ai_loading }}</option>
+        </select>
+        <div id="aiModelHint" class="em-ai-hint">{{ ui.panel.ai_hint }}</div>
+      </section>
+
       <button id="btnRun" class="em-btn em-btn-cta"><span class="em-btn-ico">▶</span> {{ ui.panel.run_button }}</button>
       <div id="status" class="em-status"></div>
 
@@ -236,6 +245,6 @@
   <script>
     globalThis.__EVENT_MONITOR_I18N__ = {{ ui_bundle | tojson }};
   </script>
-  <script type="module" src="/static/js/event-monitor/main.js?v=20260807-bilingual-ui"></script>
+  <script type="module" src="/static/js/event-monitor/main.js?v=20260807-ai-model-selector"></script>
 </body>
 </html>

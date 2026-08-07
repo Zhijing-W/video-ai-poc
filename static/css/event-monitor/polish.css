@@ -117,6 +117,31 @@
   line-height: 1.4;
 }
 
+/* ---------- AI 分析模型 ---------- */
+.em-ai-module {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid rgba(200,112,60,.3);
+  border-radius: 12px;
+  background:
+    linear-gradient(145deg, rgba(200,112,60,.08), rgba(125,87,194,.08)),
+    var(--panel);
+  box-shadow: var(--shadow);
+}
+.em-ai-title {
+  margin-bottom: 9px;
+  color: var(--fg);
+  font-size: .82rem;
+  font-weight: 700;
+}
+.em-ai-hint {
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: .64rem;
+  line-height: 1.45;
+}
+.em-ai-hint.warn { color: var(--warn); }
+
 /* ---------- 主按钮 CTA 强化 ---------- */
 .em-btn-cta {
   display: flex;

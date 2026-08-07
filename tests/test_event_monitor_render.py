@@ -388,3 +388,64 @@ console.log(JSON.stringify({{ options: select.options }}));
         {"text": "CodeFormer", "value": "codeformer"},
         {"text": "Real-ESRGAN x2plus", "value": "realesrgan_x2plus"},
     ]
+
+
+def test_ai_model_selector_renders_discovered_deployments() -> None:
+    settings_url = json.dumps(
+        (ROOT / "static" / "js" / "event-monitor" / "settings.js").as_uri()
+    )
+    bundle = _bundle("en", "panel")
+    result = _run_module_script(
+        f"""
+globalThis.__EVENT_MONITOR_I18N__ = {bundle};
+globalThis.Option = class {{
+  constructor(text, value) {{
+    this.text = text;
+    this.value = value;
+  }}
+}};
+const hint = {{
+  textContent: "",
+  classList: {{ toggle: () => {{}} }},
+}};
+const select = {{
+  dataset: {{}},
+  disabled: true,
+  options: [],
+  value: null,
+  replaceChildren() {{ this.options = []; }},
+  add(option) {{ this.options.push({{ text: option.text, value: option.value }}); }},
+}};
+globalThis.document = {{
+  getElementById: (id) => ({{
+    aiModel: select,
+    aiModelHint: hint,
+  }})[id] || null,
+}};
+const {{ renderAiModels }} = await import({settings_url});
+renderAiModels({{
+  default: "gpt-4o",
+  models: [
+    {{ deployment: "gpt-4o", model: "gpt-4o", label: "gpt-4o", default: true }},
+    {{ deployment: "event-gpt41", model: "gpt-4.1", label: "event-gpt41 (gpt-4.1)", default: false }},
+  ],
+}});
+console.log(JSON.stringify({{
+  options: select.options,
+  defaultModel: select.dataset.defaultModel,
+  disabled: select.disabled,
+}}));
+"""
+    )
+
+    assert result == {
+        "options": [
+            {"text": "gpt-4o (default)", "value": ""},
+            {
+                "text": "event-gpt41 (gpt-4.1)",
+                "value": "event-gpt41",
+            },
+        ],
+        "defaultModel": "gpt-4o",
+        "disabled": False,
+    }

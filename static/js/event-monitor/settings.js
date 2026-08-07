@@ -25,6 +25,7 @@ export function collectAnalysisRequest() {
   formData.append("with_objects", $("withObjects").checked ? "true" : "false");
   formData.append("dry_run", dryRun ? "true" : "false");
   formData.append("language", reportLanguage());
+  appendIfValue(formData, "llm_model", getSelectedAiModel());
   appendIfValue(formData, "face_rec_backend", $("faceRecBackend").value);
   appendIfValue(formData, "face_superres", $("faceSuperres").value);
   if (isCodeFormerSelected()) {
@@ -46,6 +47,47 @@ export function collectAnalysisRequest() {
 
 export function getObjectiveValue() {
   return $("objective").value.trim();
+}
+
+export function getSelectedAiModel() {
+  const select = $("aiModel");
+  return select ? select.value : "";
+}
+
+export function renderAiModels(catalog = {}) {
+  const select = $("aiModel");
+  const hint = $("aiModelHint");
+  if (!select) return;
+
+  const models = Array.isArray(catalog.models) ? catalog.models : [];
+  const configuredDefault = catalog.default || "";
+  select.replaceChildren();
+
+  if (!models.length) {
+    select.add(new Option(t("panel.ai_unavailable"), ""));
+    select.disabled = true;
+    if (hint) {
+      hint.textContent = catalog.warning || t("panel.ai_hint");
+      hint.classList.toggle("warn", Boolean(catalog.warning));
+    }
+    return;
+  }
+
+  models.forEach((item) => {
+    const deployment = item.deployment || "";
+    const isDefault = deployment === configuredDefault || item.default === true;
+    const suffix = isDefault ? ` (${t("panel.ai_default_suffix")})` : "";
+    select.add(new Option(`${item.label || deployment}${suffix}`, isDefault ? "" : deployment));
+  });
+  select.value = "";
+  select.dataset.defaultModel = configuredDefault;
+  select.disabled = false;
+  if (hint) {
+    hint.textContent = catalog.warning
+      ? t("panel.ai_catalog_warning")
+      : t("panel.ai_hint");
+    hint.classList.toggle("warn", Boolean(catalog.warning));
+  }
 }
 
 function isCodeFormerSelected() {

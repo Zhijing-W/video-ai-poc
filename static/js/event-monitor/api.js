@@ -27,6 +27,12 @@ export async function listReidBackends() {
   return response.json();
 }
 
+export async function listAiModels() {
+  const response = await fetch("/api/event-monitor/llm-models");
+  if (!response.ok) await readError(response);
+  return response.json();
+}
+
 export async function runAnalysis(formData) {
   const response = await fetch("/api/event-monitor/understand", {
     method: "POST",
@@ -36,7 +42,7 @@ export async function runAnalysis(formData) {
   return JSON.parse(await response.text());
 }
 
-export async function completeDryRun(payload, objective, language) {
+export async function completeDryRun(payload, objective, language, llmModel) {
   const response = await fetch("/api/event-monitor/complete", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -44,6 +50,7 @@ export async function completeDryRun(payload, objective, language) {
       payload,
       objective: objective || null,
       language: language || null,
+      llm_model: llmModel || null,
     }),
   });
   if (!response.ok) await readError(response);
