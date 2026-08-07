@@ -125,6 +125,10 @@ def test_deployment_surfaces_pass_differ_and_require_its_assets() -> None:
     ).read_text(encoding="utf-8")
     assert '--build-arg "GPU_BASE_IMAGE=${GPU_BASE_IMAGE}"' in gpu_workflow
 
+    gpu_base = (ROOT / "Dockerfile.gpu.base").read_text(encoding="utf-8")
+    assert "python3 -m pip install -r requirements.txt" in gpu_base
+    assert "ln -sf /usr/bin/python3.11 /usr/local/bin/python" not in gpu_base
+
     manifest = json.loads(
         (ROOT / "models" / "manifest.json").read_text(encoding="utf-8")
     )
