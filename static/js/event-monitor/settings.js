@@ -74,10 +74,12 @@ export function renderSuperresBackends(catalog = {}) {
   select.dataset.defaultBackend = defaultBackend;
   select.replaceChildren();
   const defaultLabel = uiLocale() === "en"
-    ? `Default (${labels[defaultBackend] || defaultBackend})`
-    : `默认（${labels[defaultBackend] || defaultBackend}）`;
+    ? `${labels[defaultBackend] || defaultBackend} (default)`
+    : `${labels[defaultBackend] || defaultBackend}（默认）`;
   select.add(new Option(defaultLabel, ""));
-  allowed.forEach((name) => select.add(new Option(labels[name] || name, name)));
+  allowed
+    .filter((name) => name !== defaultBackend)
+    .forEach((name) => select.add(new Option(labels[name] || name, name)));
 
   const fidelity = catalog.metadata?.codeformer?.fidelity_default;
   const input = $("faceCodeformerFidelity");

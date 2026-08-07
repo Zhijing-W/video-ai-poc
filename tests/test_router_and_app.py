@@ -167,7 +167,8 @@ def test_fastapi_health_page_and_openapi_are_available() -> None:
     assert '<option value="arcface">' not in page.text
     assert "BoT-SORT (default · motion + appearance association)" in page.text
     assert '<option value="botsort_reid">' not in page.text
-    assert "Default (off)" in page.text
+    assert "Off (default)" in page.text
+    assert '<option value="off">' not in page.text
     assert '<select id="reidBackend" class="em-input" disabled>' in page.text
     assert '<option value="">Use server default (loading…)</option>' in page.text
     assert '<option value="differ"' not in page.text
@@ -183,6 +184,7 @@ def test_fastapi_health_page_and_openapi_are_available() -> None:
     assert "视频监控 PoC" in zh_page.text
     assert "结合计算机视觉进行跨帧人员识别，并通过多模态大语言模型推理生成事件报告。" in zh_page.text
     assert "ArcFace（默认）" in zh_page.text
+    assert "关闭（默认）" in zh_page.text
     assert "BoT-SORT（默认 · 运动+外观关联）" in zh_page.text
     assert 'href="/event-monitor"' in zh_page.text
     assert '"reportLanguage": "zh-CN"' in zh_page.text

@@ -341,3 +341,50 @@ console.log(JSON.stringify({{
         {"text": "SigLIP2 Person ReID", "value": "siglip2"},
         {"text": "OSNet-AIN MSMT17", "value": "osnet"},
     ]
+
+
+def test_superres_selector_does_not_duplicate_the_default_backend() -> None:
+    settings_url = json.dumps(
+        (ROOT / "static" / "js" / "event-monitor" / "settings.js").as_uri()
+    )
+    bundle = _bundle("zh-CN", "settings")
+    result = _run_module_script(
+        f"""
+globalThis.__EVENT_MONITOR_I18N__ = {bundle};
+globalThis.Option = class {{
+  constructor(text, value) {{
+    this.text = text;
+    this.value = value;
+  }}
+}};
+const select = {{
+  dataset: {{}},
+  options: [],
+  value: "",
+  replaceChildren() {{ this.options = []; }},
+  add(option) {{ this.options.push({{ text: option.text, value: option.value }}); }},
+}};
+const fidelityField = {{ hidden: true }};
+globalThis.document = {{
+  getElementById: (id) => ({{
+    faceSuperres: select,
+    faceCodeformerFidelityField: fidelityField,
+    faceCodeformerFidelity: {{ value: "" }},
+  }})[id] || null,
+}};
+const {{ renderSuperresBackends }} = await import({settings_url});
+renderSuperresBackends({{
+  default: "off",
+  backends: ["off", "gfpgan", "codeformer", "realesrgan_x2plus"],
+  metadata: {{}},
+}});
+console.log(JSON.stringify({{ options: select.options }}));
+"""
+    )
+
+    assert result["options"] == [
+        {"text": "关闭（默认）", "value": ""},
+        {"text": "GFP-GAN", "value": "gfpgan"},
+        {"text": "CodeFormer", "value": "codeformer"},
+        {"text": "Real-ESRGAN x2plus", "value": "realesrgan_x2plus"},
+    ]
