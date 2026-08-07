@@ -27,8 +27,7 @@ export function startProgress(_dryRun) {
   $("progressBar").classList.add("indeterminate");
   $("progressBar").style.width = "";
   $("progressStage").textContent = "⏳ 服务端正在分析（完成后返回实测阶段耗时）…";
-  $("progressSteps").innerHTML =
-    '<span class="em-step active">同步任务处理中；不显示估算阶段或虚拟百分比</span>';
+  $("progressSteps").innerHTML = "";
 
   const clock = setInterval(() => {
     const progress = getProgressState();

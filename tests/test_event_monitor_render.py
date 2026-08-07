@@ -144,3 +144,40 @@ try {{
         "call_count": 1,
         "failed_call_count": 1,
     }
+
+
+def test_progress_omits_virtual_percentage_explanation() -> None:
+    progress_url = json.dumps(
+        (ROOT / "static" / "js" / "event-monitor" / "progress.js").as_uri()
+    )
+    result = _run_module_script(
+        f"""
+const elements = {{
+  progress: {{ hidden: true }},
+  progressBar: {{
+    classList: {{ add: () => {{}}, remove: () => {{}} }},
+    style: {{ width: "50%" }},
+  }},
+  progressStage: {{ textContent: "" }},
+  progressSteps: {{ innerHTML: "old" }},
+  progressTimer: {{ textContent: "" }},
+}};
+globalThis.document = {{
+  getElementById: (id) => elements[id],
+  querySelector: () => null,
+}};
+globalThis.setInterval = () => 1;
+globalThis.clearInterval = () => {{}};
+const {{ startProgress }} = await import({progress_url});
+startProgress(true);
+console.log(JSON.stringify({{
+  hidden: elements.progress.hidden,
+  steps: elements.progressSteps.innerHTML,
+  stage: elements.progressStage.textContent,
+}}));
+"""
+    )
+
+    assert result["hidden"] is False
+    assert result["steps"] == ""
+    assert "服务端正在分析" in result["stage"]
