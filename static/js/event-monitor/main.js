@@ -1,11 +1,13 @@
 import { downloadJson, openLightbox, closeLightbox, sendDryRunToLlm, toggleJson } from "./actions.js";
 import {
   health,
+  listLlmModels,
   listReidBackends,
   listSamples,
   listSuperresBackends,
   runAnalysis,
-} from "./api.js";
+} from "./api.js?v=20260807-foundry-routing";
+import { wireChat } from "./chat.js?v=20260807-foundry-routing";
 import { finishProgress, startProgress } from "./progress.js";
 import {
   prepareForRun,
@@ -14,16 +16,17 @@ import {
   setBackendIndicator,
   setStatus,
   showRunFailure,
-} from "./render.js";
+} from "./render.js?v=20260807-foundry-routing";
 import {
   closeSettings,
   collectAnalysisRequest,
   openSettings,
+  renderLlmModels,
   renderReidBackends,
   renderSuperresBackends,
   wireDropzone,
   wireSuperresSettings,
-} from "./settings.js?v=20260730-reid-models";
+} from "./settings.js?v=20260807-foundry-routing";
 import { $ } from "./utils.js";
 
 function tickClock() {
@@ -54,6 +57,14 @@ async function loadReidOptions() {
   }
 }
 
+async function loadLlmOptions() {
+  try {
+    renderLlmModels(await listLlmModels());
+  } catch (_) {
+    renderLlmModels();
+  }
+}
+
 async function checkBackend() {
   setBackendIndicator(await health().catch(() => false));
 }
@@ -68,7 +79,11 @@ async function run() {
   $("btnRun").disabled = true;
   prepareForRun();
   startProgress(request.dryRun);
-  setStatus(`⏳ 处理中… ${request.dryRun ? "（dry-run，不调 LLM）" : "（含 gpt-4o，约 1 分钟）"}`);
+  setStatus(
+    `⏳ 处理中… ${request.dryRun
+      ? "（dry-run，不调 LLM）"
+      : `（分析模型 ${request.analysisModel}）`}`
+  );
 
   const startedAt = Date.now();
   try {
@@ -79,7 +94,7 @@ async function run() {
   } catch (error) {
     finishProgress(false);
     setStatus("✗ 失败：" + error.message, true);
-    showRunFailure(error.message);
+    showRunFailure(error.message, error.detail);
   } finally {
     $("btnRun").disabled = false;
   }
@@ -122,8 +137,10 @@ tickClock();
 setInterval(tickClock, 1000);
 wireDropzone();
 wireSuperresSettings();
+wireChat();
 bindEvents();
 checkBackend();
 loadSampleOptions();
 loadSuperresOptions();
 loadReidOptions();
+loadLlmOptions();

@@ -2,7 +2,13 @@
 from __future__ import annotations
 
 import json
+from functools import lru_cache
 
+from azure.identity import (
+    DefaultAzureCredential,
+    ManagedIdentityCredential,
+    get_bearer_token_provider,
+)
 from openai import AzureOpenAI
 
 from .core.config import settings
@@ -26,13 +32,67 @@ USER_PROMPT = """下面是从同一个视频中按时间顺序抽取的关键帧
 }"""
 
 
+def _resolved_auth_mode() -> str:
+    if settings.azure_openai_auth == "auto":
+        return "api_key" if settings.azure_openai_api_key else "managed_identity"
+    return settings.azure_openai_auth
+
+
+@lru_cache(maxsize=4)
+def _managed_identity_client(
+    endpoint: str,
+    api_version: str,
+    client_id: str | None,
+) -> AzureOpenAI:
+    credential = (
+        ManagedIdentityCredential(client_id=client_id)
+        if client_id
+        else DefaultAzureCredential(exclude_interactive_browser_credential=True)
+    )
+    token_provider = get_bearer_token_provider(
+        credential,
+        "https://cognitiveservices.azure.com/.default",
+    )
+    return AzureOpenAI(
+        azure_endpoint=endpoint,
+        azure_ad_token_provider=token_provider,
+        api_version=api_version,
+    )
+
+
+@lru_cache(maxsize=2)
+def _api_key_client(endpoint: str, api_version: str, api_key: str) -> AzureOpenAI:
+    return AzureOpenAI(
+        azure_endpoint=endpoint,
+        api_key=api_key,
+        api_version=api_version,
+    )
+
+
 def _client() -> AzureOpenAI:
     settings.require_openai()
-    return AzureOpenAI(
-        azure_endpoint=settings.azure_openai_endpoint,
-        api_key=settings.azure_openai_api_key,
-        api_version=settings.azure_openai_api_version,
+    endpoint = settings.azure_openai_endpoint or ""
+    if _resolved_auth_mode() == "api_key":
+        return _api_key_client(
+            endpoint,
+            settings.azure_openai_api_version,
+            settings.azure_openai_api_key or "",
+        )
+    return _managed_identity_client(
+        endpoint,
+        settings.azure_openai_api_version,
+        settings.azure_openai_managed_identity_client_id,
     )
+
+
+def _default_deployment() -> str:
+    deployment = settings.azure_openai_deployment
+    if not deployment:
+        raise RuntimeError(
+            "旧版通用 LLM 调用缺少 AZURE_OPENAI_DEPLOYMENT；"
+            "事件分析/问答请使用各自的 Foundry deployment 配置。"
+        )
+    return deployment
 
 
 def summarize_frames(frames: list[Frame]) -> dict:
@@ -50,7 +110,7 @@ def summarize_frames(frames: list[Frame]) -> dict:
         )
 
     resp = client.chat.completions.create(
-        model=settings.azure_openai_deployment,
+        model=_default_deployment(),
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": content},
@@ -184,7 +244,7 @@ def analyze_single_frame(
     )
 
     resp = client.chat.completions.create(
-        model=settings.azure_openai_deployment,
+        model=_default_deployment(),
         messages=[
             {"role": "system", "content": REALTIME_SYSTEM},
             {"role": "user", "content": content},
@@ -258,7 +318,7 @@ def compile_target(
         )
 
     resp = client.chat.completions.create(
-        model=settings.azure_openai_deployment,
+        model=_default_deployment(),
         messages=[
             {"role": "system", "content": COMPILE_SYSTEM},
             {"role": "user", "content": content},
@@ -317,7 +377,7 @@ def summarize_events(events: list[dict]) -> dict:
 }}"""
 
     resp = client.chat.completions.create(
-        model=settings.azure_openai_deployment,
+        model=_default_deployment(),
         messages=[
             {"role": "system", "content": SUMMARY_SYSTEM},
             {"role": "user", "content": prompt},

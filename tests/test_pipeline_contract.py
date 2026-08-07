@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+from PIL import Image
 
 from app import event_analysis_pipeline as pipeline
 from app.video_processor import Frame
@@ -23,6 +27,7 @@ def test_analyze_event_stream_keeps_top_level_contract_with_lightweight_mocks(mo
     monkeypatch.setattr(pipeline.tracker_mod, "track_objects", lambda raw, session_id=None: {"detections": []})
     monkeypatch.setattr(pipeline.tracker_mod, "active_backend", lambda: "mock-tracker")
     monkeypatch.setattr(pipeline.reid_mod, "active_backend", lambda: "mock-reid")
+    monkeypatch.setattr(pipeline.reid_mod, "active_device", lambda: "cpu")
 
     result = pipeline.analyze_event_stream(
         video_path="ignored.mp4",
@@ -51,7 +56,13 @@ def test_analyze_event_stream_keeps_top_level_contract_with_lightweight_mocks(mo
     assert result["runtime"] == {
         "execution": "server",
         "detector_device": "cpu",
+        "reid_device": "cpu",
     }
+    assert result["body_reid_timing"]["backend"] == "mock-reid"
+    assert result["body_reid_timing"]["device"] == "cpu"
+    assert result["body_reid_timing"]["call_count"] == 0
+    assert result["body_reid_timing"]["mean_ms"] is None
+    assert result["body_reid_timing"]["p95_ms"] is None
 
 
 def test_analyze_event_stream_can_disable_body_identity_without_blocking_other_routes(
@@ -143,6 +154,10 @@ def test_analyze_event_stream_can_disable_body_identity_without_blocking_other_r
     assert result["with_face"] is True
     assert result["with_gait"] is True
     assert result["runtime"]["detector_device"] == "cuda:0"
+    assert result["runtime"]["reid_device"] is None
+    assert result["body_reid_timing"]["call_count"] == 0
+    assert result["body_reid_timing"]["backend"] is None
+    assert result["body_reid_timing"]["device"] is None
     assert "body_identity" not in result["stage_timings"]
     assert result["stage_timings"]["object_detection"] == 0.002
     assert result["stage_timings"]["multi_object_tracking"] == 0.002
@@ -152,3 +167,140 @@ def test_analyze_event_stream_can_disable_body_identity_without_blocking_other_r
             "body_consistency_enabled": False,
         }
     ]
+
+
+def test_fatal_run_preserves_failed_reid_telemetry_without_leaking(
+    monkeypatch,
+    runtime_dir: Path,
+) -> None:
+    frame_path = write_image(runtime_dir / "fatal-frame.jpg")
+    frames = [
+        Frame(
+            frame_id="frame_001",
+            timestamp="00:00:00",
+            local_path=str(frame_path),
+        )
+    ]
+    loaded = SimpleNamespace(dim=3, device="cpu")
+
+    def fail_embedding(model, crop):
+        raise RuntimeError("embedding exploded")
+
+    pipeline.reid_mod.register_backend(
+        "unit-fatal-telemetry",
+        lambda: loaded,
+        fail_embedding,
+        dim=None,
+        replace=True,
+    )
+    monkeypatch.setattr(pipeline, "extract_frames", lambda *args, **kwargs: frames)
+    monkeypatch.setattr(pipeline.detector_mod, "prepare", lambda: None)
+    monkeypatch.setattr(pipeline.tracker_mod, "reset_tracker", lambda session_id: True)
+    monkeypatch.setattr(pipeline.gallery_mod, "reset_gallery", lambda session_id: True)
+    monkeypatch.setattr(
+        pipeline.tracker_mod,
+        "track_objects",
+        lambda raw, session_id=None: pipeline.reid_mod.embed(
+            Image.new("RGB", (16, 32)),
+            purpose="tracking",
+        ),
+    )
+
+    pipeline.reid_mod.reset_backend()
+    try:
+        with pipeline.settings.override(reid_backend="unit-fatal-telemetry"):
+            with pytest.raises(
+                pipeline.EventAnalysisRunError,
+                match="embedding exploded",
+            ) as first:
+                pipeline.analyze_event_stream(
+                    "ignored.mp4",
+                    runtime_dir / "fatal-analysis",
+                    run_llm=False,
+                )
+
+            first_timing = first.value.body_reid_timing
+            assert first_timing["backend"] == "unit_fatal_telemetry"
+            assert first_timing["device"] == "cpu"
+            assert first_timing["call_count"] == 1
+            assert first_timing["failed_call_count"] == 1
+            assert first_timing["by_purpose"]["tracking"]["call_count"] == 1
+
+            monkeypatch.setattr(
+                pipeline.tracker_mod,
+                "track_objects",
+                lambda raw, session_id=None: (_ for _ in ()).throw(
+                    RuntimeError("tracker exploded")
+                ),
+            )
+            with pytest.raises(pipeline.EventAnalysisRunError) as second:
+                pipeline.analyze_event_stream(
+                    "ignored.mp4",
+                    runtime_dir / "second-fatal-analysis",
+                    run_llm=False,
+                )
+
+            second_timing = second.value.body_reid_timing
+            assert second_timing["call_count"] == 0
+            assert second_timing["failed_call_count"] == 0
+            assert second_timing["by_purpose"] == {}
+    finally:
+        pipeline.reid_mod.reset_backend()
+
+
+def test_tracking_reid_telemetry_survives_disabled_identity_branch(
+    monkeypatch,
+    runtime_dir: Path,
+) -> None:
+    frame_path = write_image(runtime_dir / "tracking-only-frame.jpg")
+    frames = [
+        Frame(
+            frame_id="frame_001",
+            timestamp="00:00:00",
+            local_path=str(frame_path),
+        )
+    ]
+    loaded = SimpleNamespace(dim=3, device="cpu")
+    pipeline.reid_mod.register_backend(
+        "unit-tracking-only",
+        lambda: loaded,
+        lambda model, crop: [1.0, 0.0, 0.0],
+        dim=None,
+        replace=True,
+    )
+    monkeypatch.setattr(pipeline, "extract_frames", lambda *args, **kwargs: frames)
+    monkeypatch.setattr(pipeline.detector_mod, "prepare", lambda: None)
+    monkeypatch.setattr(pipeline.detector_mod, "active_device", lambda: "cpu")
+    monkeypatch.setattr(pipeline.tracker_mod, "reset_tracker", lambda session_id: True)
+    monkeypatch.setattr(pipeline.gallery_mod, "reset_gallery", lambda session_id: True)
+
+    def track_with_reid(raw, session_id=None):
+        pipeline.reid_mod.embed(
+            Image.new("RGB", (16, 32)),
+            purpose="tracking",
+        )
+        return {"detections": []}
+
+    monkeypatch.setattr(pipeline.tracker_mod, "track_objects", track_with_reid)
+    monkeypatch.setattr(pipeline.tracker_mod, "active_backend", lambda: "botsort_reid")
+
+    pipeline.reid_mod.reset_backend()
+    try:
+        with pipeline.settings.override(reid_backend="unit-tracking-only"):
+            result = pipeline.analyze_event_stream(
+                "ignored.mp4",
+                runtime_dir / "tracking-only-analysis",
+                run_llm=False,
+                with_body=False,
+            )
+
+        assert result["with_body"] is False
+        assert result["reid_backend"] is None
+        assert result["runtime"]["reid_device"] == "cpu"
+        assert result["body_reid_timing"]["backend"] == "unit_tracking_only"
+        assert result["body_reid_timing"]["device"] == "cpu"
+        assert result["body_reid_timing"]["call_count"] == 1
+        assert result["body_reid_timing"]["failed_call_count"] == 0
+        assert result["body_reid_timing"]["by_purpose"]["tracking"]["call_count"] == 1
+    finally:
+        pipeline.reid_mod.reset_backend()

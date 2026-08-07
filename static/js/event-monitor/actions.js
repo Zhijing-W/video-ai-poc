@@ -1,7 +1,10 @@
 import { completeDryRun } from "./api.js";
 import { startProgress, finishProgress } from "./progress.js";
 import { renderResult, setStatus } from "./render.js";
-import { getObjectiveValue } from "./settings.js?v=20260730-reid-models";
+import {
+  getAnalysisModelValue,
+  getObjectiveValue,
+} from "./settings.js?v=20260807-foundry-routing";
 import { getKeyframe, getLastPayload } from "./state.js";
 import { boxesHtml } from "./timeline.js";
 import { $, baseName } from "./utils.js";
@@ -73,7 +76,11 @@ export async function sendDryRunToLlm() {
   setStatus("⏳ 正在复用 dry-run 的关键帧和身份上下文调用大模型…");
 
   try {
-    const data = await completeDryRun(payload, getObjectiveValue());
+    const data = await completeDryRun(
+      payload,
+      getObjectiveValue(),
+      getAnalysisModelValue(),
+    );
     finishProgress(true);
     renderResult(data);
     setStatus(`✓ 大模型事件理解完成，用时 ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);

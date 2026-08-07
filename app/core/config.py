@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -35,6 +35,14 @@ def _get(name: str, default: str | None = None, required: bool = False) -> str |
     return value
 
 
+def _first_env(*names: str) -> str | None:
+    for name in names:
+        value = _get(name)
+        if value:
+            return value
+    return None
+
+
 @dataclass
 class Settings:
     model_root: str = str(MODEL_ROOT)
@@ -43,6 +51,20 @@ class Settings:
     azure_openai_api_key: str | None = _get("AZURE_OPENAI_API_KEY")
     azure_openai_deployment: str | None = _get("AZURE_OPENAI_DEPLOYMENT")
     azure_openai_api_version: str = _get("AZURE_OPENAI_API_VERSION", "2024-10-21")
+    azure_openai_auth: str = _get("AZURE_OPENAI_AUTH", "auto").strip().lower()
+    azure_openai_managed_identity_client_id: str | None = _get(
+        "AZURE_OPENAI_MANAGED_IDENTITY_CLIENT_ID"
+    )
+    foundry_analysis_deployment: str | None = _first_env(
+        "FOUNDRY_ANALYSIS_DEPLOYMENT",
+        "EVENT_LLM_DEPLOYMENT",
+        "AZURE_OPENAI_DEPLOYMENT",
+    )
+    foundry_chat_deployment: str | None = _first_env(
+        "FOUNDRY_CHAT_DEPLOYMENT",
+        "FOUNDRY_ANALYSIS_DEPLOYMENT",
+        "AZURE_OPENAI_DEPLOYMENT",
+    )
 
     frame_interval_seconds: int = int(_get("FRAME_INTERVAL_SECONDS", "5"))
     max_frames: int = int(_get("MAX_FRAMES", "8"))
@@ -87,8 +109,10 @@ class Settings:
     pose_kpt_conf: float = float(_get("POSE_KPT_CONF", "0.3")) # 单个关键点的可信阈值（低于则视为不可见）
 
     # 主体记忆 / ReID 向量库（Phase 3 · Step 14）：认过一次就记住、命中即复用、不调 LLM。
-    # backend: auto 自动择优（osnet→resnet50→coarse）；也可固定为某一档。
-    reid_backend: str = _get("REID_BACKEND", "auto")
+    # 冻结产品协议下采用精度优先的 DIFFER；auto 仍保留原有逐级回退行为。
+    reid_backend: str = field(
+        default_factory=lambda: _get("REID_BACKEND", "differ")
+    )
     reid_osnet_weights: str = _get(
         "REID_OSNET_WEIGHTS",
         _model_asset("reid", "osnet", "osnet_ain_x1_0_msmt17.pt"),
@@ -276,6 +300,10 @@ class Settings:
     event_llm_max_tokens: int = int(_get("EVENT_LLM_MAX_TOKENS", "1500"))
     event_llm_max_retries: int = int(_get("EVENT_LLM_MAX_RETRIES", "5"))  # 429 限流时退避重试次数
     event_frame_detail: str = _get("EVENT_FRAME_DETAIL", "low")       # low 省 token / high 看细节
+    event_analysis_model: str = _get("EVENT_ANALYSIS_MODEL", "auto").strip().lower()
+    event_chat_model: str = _get("EVENT_CHAT_MODEL", "auto").strip().lower()
+    event_chat_max_tokens: int = int(_get("EVENT_CHAT_MAX_TOKENS", "900"))
+    event_chat_history_turns: int = int(_get("EVENT_CHAT_HISTORY_TURNS", "6"))
 
     # 选帧②：事件驱动关键帧选择（Phase 4 · Step 25 / 3.3）——喂 LLM 前按"事件"砍图片数。
     keyframe_max: int = int(_get("KEYFRAME_MAX", "24"))            # 喂 LLM 的关键帧上限
@@ -366,6 +394,10 @@ class Settings:
     object_min_frames: int = int(_get("OBJECT_MIN_FRAMES", "2"))  # 窗内出现帧数 < 此值的物体丢弃（抗 1 帧误检/ID 跳变）
 
     def __post_init__(self) -> None:
+        if self.azure_openai_auth not in {"auto", "managed_identity", "api_key"}:
+            raise ValueError(
+                "AZURE_OPENAI_AUTH 必须为 auto、managed_identity 或 api_key"
+            )
         if not (
             0 < self.face_recoverable_min_size
             <= self.face_min_size
@@ -428,14 +460,14 @@ class Settings:
             name
             for name, value in {
                 "AZURE_OPENAI_ENDPOINT": self.azure_openai_endpoint,
-                "AZURE_OPENAI_API_KEY": self.azure_openai_api_key,
-                "AZURE_OPENAI_DEPLOYMENT": self.azure_openai_deployment,
             }.items()
             if not value
         ]
+        if self.azure_openai_auth == "api_key" and not self.azure_openai_api_key:
+            missing.append("AZURE_OPENAI_API_KEY")
         if missing:
             raise RuntimeError(
-                "Azure OpenAI 配置不完整，缺少："
+                "Microsoft Foundry 配置不完整，缺少："
                 + ", ".join(missing)
                 + "。请在 .env 中填写。"
             )

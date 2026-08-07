@@ -1,0 +1,60 @@
+# Stable CUDA/Python dependency layer for GPU application images.
+#
+# GPU_RUNTIME_IMAGE normally points at the current ACR application image so a
+# dependency refresh reuses its CUDA, Python, and installed wheel layers. Set it
+# to the NVIDIA image for an explicit clean rebuild.
+ARG GPU_RUNTIME_IMAGE=nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+FROM ${GPU_RUNTIME_IMAGE}
+
+USER root
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      python3.11 python3.11-venv python3-pip \
+      ffmpeg libgl1 libglib2.0-0 curl \
+ && rm -rf /var/lib/apt/lists/* \
+ && ln -sf /usr/bin/python3.11 /usr/local/bin/python \
+ && ln -sf /usr/bin/python3.11 /usr/local/bin/python3
+
+WORKDIR /app
+
+# A reused application image can contain stale source. Remove it before this
+# image becomes the dependency-only base for subsequent application builds.
+RUN rm -rf /app/app /app/templates /app/static /app/experiment /app/licenses
+
+COPY requirements.txt .
+RUN pip install --extra-index-url https://download.pytorch.org/whl/cu121 \
+      torch==2.3.1+cu121 torchvision==0.18.1+cu121 \
+ && pip install -r requirements.txt \
+ && pip install --force-reinstall onnxruntime-gpu
+
+RUN if ! id -u appuser >/dev/null 2>&1; then useradd -m -u 10001 appuser; fi \
+ && mkdir -p /models /data /gallery /results /tmp/videos \
+ && chown -R appuser:appuser /app /models /data /gallery /results /tmp/videos
+
+ENV MODEL_ROOT=/models \
+    INSIGHTFACE_HOME=/models/insightface \
+    TORCH_HOME=/models/torch \
+    HF_HOME=/models/hf \
+    ULTRALYTICS_HOME=/models/ultralytics \
+    YOLO_MODEL=/models/yolov8m.pt \
+    POSE_MODEL=/models/yolov8n-pose.pt \
+    GAIT_SEG_MODEL=/models/yolov8m-seg.pt \
+    FACE_FIQA_BACKEND=cr_fiqa \
+    FACE_FIQA_ROOT=/models/CR-FIQA/source \
+    FACE_FIQA_WEIGHTS=/models/CR-FIQA/32572backbone.pth \
+    FACE_FIQA_DEVICE=cuda \
+    GALLERY_DIR=/gallery \
+    DATA_DIR=/data \
+    FACE_DEVICE=cuda \
+    REID_DEVICE=cuda \
+    GAIT_DEVICE=cuda \
+    PORT=8000
+
+USER appuser

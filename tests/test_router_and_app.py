@@ -46,6 +46,15 @@ def test_router_generates_unique_run_and_session_ids(monkeypatch) -> None:
             "dry_run": True,
             "elapsed_seconds": 0.0,
             "stage_timings": {"extract_frames": 0.0},
+            "runtime": {"execution": "server", "detector_device": "cpu", "reid_device": "cuda:0"},
+            "body_reid_timing": {
+                "backend": "mock",
+                "device": "cuda:0",
+                "call_count": 0,
+                "total_ms": 0.0,
+                "mean_ms": None,
+                "p95_ms": None,
+            },
             "tracks": {},
             "windows": [],
             "overall": None,
@@ -74,9 +83,66 @@ def test_router_generates_unique_run_and_session_ids(monkeypatch) -> None:
     assert calls[1]["run_dir"].endswith(body2["run_id"])
     assert calls[0]["run_dir"] != calls[1]["run_dir"]
     assert all(call["with_body"] is True for call in calls)
+    assert all(
+        response.json()["config_used"]["reid_backend"] == "differ"
+        for response in responses
+    )
+    assert all(
+        response.json()["config_used"]["reid_backend_effective"] == "mock"
+        and response.json()["config_used"]["reid_device"] == "cuda:0"
+        and response.json()["body_reid_timing"]["backend"] == "mock"
+        for response in responses
+    )
 
     for call in calls:
         shutil.rmtree(Path(call["run_dir"]), ignore_errors=True)
+
+
+def test_router_returns_structured_fatal_reid_telemetry(monkeypatch) -> None:
+    run_dirs: list[Path] = []
+    timing = {
+        "backend": "differ",
+        "device": "cuda:0",
+        "call_count": 1,
+        "total_ms": 12.5,
+        "mean_ms": 12.5,
+        "p95_ms": 12.5,
+        "failed_call_count": 1,
+        "p95_definition": "nearest-rank",
+        "timing_scope": "one crop",
+        "by_purpose": {
+            "tracking": {
+                "call_count": 1,
+                "total_ms": 12.5,
+                "mean_ms": 12.5,
+                "p95_ms": 12.5,
+            }
+        },
+    }
+
+    def fail_analysis(video_path, run_dir, **kwargs):
+        run_dirs.append(Path(run_dir))
+        raise event_monitor.EventAnalysisRunError(
+            "embedding exploded",
+            body_reid_timing=timing,
+        )
+
+    monkeypatch.setattr(event_monitor, "analyze_event_stream", fail_analysis)
+    response = TestClient(app).post(
+        "/api/event-monitor/understand",
+        files={"file": ("clip.mp4", b"fake video bytes", "video/mp4")},
+        data={"dry_run": "true"},
+    )
+
+    assert response.status_code == 500
+    detail = response.json()["detail"]
+    assert detail["message"] == "事件理解失败：embedding exploded"
+    assert detail["body_reid_timing"] == timing
+    assert detail["config_used"]["reid_backend"] == "differ"
+    assert detail["config_used"]["reid_backend_effective"] == "differ"
+    assert detail["config_used"]["reid_device"] == "cuda:0"
+    assert len(run_dirs) == 1
+    shutil.rmtree(run_dirs[0], ignore_errors=True)
 
 
 def test_fastapi_health_page_and_openapi_are_available() -> None:
@@ -93,12 +159,21 @@ def test_fastapi_health_page_and_openapi_are_available() -> None:
     assert 'id="withBody" checked' in page.text
     assert "默认（ArcFace）" in page.text
     assert "默认（关闭）" in page.text
-    assert '<option value="osnet" selected>OSNet-AIN MSMT17（默认）</option>' in page.text
-    assert '<option value="auto">' not in page.text
+    assert '<select id="reidBackend" class="em-input" disabled>' in page.text
+    assert '<option value="">使用服务端默认（加载中…）</option>' in page.text
+    assert '<option value="differ"' not in page.text
+    assert 'id="reidDiagnostics"' in page.text
+    reid_select = page.text.split('id="reidBackend"', 1)[1].split("</select>", 1)[0]
+    assert '<option value="auto">' not in reid_select
     assert '<option value="resnet50">' not in page.text
     assert '<option value="coarse">' not in page.text
+    assert 'id="analysisModel"' in page.text
+    assert 'id="chatModel"' in page.text
+    assert 'id="chatPanel"' in page.text
     assert openapi.status_code == 200
     assert "/api/event-monitor/understand" in openapi.text
+    assert "/api/event-monitor/llm-models" in openapi.text
+    assert "/api/event-monitor/runs/{run_id}/chat" in openapi.text
 
 
 def test_superres_backend_catalog_and_unknown_request_validation() -> None:
@@ -153,6 +228,23 @@ def test_router_propagates_explicit_body_identity_disable(monkeypatch) -> None:
             "elapsed_seconds": 0.0,
             "stage_timings": {},
             "runtime": {"execution": "server", "detector_device": "cpu"},
+            "body_reid_timing": {
+                "backend": "tracking-unit",
+                "device": "cpu",
+                "call_count": 2,
+                "total_ms": 4.0,
+                "mean_ms": 2.0,
+                "p95_ms": 2.5,
+                "failed_call_count": 0,
+                "by_purpose": {
+                    "tracking": {
+                        "call_count": 2,
+                        "total_ms": 4.0,
+                        "mean_ms": 2.0,
+                        "p95_ms": 2.5,
+                    }
+                },
+            },
             "tracks": {},
             "windows": [],
             "overall": None,
@@ -168,6 +260,8 @@ def test_router_propagates_explicit_body_identity_disable(monkeypatch) -> None:
     assert response.status_code == 200
     assert calls[0]["with_body"] is False
     assert response.json()["config_used"]["with_body"] is False
+    assert response.json()["config_used"]["reid_backend_effective"] == "tracking-unit"
+    assert response.json()["config_used"]["reid_device"] == "cpu"
     shutil.rmtree(
         event_monitor.OUT_DIR / response.json()["run_id"],
         ignore_errors=True,
@@ -186,6 +280,7 @@ def test_reid_backend_catalog_and_unknown_request_validation() -> None:
 
     assert catalog.status_code == 200
     body = catalog.json()
+    assert body["default"] == "differ"
     assert {
         "auto",
         "osnet",
@@ -199,6 +294,49 @@ def test_reid_backend_catalog_and_unknown_request_validation() -> None:
     assert body["metadata"]["siglip2"]["experimental"] is True
     assert invalid.status_code == 400
     assert "未知人形ReID后端" in invalid.json()["detail"]
+
+
+def test_explicit_reid_backend_request_overrides_default(monkeypatch) -> None:
+    monkeypatch.setattr(
+        event_monitor,
+        "analyze_event_stream",
+        lambda *args, **kwargs: {},
+    )
+
+    response = TestClient(app).post(
+        "/api/event-monitor/understand",
+        files={"file": ("clip.mp4", b"fake video bytes", "video/mp4")},
+        data={"dry_run": "true", "reid_backend": "clipreid"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["config_used"]["reid_backend"] == "clipreid"
+    shutil.rmtree(
+        event_monitor.OUT_DIR / response.json()["run_id"],
+        ignore_errors=True,
+    )
+
+
+def test_omitted_reid_backend_preserves_configured_server_default(monkeypatch) -> None:
+    monkeypatch.setattr(
+        event_monitor,
+        "analyze_event_stream",
+        lambda *args, **kwargs: {},
+    )
+
+    with event_monitor.settings.override(reid_backend="clipreid"):
+        response = TestClient(app).post(
+            "/api/event-monitor/understand",
+            files={"file": ("clip.mp4", b"fake video bytes", "video/mp4")},
+            data={"dry_run": "true"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["config_used"]["reid_backend"] == "clipreid"
+    shutil.rmtree(
+        event_monitor.OUT_DIR / response.json()["run_id"],
+        ignore_errors=True,
+    )
 
 
 def test_router_rejects_unknown_effective_default_when_face_is_enabled(
@@ -365,3 +503,77 @@ def test_router_rejects_invalid_codeformer_fidelity_before_processing(
     assert response.status_code == 400
     assert "[0, 1]" in response.json()["detail"]
     assert called is False
+
+
+def test_llm_model_catalog_and_unknown_analysis_model_validation(monkeypatch) -> None:
+    client = TestClient(app)
+    with event_monitor.settings.override(
+        foundry_analysis_deployment="analysis-unit",
+        foundry_chat_deployment="chat-unit",
+    ):
+        catalog = client.get("/api/event-monitor/llm-models")
+
+    assert catalog.status_code == 200
+    body = catalog.json()
+    assert body["defaults"] == {"analysis": "auto", "chat": "auto"}
+    assert body["auth"] in {"managed_identity", "api_key"}
+    assert {"auto", "gpt-4.1", "gpt-4.1-mini"} <= {
+        item["alias"] for item in body["analysis"]
+    }
+
+    called = False
+
+    def fake_analyze(*args, **kwargs):
+        nonlocal called
+        called = True
+        return {}
+
+    monkeypatch.setattr(event_monitor, "analyze_event_stream", fake_analyze)
+    invalid = client.post(
+        "/api/event-monitor/understand",
+        files={"file": ("clip.mp4", b"fake video bytes", "video/mp4")},
+        data={"dry_run": "true", "analysis_model": "arbitrary-deployment"},
+    )
+
+    assert invalid.status_code == 400
+    assert "未知analysis模型" in invalid.json()["detail"]
+    assert called is False
+
+
+def test_run_chat_uses_validated_backend_model_alias(monkeypatch) -> None:
+    observed = {}
+
+    def fake_chat(run_id, question, selection):
+        observed.update(
+            run_id=run_id,
+            question=question,
+            selection=selection.public_dict(),
+        )
+        return {
+            "answer": "主体#1 在窗1离开。",
+            "evidence": [{"window_index": 1}],
+            "selection": selection.public_dict(),
+        }
+
+    monkeypatch.setattr(event_monitor, "chat_about_run", fake_chat)
+    with event_monitor.settings.override(
+        foundry_analysis_deployment="analysis-unit",
+        foundry_chat_deployment="chat-unit",
+    ):
+        response = TestClient(app).post(
+            "/api/event-monitor/runs/abcdef123456/chat",
+            json={"question": "谁离开了？", "model": "gpt-4.1-mini"},
+        )
+
+    assert response.status_code == 200
+    assert observed == {
+        "run_id": "abcdef123456",
+        "question": "谁离开了？",
+        "selection": {
+            "task": "chat",
+            "requested": "gpt-4.1-mini",
+            "selected": "gpt-4.1-mini",
+            "model": "gpt-4.1-mini",
+            "reason": "explicit user selection",
+        },
+    }

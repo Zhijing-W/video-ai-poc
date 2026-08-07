@@ -87,11 +87,8 @@
       <div class="em-group">
         <div class="em-group-title">🧥 人形 ReID</div>
         <label class="em-label">人形 ReID 模型 <span class="em-info" title="选择本次分析用于提取人形身份特征的模型；加载失败会直接报告错误。">ⓘ</span></label>
-        <select id="reidBackend" class="em-input">
-          <option value="osnet" selected>OSNet-AIN MSMT17（默认）</option>
-          <option value="clipreid">CLIP-ReID ViT-B/16</option>
-          <option value="siglip2">SigLIP2 Person ReID</option>
-          <option value="differ">DIFFER EVA02-L</option>
+        <select id="reidBackend" class="em-input" disabled>
+          <option value="">使用服务端默认（加载中…）</option>
         </select>
         <div class="em-row" style="margin-top:8px">
           <div>
@@ -163,6 +160,19 @@
         <input id="fileInput" type="file" accept="video/*" hidden />
       </label>
 
+      <section class="em-model-card">
+        <div class="em-model-title">🧠 大模型编排 <span id="llmAuthBadge" class="em-model-auth">加载中</span></div>
+        <label class="em-label">分析模型</label>
+        <select id="analysisModel" class="em-input" disabled>
+          <option value="auto">Auto（加载中…）</option>
+        </select>
+        <label class="em-label" style="margin-top:8px">问答模型</label>
+        <select id="chatModel" class="em-input" disabled>
+          <option value="auto">Auto（加载中…）</option>
+        </select>
+        <div id="llmModelHint" class="em-hint">模型目录由后端控制，前端不会接触 endpoint 或凭据。</div>
+      </section>
+
       <label class="em-label" style="margin-top:16px">关注点（可选）</label>
       <input id="objective" type="text" class="em-input" placeholder="如：留意陌生人闯入、拿走物品" />
 
@@ -179,7 +189,7 @@
         <b>处理流程：</b><br/>
         ① 视频解码与采样 → ② 逐帧检测和多目标跟踪 → ③ 已勾选的身份分支
         <span class="em-note-opt">[人形 / 人脸 / 步态]</span>
-        → ④ 身份融合 → ⑤ 事件分窗与关键帧准备 → ⑥ gpt-4o 跨帧事件理解<br/>
+        → ④ 身份融合 → ⑤ 事件分窗与关键帧准备 → ⑥ 可切换多模态模型跨帧理解<br/>
         <span class="em-note-hint">运行中的同步等待条不预测后端阶段；完成后结果区展示服务端实测分项耗时。</span>
       </div>
     </aside>
@@ -196,6 +206,7 @@
       </div>
       <div id="meta" class="em-meta"></div>
       <div id="cfgSummary" class="em-cfgsummary" hidden></div>
+      <div id="reidDiagnostics" class="em-reid-diagnostics" hidden></div>
       <div id="timings" class="em-timings" hidden></div>
       <div id="resultTools" class="em-tools" hidden>
         <button id="btnSendLlm" class="em-tool-btn" hidden>✨ 用当前 dry-run 结果调用大模型</button>
@@ -203,6 +214,19 @@
         <button id="btnToggleJson" class="em-tool-btn">查看原始 JSON</button>
         <span class="em-tool-hint">本地模型最终输出（含/不含 LLM 事件，取决于是否 dry-run）</span>
       </div>
+      <section id="chatPanel" class="em-chat" hidden>
+        <div class="em-chat-head">
+          <div>
+            <b>💬 基于本次视频证据继续追问</b>
+            <span id="chatModelStatus">等待分析结果</span>
+          </div>
+        </div>
+        <div id="chatMessages" class="em-chat-messages"></div>
+        <div class="em-chat-compose">
+          <textarea id="chatQuestion" rows="2" maxlength="2000" placeholder="例如：00:18 左右谁离开了？依据是什么？"></textarea>
+          <button id="btnChatSend" class="em-btn" type="button">发送</button>
+        </div>
+      </section>
       <pre id="jsonView" class="em-json" hidden></pre>
       <div id="overall" class="em-overall" hidden></div>
       <div id="tracks" class="em-tracks"></div>
@@ -215,7 +239,7 @@
           <span class="em-empty-tag">🧍 人脸 / 人形 / 步态 三路身份</span>
           <span class="em-empty-tag">🕐 事件窗时间线</span>
           <span class="em-empty-tag">🔤 OCR / 物体场景理解</span>
-          <span class="em-empty-tag">🧠 gpt-4o 跨帧叙述</span>
+          <span class="em-empty-tag">🧠 多模型分析 + 证据问答</span>
         </div>
       </div>
     </main>
@@ -230,6 +254,6 @@
     </figure>
   </div>
 
-  <script type="module" src="/static/js/event-monitor/main.js?v=20260730-reid-models"></script>
+  <script type="module" src="/static/js/event-monitor/main.js?v=20260807-foundry-routing"></script>
 </body>
 </html>
