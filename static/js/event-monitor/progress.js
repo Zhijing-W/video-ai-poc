@@ -1,3 +1,4 @@
+import { t } from "./i18n.js";
 import { $ } from "./utils.js";
 import {
   getProgressState,
@@ -26,7 +27,7 @@ export function startProgress(_dryRun) {
   $("progress").hidden = false;
   $("progressBar").classList.add("indeterminate");
   $("progressBar").style.width = "";
-  $("progressStage").textContent = "⏳ 服务端正在分析（完成后返回实测阶段耗时）…";
+  $("progressStage").textContent = `⏳ ${t("progress.running")}…`;
   $("progressSteps").innerHTML = "";
 
   const clock = setInterval(() => {
@@ -44,8 +45,8 @@ export function finishProgress(ok) {
   setProgressState({ timer: null, clock: null });
 
   $("progressBar").classList.remove("indeterminate");
-  setProgress(100, ok ? "完成" : "结束");
-  $("progressStage").textContent = ok ? "✓ 处理完成" : "✗ 处理结束";
+  setProgress(100, ok ? t("progress.done") : t("progress.ended"));
+  $("progressStage").textContent = ok ? t("progress.success") : t("progress.failure");
   const step = document.querySelector("#progressSteps .em-step");
   if (step) {
     step.classList.remove("active");

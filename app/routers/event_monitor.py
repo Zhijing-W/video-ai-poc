@@ -21,6 +21,7 @@ from .. import body_reid as reid_mod
 from .. import face as face_mod
 from ..core.config import ALLOWED_VIDEO_SUFFIXES, DATA_DIR, OUTPUT_DIR, settings
 from ..event_analysis_pipeline import EventAnalysisRunError, analyze_event_stream
+from ..event_monitor_i18n import normalize_report_language, resolve_report_language
 from ..services.event_reporter import summarize_event_windows, understand_event
 
 router = APIRouter(prefix="/api/event-monitor", tags=["event-monitor"])
@@ -74,6 +75,10 @@ def complete_from_dry_run(body: dict = Body(...)) -> dict:
     """把已有 dry-run 结果继续送进 LLM，不重新跑抽帧/检测/跟踪/ReID。"""
     payload = deepcopy(body.get("payload") or {})
     objective = body.get("objective") or None
+    requested_language = normalize_report_language(body.get("language"))
+    report_language = requested_language or normalize_report_language(
+        payload.get("report_language")
+    )
     if not payload.get("windows"):
         raise HTTPException(400, "没有可继续理解的 dry-run windows")
 
@@ -88,13 +93,24 @@ def complete_from_dry_run(body: dict = Body(...)) -> dict:
             for k in keyframes
             if k.get("image")
         ]
-        w["event"] = understand_event(frames, w.get("identity_context") or "", objective=objective)
+        w["event"] = understand_event(
+            frames,
+            w.get("identity_context") or "",
+            objective=objective,
+            language=report_language,
+            scene_context=w.get("scene_context") or None,
+            object_context=w.get("object_context") or None,
+        )
 
     payload["dry_run"] = False
     payload["model"] = settings.event_llm_deployment or settings.azure_openai_deployment
+    payload["report_language"] = resolve_report_language(report_language)
     if settings.event_overall_summary:
         try:
-            payload["overall"] = summarize_event_windows(payload["windows"]) or None
+            payload["overall"] = summarize_event_windows(
+                payload["windows"],
+                language=report_language,
+            ) or None
         except Exception as exc:  # 总结失败不影响逐窗事件结果
             payload["overall"] = {"error": str(exc)}
     return payload
@@ -127,6 +143,7 @@ async def understand(
     track_backend: str | None = Form(None),      # bytetrack | botsort | botsort_reid
     max_window_seconds: float | None = Form(None),
     stitch_thresh: float | None = Form(None),
+    language: str | None = Form(None),
 ) -> dict:
     """对"样片或上传视频"跑端到端事件理解，返回事件窗时间线。
 
@@ -152,6 +169,7 @@ async def understand(
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    report_language = normalize_report_language(language)
 
     run_id = uuid.uuid4().hex[:12]
     run_dir = OUT_DIR / run_id
@@ -233,6 +251,7 @@ async def understand(
                     stitch_thresh=stitch_thresh,
                     include_keyframe_images=True,
                     session_id=f"event-monitor-{run_id}",
+                    report_language=report_language,
                 )
         except EventAnalysisRunError as exc:
             timing = exc.body_reid_timing
@@ -254,6 +273,9 @@ async def understand(
                 reid_mod.reset_backend()
 
     payload["run_id"] = run_id
+    payload["report_language"] = resolve_report_language(
+        payload.get("report_language") or report_language
+    )
     timing = payload.get("body_reid_timing") or {}
     config_used["reid_backend_effective"] = (
         payload.get("reid_backend") or timing.get("backend")

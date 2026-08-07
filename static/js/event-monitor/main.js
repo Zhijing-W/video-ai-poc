@@ -1,11 +1,12 @@
 import { downloadJson, openLightbox, closeLightbox, sendDryRunToLlm, toggleJson } from "./actions.js";
+import { clockLocale, t } from "./i18n.js";
 import {
   health,
   listReidBackends,
   listSamples,
   listSuperresBackends,
   runAnalysis,
-} from "./api.js?v=20260806-reid-failure-telemetry";
+} from "./api.js?v=20260807-bilingual-ui";
 import { finishProgress, startProgress } from "./progress.js";
 import {
   prepareForRun,
@@ -14,7 +15,7 @@ import {
   setBackendIndicator,
   setStatus,
   showRunFailure,
-} from "./render.js?v=20260806-reid-failure-telemetry";
+} from "./render.js?v=20260807-bilingual-ui";
 import {
   closeSettings,
   collectAnalysisRequest,
@@ -23,11 +24,11 @@ import {
   renderSuperresBackends,
   wireDropzone,
   wireSuperresSettings,
-} from "./settings.js?v=20260805-preserve-server-default";
+} from "./settings.js?v=20260807-bilingual-ui";
 import { $ } from "./utils.js";
 
 function tickClock() {
-  $("clock").textContent = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+  $("clock").textContent = new Date().toLocaleTimeString(clockLocale(), { hour12: false });
 }
 
 async function loadSampleOptions() {
@@ -61,24 +62,30 @@ async function checkBackend() {
 async function run() {
   const request = collectAnalysisRequest();
   if (!request.file && !request.sample) {
-    setStatus("请先选择样片或上传视频", true);
+    setStatus(t("status.select_input"), true);
     return;
   }
 
   $("btnRun").disabled = true;
   prepareForRun();
   startProgress(request.dryRun);
-  setStatus(`⏳ 处理中… ${request.dryRun ? "（dry-run，不调 LLM）" : "（含 gpt-4o，约 1 分钟）"}`);
+  setStatus(
+    t("status.processing", {
+      mode: request.dryRun ? t("status.processing_dry_run") : t("status.processing_full"),
+    })
+  );
 
   const startedAt = Date.now();
   try {
     const data = await runAnalysis(request.formData);
     finishProgress(true);
     renderResult(data);
-    setStatus(`✓ 完成，用时 ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
+    setStatus(t("status.completed", {
+      seconds: ((Date.now() - startedAt) / 1000).toFixed(1),
+    }));
   } catch (error) {
     finishProgress(false);
-    setStatus("✗ 失败：" + error.message, true);
+    setStatus(t("status.failed", { message: error.message }), true);
     showRunFailure(error.message, error.detail);
   } finally {
     $("btnRun").disabled = false;
@@ -112,7 +119,9 @@ function bindEvents() {
 
 window.addEventListener("error", (event) => {
   try {
-    setStatus("✗ 前端渲染错误：" + (event.message || event.error || "unknown"), true);
+    setStatus(t("status.frontend_error", {
+      message: event.message || event.error || "unknown",
+    }), true);
   } catch (_) {
     // 页面还没初始化时忽略。
   }

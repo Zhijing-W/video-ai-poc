@@ -21,6 +21,7 @@ import time
 from openai import RateLimitError
 
 from ..core.config import settings
+from ..event_monitor_i18n import normalize_report_language
 from ..openai_client import get_client, parse_json
 from ..utils.image_utils import image_to_data_uri
 from ..identity.identity_context import format_identity_grounding
@@ -42,6 +43,21 @@ EVENT_SYSTEM = (
     "可用来理解放下、取走、搬运、到达、离开等事件；**若疑似快递/包裹，请结合画面识别其品牌或 logo"
     "（如 Amazon / UPS / FedEx）**。物体同样**不代表人物身份**。"
 )
+
+
+def _language_instruction(language: str | None) -> str:
+    normalized = normalize_report_language(language)
+    if normalized == "en":
+        return (
+            "输出要求：所有 summary、action、notification、subjects 等叙述性文本请使用 English。"
+            "JSON 字段名保持既定结构即可。"
+        )
+    if normalized == "zh-CN":
+        return (
+            "输出要求：所有 summary、action、notification、subjects 等叙述性文本请使用简体中文。"
+            "JSON 字段名保持既定结构即可。"
+        )
+    return ""
 
 
 def _frame_to_data_uri(image) -> str:
@@ -86,6 +102,7 @@ def understand_event(
     model: str | None = None,
     scene_context: str | None = None,
     object_context: str | None = None,
+    language: str | None = None,
 ) -> dict:
     """对一个事件窗做身份感知的跨帧事件理解。
 
@@ -132,6 +149,9 @@ def understand_event(
         "以及每个关键帧的 bbox/center 坐标 grounding，理解并叙述这段时间发生的跨帧事件。"
         "坐标用于把主体绑定到画面位置、移动方向和相互关系；不要把它当成让你重新检测的任务。\n" + schema
     )
+    language_instruction = _language_instruction(language)
+    if language_instruction:
+        prompt += f"\n\n{language_instruction}"
     if objective:
         prompt += f"\n\n特别关注：{objective}"
 
@@ -230,7 +250,11 @@ def _windows_to_text(windows: list[dict]) -> str:
     return "\n".join(lines) or "（无事件窗）"
 
 
-def summarize_event_windows(windows: list[dict], model: str | None = None) -> dict:
+def summarize_event_windows(
+    windows: list[dict],
+    model: str | None = None,
+    language: str | None = None,
+) -> dict:
     """把若干事件窗整合成整段视频的连贯事件故事（纯文本调用）。
 
     Args:
@@ -252,6 +276,9 @@ def summarize_event_windows(windows: list[dict], model: str | None = None) -> di
         + "\n\n【人物身份名册（同一身份跨窗即同一人）】\n" + roster
         + "\n\n【各事件窗（按时间顺序）】\n" + timeline
     )
+    language_instruction = _language_instruction(language)
+    if language_instruction:
+        prompt += f"\n\n{language_instruction}"
 
     deployment = model or settings.event_llm_deployment or settings.azure_openai_deployment
     client = get_client()

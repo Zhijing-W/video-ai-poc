@@ -177,6 +177,7 @@ def analyze_event_stream(
     max_window_seconds: float | None = None,
     stitch_thresh: float | None = None,
     overall_summary: bool | None = None,
+    report_language: str | None = None,
 ) -> dict:
     """对一段视频做"身份感知·多帧事件理解"的完整端到端处理。"""
     video_path = Path(video_path)
@@ -211,6 +212,7 @@ def analyze_event_stream(
             max_window_seconds=max_window_seconds,
             stitch_thresh=stitch_thresh,
             overall_summary=overall_summary,
+            report_language=report_language,
             stage_timings=stage_timings,
             t_start=t_start,
         ),
@@ -264,6 +266,7 @@ def _finish_session(
     max_window_seconds: float | None,
     stitch_thresh: float | None,
     overall_summary: bool | None,
+    report_language: str | None,
     stage_timings: dict[str, float],
     t_start: float,
 ) -> dict:
@@ -649,14 +652,20 @@ def _finish_session(
                     "timestamp": metas[i].timestamp if 0 <= i < len(metas) else None,
                     "texts": ocr_cache[i],
                 })
-            scene_context = ocr_mod.format_scene_context(per_frame)
+            scene_context = ocr_mod.format_scene_context(
+                per_frame,
+                language=report_language,
+            )
 
         # ---- LANE D：物体/包裹 —— 汇总窗内非人物体轨迹 → object_context（场景级，含 logo 提示）----
         object_list: list[dict] = []
         object_context = ""
         if obj_use:
             object_list = _build_object_context(object_tracks, win_idx, metas, img_w, img_h)
-            object_context = _format_object_context(object_list)
+            object_context = _format_object_context(
+                object_list,
+                language=report_language,
+            )
 
         window_out = {
             "window_index": w,
@@ -683,8 +692,12 @@ def _finish_session(
             event_prepare_seconds += time.perf_counter() - event_prepare_started
             event_understanding_started = time.perf_counter()
             window_out["event"] = understand_event(
-                kf, identity_text, objective=objective,
-                scene_context=scene_context or None, object_context=object_context or None,
+                kf,
+                identity_text,
+                objective=objective,
+                scene_context=scene_context or None,
+                object_context=object_context or None,
+                language=report_language,
             )
             event_understanding_seconds += time.perf_counter() - event_understanding_started
         else:
@@ -700,7 +713,10 @@ def _finish_session(
     if run_llm and do_overall and out_windows:
         overall_started = time.perf_counter()
         try:
-            overall = summarize_event_windows(out_windows) or None
+            overall = summarize_event_windows(
+                out_windows,
+                language=report_language,
+            ) or None
         except Exception as exc:  # 总结失败不致命：逐窗结果仍在
             overall = {"error": str(exc)}
         _record("overall_summary", overall_started)
@@ -744,6 +760,7 @@ def _finish_session(
         },
         "model": settings.event_llm_deployment or settings.azure_openai_deployment,
         "dry_run": not run_llm,
+        "report_language": report_language or "zh-CN",
         "elapsed_seconds": round(elapsed_seconds, 3),
         "stage_timings": stage_timings,
         "tracks": {str(tid): identities[tid] for tid in identities},

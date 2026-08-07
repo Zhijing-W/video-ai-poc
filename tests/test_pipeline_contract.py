@@ -7,6 +7,8 @@ import pytest
 from PIL import Image
 
 from app import event_analysis_pipeline as pipeline
+from app.ocr import format_scene_context
+from app.pipeline.object_context import format_object_context
 from app.video_processor import Frame
 from tests.conftest import write_image
 
@@ -304,3 +306,48 @@ def test_tracking_reid_telemetry_survives_disabled_identity_branch(
         assert result["body_reid_timing"]["by_purpose"]["tracking"]["call_count"] == 1
     finally:
         pipeline.reid_mod.reset_backend()
+
+
+def test_scene_context_uses_requested_report_language() -> None:
+    frames = [
+        {
+            "frame_index": 3,
+            "timestamp": "00:00:01",
+            "texts": [{"text": "CAM-01"}],
+        }
+    ]
+
+    english = format_scene_context(frames, language="en")
+    chinese = format_scene_context(frames)
+
+    assert english.startswith("[Scene text")
+    assert "Per-frame text" in english
+    assert "画面文字" not in english
+    assert chinese.startswith("【画面文字")
+    assert "逐帧文字" in chinese
+
+
+def test_object_context_uses_requested_report_language() -> None:
+    objects = [
+        {
+            "track_id": 7,
+            "label": "backpack",
+            "label_cn": "背包",
+            "first_ts": "00:00:01",
+            "last_ts": "00:00:03",
+            "first_frame": 2,
+            "last_frame": 6,
+            "direction": "left_to_right",
+            "frames_present": 5,
+            "conf": 0.9,
+        }
+    ]
+
+    english = format_object_context(objects, language="en")
+    chinese = format_object_context(objects)
+
+    assert english.startswith("[Objects in frame")
+    assert "backpack track#7" in english
+    assert "画面中的物体" not in english
+    assert chinese.startswith("【画面中的物体")
+    assert "背包(backpack)" in chinese

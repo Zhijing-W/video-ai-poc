@@ -1,3 +1,4 @@
+import { reportLanguage, t, uiLocale } from "./i18n.js";
 import { $ } from "./utils.js";
 
 function appendIfValue(formData, key, value) {
@@ -23,6 +24,7 @@ export function collectAnalysisRequest() {
   formData.append("with_ocr", $("withOcr").checked ? "true" : "false");
   formData.append("with_objects", $("withObjects").checked ? "true" : "false");
   formData.append("dry_run", dryRun ? "true" : "false");
+  formData.append("language", reportLanguage());
   appendIfValue(formData, "face_rec_backend", $("faceRecBackend").value);
   appendIfValue(formData, "face_superres", $("faceSuperres").value);
   if (isCodeFormerSelected()) {
@@ -63,7 +65,7 @@ export function renderSuperresBackends(catalog = {}) {
   const names = Array.isArray(catalog.backends) ? catalog.backends : [];
   const allowed = [...new Set(["off", "gfpgan", "codeformer", "realesrgan_x2plus", ...names])];
   const labels = {
-    off: "关闭",
+    off: t("settings.face_superres_off"),
     gfpgan: "GFP-GAN",
     codeformer: "CodeFormer",
     realesrgan_x2plus: "Real-ESRGAN x2plus",
@@ -71,7 +73,10 @@ export function renderSuperresBackends(catalog = {}) {
   const defaultBackend = catalog.default || "off";
   select.dataset.defaultBackend = defaultBackend;
   select.replaceChildren();
-  select.add(new Option(`默认（${labels[defaultBackend] || defaultBackend}）`, ""));
+  const defaultLabel = uiLocale() === "en"
+    ? `Default (${labels[defaultBackend] || defaultBackend})`
+    : `默认（${labels[defaultBackend] || defaultBackend}）`;
+  select.add(new Option(defaultLabel, ""));
   allowed.forEach((name) => select.add(new Option(labels[name] || name, name)));
 
   const fidelity = catalog.metadata?.codeformer?.fidelity_default;
@@ -96,23 +101,31 @@ export function renderReidBackends(catalog = {}) {
   const fallbackLabels = {
     osnet: "OSNet-AIN MSMT17",
     resnet50: "ResNet50 ImageNet",
-    coarse: "颜色直方图",
+    coarse: uiLocale() === "en" ? "Color histogram" : "颜色直方图",
     clipreid: "CLIP-ReID ViT-B/16",
     siglip2: "SigLIP2 Person ReID",
     differ: "DIFFER EVA02-L",
-    auto: "自动回退（OSNet → ResNet50 → coarse）",
+    auto: uiLocale() === "en" ? "Auto fallback (OSNet → ResNet50 → coarse)" : "自动回退（OSNet → ResNet50 → coarse）",
   };
   const metadata = catalog.metadata || {};
   const labelFor = (name) => metadata[name]?.label || fallbackLabels[name] || name;
   const configuredDefault = allowed.includes(catalog.default) ? catalog.default : "";
   select.replaceChildren();
   const defaultLabel = configuredDefault
-    ? `使用服务端默认（${labelFor(configuredDefault)}）`
-    : (catalogLoaded ? "使用服务端默认" : "使用服务端默认（后端目录不可用）");
+    ? `${uiLocale() === "en" ? "Use server default" : "使用服务端默认"} (${labelFor(configuredDefault)})`
+    : (
+      catalogLoaded
+        ? (uiLocale() === "en" ? "Use server default" : "使用服务端默认")
+        : (uiLocale() === "en" ? "Use server default (backend catalog unavailable)" : "使用服务端默认（后端目录不可用）")
+    );
   select.add(new Option(defaultLabel, ""));
   allowed.forEach((name) => {
     const suffix = name === configuredDefault
-      ? (name === "differ" ? "（默认·精度优先）" : "（配置默认）")
+      ? (
+        uiLocale() === "en"
+          ? (name === "differ" ? " (default · accuracy first)" : " (configured default)")
+          : (name === "differ" ? "（默认·精度优先）" : "（配置默认）")
+      )
       : "";
     const label = `${labelFor(name)}${suffix}`;
     select.add(new Option(label, name));
@@ -148,7 +161,7 @@ export function setDropFile(name) {
     return;
   }
 
-  if (main) main.textContent = "拖拽视频到此，或点击选择";
+  if (main) main.textContent = t("panel.drop_main");
   if (zone) zone.classList.remove("has-file");
 }
 

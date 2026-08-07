@@ -7,6 +7,7 @@ import subprocess
 
 import pytest
 
+from app.event_monitor_i18n import build_page_bundle
 
 ROOT = Path(__file__).resolve().parents[1]
 NODE = shutil.which("node")
@@ -30,12 +31,30 @@ def _run_module_script(script: str) -> dict:
     return json.loads(completed.stdout)
 
 
+def _bundle(locale: str, *message_keys: str) -> str:
+    bundle = build_page_bundle(locale)
+    messages = (
+        {key: bundle["messages"][key] for key in message_keys}
+        if message_keys
+        else bundle["messages"]
+    )
+    return json.dumps(
+        {
+            "locale": bundle["locale"],
+            "reportLanguage": bundle["reportLanguage"],
+            "messages": messages,
+        }
+    )
+
+
 def test_reid_diagnostics_render_tracking_zero_and_failed_calls() -> None:
     render_url = json.dumps(
         (ROOT / "static" / "js" / "event-monitor" / "render.js").as_uri()
     )
+    bundle = _bundle("zh-CN", "results")
     result = _run_module_script(
         f"""
+globalThis.__EVENT_MONITOR_I18N__ = {bundle};
 const elements = {{
   reidDiagnostics: {{ hidden: true, innerHTML: "" }},
   empty: {{ style: {{}}, textContent: "" }},
@@ -97,7 +116,7 @@ console.log(JSON.stringify({{
     )
 
     assert result["trackingOnly"]["hidden"] is False
-    assert "跟踪 2 次" in result["trackingOnly"]["html"]
+    assert "跟踪 2/20.0ms" in result["trackingOnly"]["html"]
     assert "失败 <b>0</b>" in result["trackingOnly"]["html"]
     assert "has-failures" not in result["trackingOnly"]["html"]
     assert result["failed"]["hidden"] is False
@@ -150,8 +169,10 @@ def test_progress_omits_virtual_percentage_explanation() -> None:
     progress_url = json.dumps(
         (ROOT / "static" / "js" / "event-monitor" / "progress.js").as_uri()
     )
+    bundle = _bundle("zh-CN", "progress")
     result = _run_module_script(
         f"""
+globalThis.__EVENT_MONITOR_I18N__ = {bundle};
 const elements = {{
   progress: {{ hidden: true }},
   progressBar: {{
@@ -180,4 +201,83 @@ console.log(JSON.stringify({{
 
     assert result["hidden"] is False
     assert result["steps"] == ""
-    assert "服务端正在分析" in result["stage"]
+    assert result["stage"] == "⏳ 服务端分析中…"
+    assert "不显示估算阶段" not in result["stage"]
+    assert "实测阶段耗时" not in result["stage"]
+
+
+def test_dynamic_translation_and_gallery_markup_follow_selected_language() -> None:
+    render_url = json.dumps(
+        (ROOT / "static" / "js" / "event-monitor" / "render.js").as_uri()
+    )
+    gallery_url = json.dumps(
+        (ROOT / "static" / "js" / "event-monitor" / "identity-gallery.js").as_uri()
+    )
+    bundle = _bundle("en", "samples", "service", "gallery", "common")
+    result = _run_module_script(
+        f"""
+globalThis.__EVENT_MONITOR_I18N__ = {bundle};
+const backendStatus = {{
+  className: "",
+  lastChild: {{ textContent: "" }},
+}};
+const elements = {{
+  sampleSelect: {{
+    innerHTML: "",
+    options: [],
+    replaceChildren() {{ this.options = []; }},
+    appendChild(option) {{ this.options.push(option); }},
+  }},
+  sampleCount: {{ textContent: "" }},
+  backendStatus,
+}};
+globalThis.document = {{
+  createElement: () => ({{
+    value: "",
+    textContent: "",
+  }}),
+  getElementById: (id) => elements[id],
+}};
+const {{ renderSamples, setBackendIndicator }} = await import({render_url});
+const {{ renderSubjectGallery }} = await import({gallery_url});
+renderSamples({{ samples: [{{ name: "demo.mp4", size_mb: 1.2 }}] }});
+setBackendIndicator(true);
+const html = renderSubjectGallery({{
+  tracks: {{
+    "1": {{
+      subject_id: 7,
+      thumb: "thumb",
+      score: 0.91,
+      reused: true,
+      local_subject: true,
+      subject_conflict_split: false,
+      face: {{
+        observed: true,
+        eligibility: "usable",
+        match_ready: true,
+        match_source: "superres",
+        quality: 0.8,
+      }},
+      fused: {{
+        confidence: 0.88,
+        primary: "body",
+        resolved: true,
+        agreed: true,
+      }},
+    }},
+  }},
+}});
+console.log(JSON.stringify({{
+  sampleCount: elements.sampleCount.textContent,
+  backendText: backendStatus.lastChild.textContent,
+  html,
+}}));
+"""
+    )
+
+    assert result["sampleCount"] == "samples: 1"
+    assert result["backendText"] == "Service online"
+    assert "Identity gallery (subjects: 1)" in result["html"]
+    assert "class=\"em-gallery-panel\"" in result["html"]
+    assert "Subject #7" in result["html"]
+    assert "tracks: 1" in result["html"]

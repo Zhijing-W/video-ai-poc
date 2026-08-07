@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import shutil
 import threading
 import time
@@ -10,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app import face
+from app.event_monitor_i18n import MESSAGES
 from app.routers import event_monitor
 
 
@@ -150,24 +152,71 @@ def test_fastapi_health_page_and_openapi_are_available() -> None:
 
     health = client.get("/health")
     page = client.get("/event-monitor")
+    zh_page = client.get("/event-monitor/zh")
     openapi = client.get("/openapi.json")
 
     assert health.status_code == 200
     assert health.json() == {"status": "ok", "feature": "event-monitor"}
     assert page.status_code == 200
-    assert "event-monitor" in page.text.lower()
+    assert "<html lang=\"en\">" in page.text
+    assert "<title>Video Surveillance PoC</title>" in page.text
+    assert "Video Surveillance PoC" in page.text
+    assert "Combining computer vision for cross-frame person identification with multimodal LLM reasoning for event report generation." in page.text
     assert 'id="withBody" checked' in page.text
-    assert "默认（ArcFace）" in page.text
-    assert "默认（关闭）" in page.text
+    assert "Default (ArcFace)" in page.text
+    assert "Default (off)" in page.text
     assert '<select id="reidBackend" class="em-input" disabled>' in page.text
-    assert '<option value="">使用服务端默认（加载中…）</option>' in page.text
+    assert '<option value="">Use server default (loading…)</option>' in page.text
     assert '<option value="differ"' not in page.text
     assert 'id="reidDiagnostics"' in page.text
     assert '<option value="auto">' not in page.text
     assert '<option value="resnet50">' not in page.text
     assert '<option value="coarse">' not in page.text
+    assert 'href="/event-monitor/zh"' in page.text
+    assert '"reportLanguage": "en"' in page.text
+    assert zh_page.status_code == 200
+    assert "<html lang=\"zh-CN\">" in zh_page.text
+    assert "<title>视频监控 PoC</title>" in zh_page.text
+    assert "视频监控 PoC" in zh_page.text
+    assert "结合计算机视觉进行跨帧人员识别，并通过多模态大语言模型推理生成事件报告。" in zh_page.text
+    assert 'href="/event-monitor"' in zh_page.text
+    assert '"reportLanguage": "zh-CN"' in zh_page.text
     assert openapi.status_code == 200
     assert "/api/event-monitor/understand" in openapi.text
+
+
+def test_root_and_legacy_event_monitor_redirect_to_english_page() -> None:
+    client = TestClient(app)
+
+    root = client.get("/", follow_redirects=False)
+    legacy = client.get("/eventmonitor", follow_redirects=False)
+
+    assert root.status_code in {302, 307}
+    assert root.headers["location"] == "/event-monitor"
+    assert legacy.status_code in {302, 307}
+    assert legacy.headers["location"] == "/event-monitor"
+
+
+def test_english_ui_bundle_has_no_chinese_runtime_copy() -> None:
+    def flatten(value: dict, prefix: str = "") -> dict[str, str]:
+        result: dict[str, str] = {}
+        for key, item in value.items():
+            path = f"{prefix}.{key}" if prefix else key
+            if isinstance(item, dict):
+                result.update(flatten(item, path))
+            else:
+                result[path] = str(item)
+        return result
+
+    english = flatten(MESSAGES["en"])
+    chinese = flatten(MESSAGES["zh-CN"])
+
+    assert set(english) == set(chinese)
+    assert [
+        (key, value)
+        for key, value in english.items()
+        if key != "nav.chinese_short" and re.search(r"[\u4e00-\u9fff]", value)
+    ] == []
 
 
 def test_superres_backend_catalog_and_unknown_request_validation() -> None:
@@ -260,6 +309,99 @@ def test_router_propagates_explicit_body_identity_disable(monkeypatch) -> None:
         event_monitor.OUT_DIR / response.json()["run_id"],
         ignore_errors=True,
     )
+
+
+def test_router_propagates_report_language_to_analysis(monkeypatch) -> None:
+    calls = []
+
+    def fake_analyze(video_path, run_dir, **kwargs):
+        calls.append(kwargs)
+        return {
+            "video": str(video_path),
+            "fps": kwargs["fps"],
+            "frames_total": 0,
+            "img_size": [0, 0],
+            "session_id": kwargs["session_id"],
+            "tracker_backend": "mock",
+            "reid_backend": "mock",
+            "reid_dim": 0,
+            "with_face": kwargs["with_face"],
+            "with_gait": kwargs["with_gait"],
+            "with_ocr": kwargs["with_ocr"],
+            "with_objects": kwargs["with_objects"],
+            "dry_run": True,
+            "elapsed_seconds": 0.0,
+            "stage_timings": {},
+            "tracks": {},
+            "windows": [],
+            "overall": None,
+            "report_language": kwargs["report_language"] or "zh-CN",
+        }
+
+    monkeypatch.setattr(event_monitor, "analyze_event_stream", fake_analyze)
+    response = TestClient(app).post(
+        "/api/event-monitor/understand",
+        files={"file": ("clip.mp4", b"fake video bytes", "video/mp4")},
+        data={"dry_run": "true", "language": "en"},
+    )
+
+    assert response.status_code == 200
+    assert calls[0]["report_language"] == "en"
+    assert response.json()["report_language"] == "en"
+    shutil.rmtree(
+        event_monitor.OUT_DIR / response.json()["run_id"],
+        ignore_errors=True,
+    )
+
+
+def test_complete_route_propagates_language_to_llm_helpers(monkeypatch) -> None:
+    calls = {"understand": [], "summary": []}
+
+    def fake_understand(frames, identity, **kwargs):
+        calls["understand"].append(kwargs)
+        return {
+            "events": [],
+            "summary": "stub",
+            "subjects_involved": [],
+            "alert_level": "normal",
+            "notification": "",
+        }
+
+    def fake_summary(windows, **kwargs):
+        calls["summary"].append(kwargs)
+        return {
+            "overall_summary": "stub overall",
+            "story": [],
+            "subjects": [],
+            "overall_alert_level": "normal",
+            "notification": "",
+        }
+
+    monkeypatch.setattr(event_monitor, "understand_event", fake_understand)
+    monkeypatch.setattr(event_monitor, "summarize_event_windows", fake_summary)
+    response = TestClient(app).post(
+        "/api/event-monitor/complete",
+        json={
+            "payload": {
+                "windows": [
+                    {
+                        "keyframes": [{"image": "data:image/png;base64,abc", "timestamp": "00:00:01"}],
+                        "identity_context": "identity",
+                        "scene_context": "scene",
+                        "object_context": "objects",
+                    }
+                ],
+            },
+            "language": "en",
+        },
+    )
+
+    assert response.status_code == 200
+    assert calls["understand"][0]["language"] == "en"
+    assert calls["understand"][0]["scene_context"] == "scene"
+    assert calls["understand"][0]["object_context"] == "objects"
+    assert calls["summary"][0]["language"] == "en"
+    assert response.json()["report_language"] == "en"
 
 
 def test_reid_backend_catalog_and_unknown_request_validation() -> None:

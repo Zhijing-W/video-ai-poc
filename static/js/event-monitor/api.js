@@ -36,13 +36,14 @@ export async function runAnalysis(formData) {
   return JSON.parse(await response.text());
 }
 
-export async function completeDryRun(payload, objective) {
+export async function completeDryRun(payload, objective, language) {
   const response = await fetch("/api/event-monitor/complete", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       payload,
       objective: objective || null,
+      language: language || null,
     }),
   });
   if (!response.ok) await readError(response);
