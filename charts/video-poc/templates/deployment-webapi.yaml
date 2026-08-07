@@ -38,6 +38,8 @@ spec:
           value: "{{ .Values.config.faceDevice }}"
         - name: REID_DEVICE
           value: "{{ .Values.config.reidDevice }}"
+        - name: REID_BACKEND
+          value: "{{ .Values.config.reidBackend }}"
         - name: GAIT_DEVICE
           value: "{{ .Values.config.gaitDevice }}"
         - name: FACE_REC_BACKEND
@@ -57,6 +59,8 @@ spec:
           value: "{{ .Values.appInsights.connectionString }}"
         {{- end }}
         # 模型/数据/gallery 挂载路径（与 Dockerfile 内 ENV 一致）
+        - name: MODEL_ROOT
+          value: /models
         - name: INSIGHTFACE_HOME
           value: /models/insightface
         - name: TORCH_HOME

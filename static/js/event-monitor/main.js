@@ -5,7 +5,7 @@ import {
   listSamples,
   listSuperresBackends,
   runAnalysis,
-} from "./api.js";
+} from "./api.js?v=20260806-reid-failure-telemetry";
 import { finishProgress, startProgress } from "./progress.js";
 import {
   prepareForRun,
@@ -14,7 +14,7 @@ import {
   setBackendIndicator,
   setStatus,
   showRunFailure,
-} from "./render.js";
+} from "./render.js?v=20260806-reid-failure-telemetry";
 import {
   closeSettings,
   collectAnalysisRequest,
@@ -23,7 +23,7 @@ import {
   renderSuperresBackends,
   wireDropzone,
   wireSuperresSettings,
-} from "./settings.js?v=20260730-reid-models";
+} from "./settings.js?v=20260805-preserve-server-default";
 import { $ } from "./utils.js";
 
 function tickClock() {
@@ -79,7 +79,7 @@ async function run() {
   } catch (error) {
     finishProgress(false);
     setStatus("✗ 失败：" + error.message, true);
-    showRunFailure(error.message);
+    showRunFailure(error.message, error.detail);
   } finally {
     $("btnRun").disabled = false;
   }

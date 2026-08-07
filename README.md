@@ -139,7 +139,7 @@ Copy `.env.example` to `.env`. Important settings include:
 | `DATA_DIR`, `OUTPUT_DIR`, `GALLERY_DIR` | Runtime storage locations |
 | `TRACK_BACKEND` | `bytetrack`, `botsort`, or `botsort_reid` |
 | `MODEL_ROOT` | Shared model directory outside the Git checkout |
-| `REID_BACKEND` | `auto`, `osnet`, `resnet50`, `coarse`, `clipreid`, `siglip2`, or `differ` |
+| `REID_BACKEND` | Default `differ` (accuracy-first); may be `auto`, `osnet`, `resnet50`, `coarse`, `clipreid`, or `siglip2` |
 | `FACE_REC_BACKEND` | `arcface` or `adaface` |
 | `FACE_SUPERRES` | `off`, `gfpgan`, `codeformer`, or `realesrgan_x2plus` |
 | `FACE_CODEFORMER_FIDELITY` | CodeFormer identity fidelity in `[0,1]`; default `1.0` is identity-first |
@@ -168,6 +168,19 @@ under `app/identity/body_reid_backends/` and is registered with a lazy loader an
 embedder. CLIP-ReID, SigLIP2, and DIFFER are selectable through the same API/UI
 catalog; none of their official source trees or checkpoints is imported at process
 startup.
+Under the current frozen evaluation protocol, the product default is accuracy-first
+DIFFER for the GPU POC. CLIP-ReID remains the latency-sensitive option. Explicit API/UI,
+CLI-process environment, and `.env` selections continue to override the default;
+`auto` retains its OSNet-to-ResNet50-to-coarse fallback order.
+Each analysis result includes `body_reid_timing`: the effective backend/device,
+per-crop call count, cumulative/mean latency, and deterministic nearest-rank P95.
+The timer covers crop preprocessing through model forward, host result transfer,
+validation, and L2 normalization; it excludes model loading and gallery lookup.
+Tracking, final identity/gallery, and face-consistency call sites are attributed
+separately. These overlapping per-call totals are diagnostic and must not be added
+to the mutually exclusive `stage_timings`. DIFFER CPU and high-concurrency
+performance are not validated; operators should measure the target demo video on
+the target hardware (including the intended T4) before making a latency claim.
 
 ### Project structure
 

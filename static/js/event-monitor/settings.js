@@ -83,26 +83,43 @@ export function renderSuperresBackends(catalog = {}) {
 export function renderReidBackends(catalog = {}) {
   const select = $("reidBackend");
   if (!select) return;
-  const names = Array.isArray(catalog.backends) ? catalog.backends : [];
-  const productBackends = ["osnet", "clipreid", "siglip2", "differ"];
+  const catalogLoaded = Array.isArray(catalog.backends);
+  const names = catalogLoaded ? catalog.backends : [];
+  const productBackends = ["differ", "clipreid", "siglip2", "osnet", "resnet50", "auto"];
   const registered = new Set(names);
-  const allowed = names.length
-    ? productBackends.filter((name) => registered.has(name))
-    : productBackends;
+  const allowed = catalogLoaded
+    ? [
+      ...productBackends.filter((name) => registered.has(name)),
+      ...names.filter((name) => !productBackends.includes(name)),
+    ]
+    : [];
   const fallbackLabels = {
     osnet: "OSNet-AIN MSMT17",
+    resnet50: "ResNet50 ImageNet",
+    coarse: "颜色直方图",
     clipreid: "CLIP-ReID ViT-B/16",
     siglip2: "SigLIP2 Person ReID",
     differ: "DIFFER EVA02-L",
+    auto: "自动回退（OSNet → ResNet50 → coarse）",
   };
   const metadata = catalog.metadata || {};
   const labelFor = (name) => metadata[name]?.label || fallbackLabels[name] || name;
+  const configuredDefault = allowed.includes(catalog.default) ? catalog.default : "";
   select.replaceChildren();
+  const defaultLabel = configuredDefault
+    ? `使用服务端默认（${labelFor(configuredDefault)}）`
+    : (catalogLoaded ? "使用服务端默认" : "使用服务端默认（后端目录不可用）");
+  select.add(new Option(defaultLabel, ""));
   allowed.forEach((name) => {
-    const label = name === "osnet" ? `${labelFor(name)}（默认）` : labelFor(name);
+    const suffix = name === configuredDefault
+      ? (name === "differ" ? "（默认·精度优先）" : "（配置默认）")
+      : "";
+    const label = `${labelFor(name)}${suffix}`;
     select.add(new Option(label, name));
   });
-  select.value = allowed.includes("osnet") ? "osnet" : (allowed[0] || "");
+  select.value = "";
+  select.dataset.defaultBackend = configuredDefault;
+  select.disabled = !catalogLoaded;
 }
 
 export function wireSuperresSettings() {

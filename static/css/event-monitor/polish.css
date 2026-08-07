@@ -125,6 +125,28 @@
 .em-note-hint { color: var(--muted); font-style: italic; }
 
 /* ---------- 实测各阶段耗时（demo 讲解用条形图）---------- */
+.em-reid-diagnostics {
+  margin: 0 0 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--fg);
+  font-size: .74rem;
+}
+.em-reid-head { font-weight: 700; margin-bottom: 5px; }
+.em-reid-head span, .em-reid-breakdown { color: var(--muted); font-weight: 400; }
+.em-reid-values b { color: var(--accent2); }
+.em-reid-fail { color: var(--muted); white-space: nowrap; }
+.em-reid-fail.has-failures {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(181,72,47,.15);
+  color: var(--alert);
+  font-weight: 700;
+}
+.em-reid-fail.has-failures b { color: inherit; }
+.em-reid-breakdown { margin-top: 4px; font-family: var(--mono); font-size: .68rem; }
 .em-timings {
   margin: 0 0 14px;
   padding: 12px 16px;

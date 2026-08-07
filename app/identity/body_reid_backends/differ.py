@@ -49,9 +49,19 @@ def _infer_clip_dim(state_dict: dict[str, Any]) -> int:
 def load(settings) -> LoadedDiffer:
     import torch
 
-    source_root = require_directory(settings.reid_differ_root, "DIFFER官方源码目录")
-    config_path = require_file(settings.reid_differ_config, "DIFFER配置")
-    checkpoint_path = require_file(settings.reid_differ_weights, "DIFFER权重")
+    try:
+        source_root = require_directory(
+            settings.reid_differ_root,
+            "DIFFER官方源码目录",
+        )
+        config_path = require_file(settings.reid_differ_config, "DIFFER配置")
+        checkpoint_path = require_file(settings.reid_differ_weights, "DIFFER权重")
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(
+            f"{exc}；DIFFER是精度优先的默认后端，请先运行 "
+            f'python scripts\\download_models.py --reid --model-root "{settings.model_root}"，'
+            "或设置REID_DIFFER_ROOT、REID_DIFFER_CONFIG和REID_DIFFER_WEIGHTS"
+        ) from exc
     device = select_device(torch, settings.reid_device)
     checkpoint = torch.load(
         checkpoint_path,
@@ -118,7 +128,6 @@ def register(register_backend, settings) -> None:
         embed,
         dim=1024,
         label="DIFFER EVA02-L",
-        description="CVPR 2025换衣ReID模型，使用LTCC官方checkpoint。",
-        experimental=True,
+        description="精度优先的默认换衣ReID后端，使用LTCC官方checkpoint。",
         replace=True,
     )

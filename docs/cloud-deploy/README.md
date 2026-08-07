@@ -45,7 +45,10 @@
 
 - `.github/workflows/build-gpu-image.yml`
   - 合并到 `main` 且运行时代码发生变化时，使用 Azure OIDC 登录。
-  - 在 ACR 云端构建 `video-poc-gpu:<commit SHA>` 和 `video-poc-gpu:main`。
+  - `Dockerfile.gpu.base` 与 `requirements.txt` 的内容哈希决定依赖镜像标签；相同依赖直接复用，不重复安装 CUDA/PyTorch/Python 包。
+  - 依赖变化时优先从现有 `video-poc-gpu:main` 派生，只补新增依赖；手动选择 clean rebuild 才从 NVIDIA CUDA 镜像全量重建。
+  - 在 ACR 云端始终构建 `video-poc-gpu:<commit SHA>`；只有 `main` 分支会更新 `video-poc-gpu:main`，feature 手动构建不会污染正式标签。
+  - `app/**`、`experiment/**` 或前端代码单独变化时只重建轻量应用层。
   - 构建镜像不需要启动 GPU VM。
 - `.github/workflows/deploy-gpu-vm.yml`
   - 在 GitHub Actions 页面手动运行，可部署 `main` 或指定 commit SHA。
@@ -53,7 +56,7 @@
   - 实验或演示结束后手动执行 `az vm deallocate -g videopoc-rg -n videopoc-gpu-vm`。
   - 新容器启动失败时自动恢复旧容器。
 
-部署脚本使用 VM 托管身份从 ACR 拉取镜像，不依赖 SSH 端口，也不在 GitHub 或 VM 中保存 ACR 密码。`.env` 和模型权重继续保存在 VM，不进入 Git 仓库或镜像。
+部署脚本使用 VM 托管身份从 ACR 拉取镜像，不依赖 SSH 端口，也不在 GitHub 或 VM 中保存 ACR 密码。`.env` 和模型权重继续保存在 VM，不进入 Git 仓库或镜像。容器内 `MODEL_ROOT=/models`；精度优先的 GPU POC 默认后端 DIFFER 必须已准备在宿主机 `/home/azureuser/vp/models/reid/differ/`。可运行 `python scripts/download_models.py --reid --model-root /home/azureuser/vp/models` 准备全部 ReID 资产；CLIP-ReID 是延迟敏感的显式替代项，显式 `.env` 配置仍可切换 SigLIP2、OSNet 或 `auto`。CPU 和高并发性能尚未验证；在目标演示视频和实际 T4 上用结果页的单 crop Body ReID 调用数、总耗时、均值、P95 及服务端阶段/总耗时完成测量后，再判断 DIFFER 是否构成瓶颈。健康检查成功后保留当前和部署前的镜像用于回退，并清理更旧的 ACR/legacy 应用标签与七天前的构建缓存。
 
 ## 未来演进路径
 

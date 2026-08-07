@@ -87,11 +87,8 @@
       <div class="em-group">
         <div class="em-group-title">🧥 人形 ReID</div>
         <label class="em-label">人形 ReID 模型 <span class="em-info" title="选择本次分析用于提取人形身份特征的模型；加载失败会直接报告错误。">ⓘ</span></label>
-        <select id="reidBackend" class="em-input">
-          <option value="osnet" selected>OSNet-AIN MSMT17（默认）</option>
-          <option value="clipreid">CLIP-ReID ViT-B/16</option>
-          <option value="siglip2">SigLIP2 Person ReID</option>
-          <option value="differ">DIFFER EVA02-L</option>
+        <select id="reidBackend" class="em-input" disabled>
+          <option value="">使用服务端默认（加载中…）</option>
         </select>
         <div class="em-row" style="margin-top:8px">
           <div>
@@ -196,6 +193,7 @@
       </div>
       <div id="meta" class="em-meta"></div>
       <div id="cfgSummary" class="em-cfgsummary" hidden></div>
+      <div id="reidDiagnostics" class="em-reid-diagnostics" hidden></div>
       <div id="timings" class="em-timings" hidden></div>
       <div id="resultTools" class="em-tools" hidden>
         <button id="btnSendLlm" class="em-tool-btn" hidden>✨ 用当前 dry-run 结果调用大模型</button>
@@ -230,6 +228,6 @@
     </figure>
   </div>
 
-  <script type="module" src="/static/js/event-monitor/main.js?v=20260730-reid-models"></script>
+  <script type="module" src="/static/js/event-monitor/main.js?v=20260806-reid-failure-telemetry"></script>
 </body>
 </html>

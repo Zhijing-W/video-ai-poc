@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -87,8 +87,10 @@ class Settings:
     pose_kpt_conf: float = float(_get("POSE_KPT_CONF", "0.3")) # 单个关键点的可信阈值（低于则视为不可见）
 
     # 主体记忆 / ReID 向量库（Phase 3 · Step 14）：认过一次就记住、命中即复用、不调 LLM。
-    # backend: auto 自动择优（osnet→resnet50→coarse）；也可固定为某一档。
-    reid_backend: str = _get("REID_BACKEND", "auto")
+    # 冻结产品协议下采用精度优先的 DIFFER；auto 仍保留原有逐级回退行为。
+    reid_backend: str = field(
+        default_factory=lambda: _get("REID_BACKEND", "differ")
+    )
     reid_osnet_weights: str = _get(
         "REID_OSNET_WEIGHTS",
         _model_asset("reid", "osnet", "osnet_ain_x1_0_msmt17.pt"),

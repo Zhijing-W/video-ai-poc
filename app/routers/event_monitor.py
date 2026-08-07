@@ -20,7 +20,7 @@ from starlette.concurrency import run_in_threadpool
 from .. import body_reid as reid_mod
 from .. import face as face_mod
 from ..core.config import ALLOWED_VIDEO_SUFFIXES, DATA_DIR, OUTPUT_DIR, settings
-from ..event_analysis_pipeline import analyze_event_stream
+from ..event_analysis_pipeline import EventAnalysisRunError, analyze_event_stream
 from ..services.event_reporter import summarize_event_windows, understand_event
 
 router = APIRouter(prefix="/api/event-monitor", tags=["event-monitor"])
@@ -30,7 +30,7 @@ OUT_DIR = OUTPUT_DIR / "event-monitor"
 _RUN_LOCK = asyncio.Lock()
 _STARTUP_FACE_SUPERRES = settings.face_superres
 _STARTUP_CODEFORMER_FIDELITY = settings.face_codeformer_fidelity
-_STARTUP_REID_BACKEND = settings.reid_backend
+_STARTUP_REID_BACKEND = reid_mod.validate_backend(settings.reid_backend)
 
 
 @router.get("/samples")
@@ -234,6 +234,19 @@ async def understand(
                     include_keyframe_images=True,
                     session_id=f"event-monitor-{run_id}",
                 )
+        except EventAnalysisRunError as exc:
+            timing = exc.body_reid_timing
+            error_config = dict(config_used)
+            error_config["reid_backend_effective"] = timing.get("backend")
+            error_config["reid_device"] = timing.get("device")
+            raise HTTPException(
+                500,
+                detail={
+                    "message": f"事件理解失败：{exc}",
+                    "body_reid_timing": timing,
+                    "config_used": error_config,
+                },
+            ) from exc
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(500, f"事件理解失败：{exc}") from exc
         finally:
@@ -241,5 +254,13 @@ async def understand(
                 reid_mod.reset_backend()
 
     payload["run_id"] = run_id
+    timing = payload.get("body_reid_timing") or {}
+    config_used["reid_backend_effective"] = (
+        payload.get("reid_backend") or timing.get("backend")
+    )
+    config_used["reid_device"] = (
+        (payload.get("runtime") or {}).get("reid_device")
+        or timing.get("device")
+    )
     payload["config_used"] = config_used
     return payload

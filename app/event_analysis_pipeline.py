@@ -71,6 +71,31 @@ from .utils.image_utils import image_to_data_uri, seconds_to_timestamp
 from .video_processor import Frame, extract_frames
 
 
+class EventAnalysisRunError(RuntimeError):
+    """Fatal analysis error carrying run-scoped diagnostics."""
+
+    def __init__(self, message: str, *, body_reid_timing: dict) -> None:
+        super().__init__(message)
+        self.body_reid_timing = body_reid_timing
+
+
+def _snapshot_reid_telemetry(
+    collector,
+    *,
+    backend: str | None = None,
+    device: str | None = None,
+    resolve_loaded_backend: bool = False,
+) -> dict:
+    snapshot = collector.snapshot(backend=backend, device=device)
+    if resolve_loaded_backend and snapshot["backend"] is None:
+        try:
+            snapshot["backend"] = reid_mod.active_backend()
+            snapshot["device"] = reid_mod.active_device()
+        except Exception:
+            pass
+    return snapshot
+
+
 def _signature(img: Image.Image, size: int = 16) -> np.ndarray:
     """整帧灰度缩略指纹（size×size），仅供 keyframe 去重用（不定义事件）。"""
     g = img.convert("L").resize((size, size))
@@ -190,9 +215,33 @@ def analyze_event_stream(
             t_start=t_start,
         ),
     )
-    for frame in frames:
-        session.process_frame(frame)
-    return session.finish()
+    with reid_mod.telemetry_context() as reid_telemetry:
+        try:
+            for frame in frames:
+                session.process_frame(frame)
+            result = session.finish()
+        except Exception as exc:
+            timing = _snapshot_reid_telemetry(
+                reid_telemetry,
+                resolve_loaded_backend=with_body,
+            )
+            raise EventAnalysisRunError(
+                str(exc),
+                body_reid_timing=timing,
+            ) from exc
+        result["body_reid_timing"] = _snapshot_reid_telemetry(
+            reid_telemetry,
+            backend=result.get("reid_backend"),
+            device=(result.get("runtime") or {}).get("reid_device"),
+        )
+        if (
+            result["body_reid_timing"]["call_count"]
+            or result["body_reid_timing"]["failed_call_count"]
+        ):
+            result.setdefault("runtime", {})["reid_device"] = result[
+                "body_reid_timing"
+            ]["device"]
+        return result
 
 
 def _finish_session(
@@ -450,7 +499,7 @@ def _finish_session(
         crop = body_best.get("crop") or t.get("best_crop")
         if with_body and crop is not None:
             try:
-                vec = reid_mod.embed(crop)
+                vec = reid_mod.embed(crop, purpose="identity_gallery")
                 track_emb[tid] = np.asarray(vec, dtype=np.float32).reshape(-1)
                 qa = reid_mod.assess_quality(crop)
                 res = gallery_mod.with_gallery_locked(
@@ -667,6 +716,8 @@ def _finish_session(
         if seconds > 0.0
     }
 
+    effective_reid_backend = reid_mod.active_backend() if with_body else None
+    effective_reid_device = reid_mod.active_device() if with_body else None
     return {
         "video": str(video_path),
         "fps": fps,
@@ -675,7 +726,7 @@ def _finish_session(
         "session_id": session_id,
         "evidence_schema_version": 2,
         "tracker_backend": tracker_mod.active_backend(),
-        "reid_backend": reid_mod.active_backend() if with_body else None,
+        "reid_backend": effective_reid_backend,
         "reid_dim": dim,
         "with_body": with_body,
         "with_face": with_face,
@@ -689,6 +740,7 @@ def _finish_session(
         "runtime": {
             "execution": "server",
             "detector_device": detector_mod.active_device() or "unknown",
+            "reid_device": effective_reid_device,
         },
         "model": settings.event_llm_deployment or settings.azure_openai_deployment,
         "dry_run": not run_llm,
@@ -699,4 +751,4 @@ def _finish_session(
         "overall": overall,
     }
 
-__all__ = ["analyze_event_stream"]
+__all__ = ["EventAnalysisRunError", "analyze_event_stream"]

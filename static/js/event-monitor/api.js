@@ -1,6 +1,12 @@
 async function readError(response) {
   const error = await response.json().catch(() => ({}));
-  throw new Error(error.detail || `HTTP ${response.status}`);
+  const detail = error.detail;
+  const failure = new Error(
+    (detail && typeof detail === "object" ? detail.message : detail) ||
+      `HTTP ${response.status}`
+  );
+  if (detail && typeof detail === "object") failure.detail = detail;
+  throw failure;
 }
 
 export async function listSamples() {

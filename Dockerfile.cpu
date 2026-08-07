@@ -44,7 +44,8 @@ RUN useradd -m -u 10001 appuser \
 USER appuser
 
 # 模型/数据/gallery 位置（K8s 用 PVC / Blob CSI 挂在这三个路径）
-ENV INSIGHTFACE_HOME=/models/insightface \
+ENV MODEL_ROOT=/models \
+    INSIGHTFACE_HOME=/models/insightface \
     TORCH_HOME=/models/torch \
     HF_HOME=/models/hf \
     ULTRALYTICS_HOME=/models/ultralytics \
@@ -55,6 +56,7 @@ ENV INSIGHTFACE_HOME=/models/insightface \
     FACE_FIQA_ROOT=/models/CR-FIQA/source \
     FACE_FIQA_WEIGHTS=/models/CR-FIQA/32572backbone.pth \
     FACE_FIQA_DEVICE=cpu \
+    REID_BACKEND=differ \
     GALLERY_DIR=/gallery \
     DATA_DIR=/data \
     PORT=8000

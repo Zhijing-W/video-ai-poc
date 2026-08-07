@@ -160,7 +160,7 @@ def test_attach_faces_selects_face_best_separately_from_body_best(
     monkeypatch.setattr(
         face_attachment.reid_mod,
         "embed",
-        lambda crop: np.asarray([1.0, 0.0], dtype=np.float32),
+        lambda crop, **kwargs: np.asarray([1.0, 0.0], dtype=np.float32),
     )
 
     class FakeGallery:
@@ -269,7 +269,7 @@ def test_attach_faces_blocks_failed_cross_frame_track_provenance(
     monkeypatch.setattr(
         face_attachment.reid_mod,
         "embed",
-        lambda crop: np.asarray([0.0, 1.0], dtype=np.float32),
+        lambda crop, **kwargs: np.asarray([0.0, 1.0], dtype=np.float32),
     )
 
     face_attachment.attach_faces(

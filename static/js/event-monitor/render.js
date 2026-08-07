@@ -69,6 +69,7 @@ export function prepareForRun() {
   $("empty").style.display = "none";
   $("overall").hidden = true;
   $("cfgSummary").hidden = true;
+  $("reidDiagnostics").hidden = true;
   $("timings").hidden = true;
   $("resultTools").hidden = true;
   $("timeline").innerHTML = "";
@@ -78,9 +79,15 @@ export function prepareForRun() {
   $("jsonView").textContent = "";
 }
 
-export function showRunFailure(message) {
+export function showRunFailure(message, detail = null) {
   $("empty").style.display = "block";
   $("empty").textContent = "处理失败：" + message;
+  if (detail?.body_reid_timing) {
+    renderReidDiagnostics({
+      body_reid_timing: detail.body_reid_timing,
+      config_used: detail.config_used || {},
+    });
+  }
 }
 
 function renderMeta(data) {
@@ -166,6 +173,50 @@ function renderTimings(data) {
     `<span class="tot">总 ${esc(data.elapsed_seconds)}s</span></div>${bars}`;
 }
 
+export function renderReidDiagnostics(data) {
+  const element = $("reidDiagnostics");
+  const timing = data.body_reid_timing;
+  const withBody = data.config_used?.with_body ?? data.with_body ?? true;
+  const calls = Number(timing?.call_count) || 0;
+  const failedCalls = Number(timing?.failed_call_count) || 0;
+  if (!timing || (!withBody && calls === 0 && failedCalls === 0)) {
+    element.hidden = true;
+    element.innerHTML = "";
+    return;
+  }
+
+  const formatMs = (value) =>
+    Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)}ms` : "—";
+  const purposeLabels = {
+    tracking: "跟踪",
+    identity_gallery: "最终身份/画廊",
+    face_consistency: "人脸候选一致性",
+    unspecified: "其他",
+  };
+  const breakdown = Object.entries(timing.by_purpose || {})
+    .filter(([, value]) => Number(value?.call_count) > 0)
+    .map(
+      ([purpose, value]) =>
+        `${purposeLabels[purpose] || purpose} ${value.call_count} 次/${formatMs(value.total_ms)}`
+    )
+    .join(" · ");
+  const backend = timing.backend || data.reid_backend || "unknown";
+  const device = timing.device || data.runtime?.reid_device || "unknown";
+  const values = calls
+    ? `调用 <b>${calls}</b> 次 · 总计 <b>${formatMs(timing.total_ms)}</b> · ` +
+      `均值 <b>${formatMs(timing.mean_ms)}</b> · P95 <b>${formatMs(timing.p95_ms)}</b>`
+    : "本次没有执行 Body ReID crop embedding（0 次调用）";
+  const failures =
+    `<span class="em-reid-fail ${failedCalls ? "has-failures" : ""}">` +
+    `失败 <b>${failedCalls}</b></span>`;
+
+  element.hidden = false;
+  element.innerHTML =
+    `<div class="em-reid-head">🧥 单 crop Body ReID 耗时 <span>（不是视频 FPS）</span></div>` +
+    `<div class="em-reid-values"><b>${esc(backend)}</b> · ${esc(device)} · ${values} · ${failures}</div>` +
+    (breakdown ? `<div class="em-reid-breakdown">${esc(breakdown)}</div>` : "");
+}
+
 function renderOverall(overall) {
   const element = $("overall");
   if (!overall || overall.error) {
@@ -205,6 +256,7 @@ export function renderResult(data) {
   renderOverall(data.overall);
   renderMeta(data);
   renderConfigSummary(data);
+  renderReidDiagnostics(data);
   renderTimings(data);
   $("tracks").innerHTML = renderSubjectGallery(data);
 

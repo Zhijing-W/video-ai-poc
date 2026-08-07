@@ -45,10 +45,13 @@ experiment/**/*.pdf
 # git / IDE / infra 元数据（镜像不需要）
 .git/
 .gitignore
+.github/
 .vscode/
 .idea/
 infra/
 charts/
+tests/
+requirements-dev.txt
 
 # 实验产物
 本周进展*.txt
