@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import threading
 import time
@@ -8,10 +9,11 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.main import app
 from app import face
+from app.main import app
 from app.routers import event_monitor
-from app.services import llm_models
+from app.services import event_chat, llm_models
+from app.services.prompt_compaction import compact_evidence
 
 
 def test_router_generates_unique_run_and_session_ids(monkeypatch) -> None:
@@ -171,10 +173,94 @@ def test_fastapi_health_page_and_openapi_are_available() -> None:
     assert 'id="analysisModel"' in page.text
     assert 'id="chatModel"' in page.text
     assert 'id="chatPanel"' in page.text
+    assert 'id="promptFormat"' in page.text
+    assert 'id="btnDownloadPrompt"' in page.text
+    assert "Compact table (TSV/CSV-style)" in page.text
     assert openapi.status_code == 200
     assert "/api/event-monitor/understand" in openapi.text
     assert "/api/event-monitor/llm-models" in openapi.text
     assert "/api/event-monitor/runs/{run_id}/chat" in openapi.text
+    assert "/api/event-monitor/runs/{run_id}/prompt" in openapi.text
+
+
+def test_run_prompt_export_is_run_scoped_safe_and_uses_canonical_serializer(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(event_chat, "RUNS_DIR", tmp_path)
+    run_id = "abcdef123456"
+    payload = {
+        "run_id": run_id,
+        "video": "demo.mp4",
+        "windows": [
+            {
+                "window_index": 1,
+                "time_range": ["00:00", "00:05"],
+                "ocr_evidence": [
+                    {
+                        "frame_index": 1,
+                        "timestamp": "00:01",
+                        "texts": [
+                            {
+                                "text": "comma, tab\t newline\nUnicode 中文",
+                                "conf": 0.9,
+                                "box": [1, 2, 3, 4],
+                            }
+                        ],
+                    }
+                ],
+                "keyframes": [
+                    {
+                        "timestamp": "00:01",
+                        "image": "data:image/jpeg;base64,DO_NOT_EXPORT_IMAGE",
+                    }
+                ],
+            }
+        ],
+    }
+    event_chat.persist_run_snapshot(payload)
+    result_path = tmp_path / run_id / "result.json"
+    snapshot = json.loads(result_path.read_text(encoding="utf-8"))
+    snapshot["api_key"] = "do-not-export"
+    snapshot["windows"][0]["unexpected_image"] = (
+        "data:image/png;base64,ALSO_DO_NOT_EXPORT"
+    )
+    result_path.write_text(json.dumps(snapshot), encoding="utf-8")
+
+    client = TestClient(app)
+    tsv = client.get(f"/api/event-monitor/runs/{run_id}/prompt?format=tsv")
+    exported_json = client.get(f"/api/event-monitor/runs/{run_id}/prompt?format=json")
+
+    expected = compact_evidence(
+        snapshot["windows"],
+        overall=snapshot.get("overall"),
+        run_metadata=snapshot,
+    )
+    assert tsv.status_code == 200
+    assert tsv.text == expected + "\n"
+    assert tsv.headers["content-type"].startswith("text/tab-separated-values")
+    assert 'filename="event-monitor_abcdef123456_prompt.tsv"' in tsv.headers[
+        "content-disposition"
+    ]
+    assert tsv.headers["cache-control"] == "no-store"
+    assert tsv.headers["x-content-type-options"] == "nosniff"
+    assert "comma, tab\\t newline\\nUnicode \\u4e2d\\u6587" in tsv.text
+    assert "DO_NOT_EXPORT_IMAGE" not in tsv.text
+    assert "ALSO_DO_NOT_EXPORT" not in tsv.text
+
+    assert exported_json.status_code == 200
+    assert exported_json.headers["content-type"].startswith("application/json")
+    json_payload = exported_json.json()
+    assert json_payload["api_key"] == "[redacted]"
+    assert json_payload["windows"][0]["unexpected_image"] == "[image data omitted]"
+    assert "DO_NOT_EXPORT_IMAGE" not in exported_json.text
+    assert "ALSO_DO_NOT_EXPORT" not in exported_json.text
+
+    assert client.get("/api/event-monitor/runs/not-a-run/prompt").status_code == 400
+    assert (
+        client.get(f"/api/event-monitor/runs/{run_id}/prompt?format=csv").status_code
+        == 400
+    )
+    assert client.get("/api/event-monitor/runs/123456abcdef/prompt").status_code == 404
 
 
 def test_superres_backend_catalog_and_unknown_request_validation() -> None:

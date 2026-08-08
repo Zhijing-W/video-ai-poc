@@ -1,6 +1,11 @@
 import { renderSubjectGallery } from "./identity-gallery.js";
 import { common, labelLevel, t } from "./i18n.js";
-import { clearLastPayload, resetKeyframeRegistry, setLastPayload } from "./state.js";
+import {
+  clearLastPayload,
+  clearPromptArtifact,
+  resetKeyframeRegistry,
+  setLastPayload,
+} from "./state.js";
 import { renderTimeline } from "./timeline.js";
 import { $, baseName, esc } from "./utils.js";
 
@@ -44,6 +49,7 @@ export function setBackendIndicator(online) {
 
 export function prepareForRun() {
   clearLastPayload();
+  clearPromptArtifact();
   resetKeyframeRegistry();
   $("empty").style.display = "none";
   $("overall").hidden = true;
@@ -57,8 +63,8 @@ export function prepareForRun() {
   $("timeline").innerHTML = "";
   $("tracks").innerHTML = "";
   $("meta").innerHTML = "";
-  $("jsonView").hidden = true;
-  $("jsonView").textContent = "";
+  $("promptView").hidden = true;
+  $("promptView").textContent = "";
 }
 
 export function showRunFailure(message, detail = null) {
@@ -318,10 +324,12 @@ function renderOverall(overall) {
 }
 
 export function renderResult(data) {
+  clearPromptArtifact();
   setLastPayload(data);
   $("resultTools").hidden = false;
-  $("jsonView").hidden = true;
-  $("btnToggleJson").textContent = t("results.toggle_json_show");
+  $("promptView").hidden = true;
+  $("promptView").textContent = "";
+  $("btnViewPrompt").textContent = t("results.view_prompt_show");
   $("btnSendLlm").hidden = !data.dry_run;
   $("dryRunAction").hidden = !data.dry_run;
   const chatPanel = $("chatPanel");

@@ -232,10 +232,15 @@
         <div class="em-result-utilities" aria-labelledby="resultUtilitiesTitle">
           <h3 id="resultUtilitiesTitle">{{ ui.results.utilities_title }}</h3>
           <div class="em-result-utility-controls">
-            <button id="btnDownloadJson" class="em-tool-btn" type="button">{{ ui.results.download_json_button }}</button>
-            <button id="btnToggleJson" class="em-tool-btn" type="button">{{ ui.results.toggle_json_show }}</button>
+            <label class="em-prompt-format" for="promptFormat">{{ ui.results.prompt_format_label }}</label>
+            <select id="promptFormat" class="em-prompt-select">
+              <option value="json">{{ ui.results.prompt_format_json }}</option>
+              <option value="tsv">{{ ui.results.prompt_format_tsv }}</option>
+            </select>
+            <button id="btnDownloadPrompt" class="em-tool-btn" type="button">{{ ui.results.download_prompt_button }}</button>
+            <button id="btnViewPrompt" class="em-tool-btn" type="button">{{ ui.results.view_prompt_show }}</button>
           </div>
-          <p class="em-tool-hint">{{ ui.results.tools_hint }}</p>
+          <p class="em-tool-hint">{{ ui.results.prompt_export_hint }}</p>
         </div>
       </section>
       <section id="chatPanel" class="em-chat em-evidence-chat" aria-labelledby="chatTitle" hidden>
@@ -256,7 +261,7 @@
           <button id="btnChatSend" class="em-btn" type="button">{{ ui.chat.send }}</button>
         </div>
       </section>
-      <pre id="jsonView" class="em-json" hidden></pre>
+      <pre id="promptView" class="em-json" hidden></pre>
       <div id="overall" class="em-overall" hidden></div>
       <div id="tracks" class="em-tracks"></div>
       <div id="timeline" class="em-timeline"></div>

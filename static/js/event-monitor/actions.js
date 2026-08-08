@@ -1,4 +1,4 @@
-import { completeDryRun } from "./api.js";
+import { completeDryRun, getRunPrompt, runPromptUrl } from "./api.js";
 import { reportLanguage, t } from "./i18n.js";
 import { startProgress, finishProgress } from "./progress.js";
 import { renderResult, setStatus } from "./render.js";
@@ -6,50 +6,65 @@ import {
   getObjectiveValue,
   getAnalysisModelValue,
 } from "./settings.js?v=20260808-foundry-routing";
-import { getKeyframe, getLastPayload } from "./state.js";
+import {
+  clearPromptArtifact,
+  getKeyframe,
+  getLastPayload,
+  getPromptArtifact,
+  setPromptArtifact,
+} from "./state.js";
 import { boxesHtml } from "./timeline.js";
-import { $, baseName } from "./utils.js";
+import { $ } from "./utils.js";
 
-export function cleanedPayload() {
-  const payload = getLastPayload();
-  if (!payload) return null;
-
-  const copy = JSON.parse(JSON.stringify(payload));
-  (copy.windows || []).forEach((windowData) => {
-    (windowData.keyframes || []).forEach((keyframe) => {
-      if (keyframe.image) keyframe.image = "<data-uri omitted>";
-    });
-  });
-  Object.values(copy.tracks || {}).forEach((track) => {
-    if (track && track.thumb) track.thumb = "<data-uri omitted>";
-  });
-  return copy;
+function selectedPromptFormat() {
+  return $("promptFormat").value;
 }
 
-export function downloadJson() {
-  const payload = cleanedPayload();
-  if (!payload) return;
+function promptRunId() {
+  return getLastPayload()?.run_id || null;
+}
 
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+export function downloadPrompt() {
+  const runId = promptRunId();
+  if (!runId) return;
   const anchor = document.createElement("a");
-  anchor.href = URL.createObjectURL(blob);
-  const stem = baseName(payload.video).replace(/\.[^.]+$/, "") || "result";
-  anchor.download = `event-monitor_${stem}${payload.dry_run ? "_dryrun" : ""}.json`;
+  const format = selectedPromptFormat();
+  anchor.href = runPromptUrl(runId, format);
+  anchor.download = `event-monitor_${runId}_prompt.${format}`;
   anchor.click();
-  URL.revokeObjectURL(anchor.href);
 }
 
-export function toggleJson() {
-  const element = $("jsonView");
-  if (element.hidden) {
-    element.textContent = JSON.stringify(cleanedPayload(), null, 2);
-    element.hidden = false;
-    $("btnToggleJson").textContent = t("results.toggle_json_hide");
+export async function viewPrompt() {
+  const element = $("promptView");
+  if (!element.hidden) {
+    element.hidden = true;
+    $("btnViewPrompt").textContent = t("results.view_prompt_show");
     return;
   }
 
-  element.hidden = true;
-  $("btnToggleJson").textContent = t("results.toggle_json_show");
+  const runId = promptRunId();
+  if (!runId) return;
+  const format = selectedPromptFormat();
+  const cached = getPromptArtifact();
+  $("btnViewPrompt").disabled = true;
+  try {
+    const content = cached?.format === format
+      ? cached.content
+      : await getRunPrompt(runId, format);
+    setPromptArtifact(format, content);
+    element.textContent = content;
+    element.hidden = false;
+    $("btnViewPrompt").textContent = t("results.view_prompt_hide");
+  } finally {
+    $("btnViewPrompt").disabled = false;
+  }
+}
+
+export function resetPromptView() {
+  clearPromptArtifact();
+  $("promptView").hidden = true;
+  $("promptView").textContent = "";
+  $("btnViewPrompt").textContent = t("results.view_prompt_show");
 }
 
 export function openLightbox(index) {

@@ -68,6 +68,16 @@ export async function chatAboutRun(runId, question, model, language) {
   return response.json();
 }
 
+export function runPromptUrl(runId, format) {
+  return `/api/event-monitor/runs/${encodeURIComponent(runId)}/prompt?format=${encodeURIComponent(format)}`;
+}
+
+export async function getRunPrompt(runId, format) {
+  const response = await fetch(runPromptUrl(runId, format));
+  if (!response.ok) await readError(response);
+  return response.text();
+}
+
 export async function health() {
   const response = await fetch("/api/event-monitor/samples", { method: "GET" });
   return response.ok;

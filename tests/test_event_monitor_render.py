@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import re
 import shutil
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -55,6 +55,18 @@ def test_post_analysis_ai_actions_are_separate_and_run_scoped() -> None:
         assert messages["results"]["utilities_title"]
         assert messages["chat"]["kind"]
         assert messages["chat"]["evidence_scope"]
+
+
+def test_prompt_artifact_controls_are_localized_and_label_tsv_accurately() -> None:
+    english = build_page_bundle("en")["messages"]["results"]
+    chinese = build_page_bundle("zh-CN")["messages"]["results"]
+
+    assert english["download_prompt_button"] == "⬇ Download prompt"
+    assert english["view_prompt_show"] == "View prompt"
+    assert english["prompt_format_tsv"] == "Compact table (TSV/CSV-style)"
+    assert chinese["download_prompt_button"] == "⬇ 下载提示词"
+    assert chinese["view_prompt_show"] == "查看提示词"
+    assert "TSV/CSV" in chinese["prompt_format_tsv"]
 
 
 def _run_module_script(script: str) -> dict:
@@ -206,6 +218,37 @@ try {{
     assert result["detail"]["body_reid_timing"] == {
         "call_count": 1,
         "failed_call_count": 1,
+    }
+
+
+def test_prompt_api_uses_only_run_id_and_selected_format() -> None:
+    api_url = json.dumps(
+        (ROOT / "static" / "js" / "event-monitor" / "api.js").as_uri()
+    )
+    result = _run_module_script(
+        f"""
+const calls = [];
+globalThis.fetch = async (url, options) => {{
+  calls.push({{ url, options: options || null }});
+  return {{ ok: true, text: async () => "EM-EVIDENCE-TSV/1" }};
+}};
+const {{ getRunPrompt, runPromptUrl }} = await import({api_url});
+const content = await getRunPrompt("abcdef123456", "tsv");
+console.log(JSON.stringify({{
+  url: runPromptUrl("abcdef123456", "json"),
+  call: calls[0],
+  content,
+}}));
+"""
+    )
+
+    assert result == {
+        "url": "/api/event-monitor/runs/abcdef123456/prompt?format=json",
+        "call": {
+            "url": "/api/event-monitor/runs/abcdef123456/prompt?format=tsv",
+            "options": None,
+        },
+        "content": "EM-EVIDENCE-TSV/1",
     }
 
 

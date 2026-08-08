@@ -1,4 +1,11 @@
-import { downloadJson, openLightbox, closeLightbox, sendDryRunToLlm, toggleJson } from "./actions.js";
+import {
+  closeLightbox,
+  downloadPrompt,
+  openLightbox,
+  resetPromptView,
+  sendDryRunToLlm,
+  viewPrompt,
+} from "./actions.js";
 import { clockLocale, reportLanguage, t } from "./i18n.js";
 import {
   health,
@@ -106,8 +113,9 @@ async function run() {
 function bindEvents() {
   $("btnRun").addEventListener("click", run);
   $("btnSendLlm").addEventListener("click", sendDryRunToLlm);
-  $("btnDownloadJson").addEventListener("click", downloadJson);
-  $("btnToggleJson").addEventListener("click", toggleJson);
+  $("btnDownloadPrompt").addEventListener("click", downloadPrompt);
+  $("btnViewPrompt").addEventListener("click", viewPrompt);
+  $("promptFormat").addEventListener("change", resetPromptView);
   $("btnSettings").addEventListener("click", openSettings);
   $("btnCloseSettings").addEventListener("click", closeSettings);
   $("btnApplySettings").addEventListener("click", closeSettings);

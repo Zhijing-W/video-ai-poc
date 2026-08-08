@@ -15,6 +15,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
@@ -23,7 +24,11 @@ from .. import face as face_mod
 from ..core.config import ALLOWED_VIDEO_SUFFIXES, DATA_DIR, OUTPUT_DIR, settings
 from ..event_analysis_pipeline import EventAnalysisRunError, analyze_event_stream
 from ..event_monitor_i18n import normalize_report_language, resolve_report_language
-from ..services.event_chat import chat_about_run, persist_run_snapshot
+from ..services.event_chat import (
+    chat_about_run,
+    export_run_prompt,
+    persist_run_snapshot,
+)
 from ..services.event_reporter import summarize_event_windows, understand_event
 from ..services.llm_models import model_catalog, resolve_model
 
@@ -183,6 +188,31 @@ def chat_with_run(run_id: str, body: RunChatRequest) -> dict:
         raise HTTPException(503, str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(502, f"大模型问答失败：{exc}") from exc
+
+
+@router.get("/runs/{run_id}/prompt")
+def get_run_prompt(run_id: str, format: str = "json") -> Response:
+    """Return one persisted run's canonical JSON or exact compact LLM evidence."""
+    try:
+        content, extension = export_run_prompt(run_id, format)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    media_type = "application/json; charset=utf-8" if extension == "json" else (
+        "text/tab-separated-values; charset=utf-8"
+    )
+    return Response(
+        content=content,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="event-monitor_{run_id}_prompt.{extension}"'
+            ),
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.post("/understand")

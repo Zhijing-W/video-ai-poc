@@ -151,6 +151,15 @@
   font-size: .68rem;
   color: var(--muted);
 }
+.em-prompt-format { font-size: .72rem; color: var(--muted); }
+.em-prompt-select {
+  font-size: .74rem;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel2);
+  color: var(--fg);
+}
 .em-json {
   max-height: 360px;
   overflow: auto;

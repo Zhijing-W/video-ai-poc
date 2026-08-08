@@ -15,8 +15,14 @@ from .prompt_compaction import compact_evidence
 
 RUNS_DIR = OUTPUT_DIR / "event-monitor"
 _RUN_ID = re.compile(r"^[a-f0-9]{12}$")
+PROMPT_EXPORT_FORMATS = frozenset({"json", "tsv"})
 _LOCKS_GUARD = threading.Lock()
 _LOCKS: dict[str, threading.Lock] = {}
+_SENSITIVE_EXPORT_KEY = re.compile(
+    r"(?:api[_-]?key|authorization|credential|password|secret|token)",
+    re.IGNORECASE,
+)
+_INLINE_IMAGE_DATA = re.compile(r"data:image/[^\s\"']+", re.IGNORECASE)
 
 CHAT_SYSTEM = (
     "你是视频事件证据问答助手。只能依据给出的本次分析快照回答，不得补充快照之外的事实。"
@@ -103,6 +109,51 @@ def _load_snapshot(run_id: str) -> tuple[Path, dict]:
     if not result_path.exists():
         raise FileNotFoundError(f"找不到 run {run_id} 的分析结果")
     return path, json.loads(result_path.read_text(encoding="utf-8"))
+
+
+def _safe_export_value(value: object, *, key: str = "") -> object:
+    """Defensively redact any unexpected secrets or inline images in stored JSON."""
+    if _SENSITIVE_EXPORT_KEY.search(key):
+        return "[redacted]"
+    if isinstance(value, dict):
+        return {
+            str(item_key): _safe_export_value(item_value, key=str(item_key))
+            for item_key, item_value in value.items()
+        }
+    if isinstance(value, list):
+        return [_safe_export_value(item) for item in value]
+    if isinstance(value, str):
+        return _INLINE_IMAGE_DATA.sub("[image data omitted]", value)
+    return value
+
+
+def export_run_prompt(run_id: str, export_format: str) -> tuple[str, str]:
+    """Project one persisted run into its canonical JSON or LLM TSV evidence.
+
+    JSON is the sanitized canonical snapshot. TSV is evidence-only: it is the exact
+    compact serializer passed to LLM context, while trusted task instructions remain
+    server-owned and deliberately outside the export.
+    """
+    if export_format not in PROMPT_EXPORT_FORMATS:
+        raise ValueError("format 必须为 json 或 tsv")
+    _, snapshot = _load_snapshot(run_id)
+    if not isinstance(snapshot, dict):
+        raise TypeError("分析结果格式无效")
+    safe_snapshot = _safe_export_value(snapshot)
+    if export_format == "json":
+        return json.dumps(safe_snapshot, ensure_ascii=False, indent=2) + "\n", "json"
+    return (
+        compact_evidence(
+            safe_snapshot.get("windows") or [],
+            overall=safe_snapshot.get("overall"),
+            run_metadata=safe_snapshot,
+            max_chars=settings.event_evidence_max_chars,
+            max_table_rows=settings.event_evidence_table_max_rows,
+            max_table_chars=settings.event_evidence_table_max_chars,
+        )
+        + "\n",
+        "tsv",
+    )
 
 
 def _history_path(run_dir: Path) -> Path:
@@ -209,4 +260,9 @@ def chat_about_run(
         return result
 
 
-__all__ = ["chat_about_run", "persist_run_snapshot"]
+__all__ = [
+    "PROMPT_EXPORT_FORMATS",
+    "chat_about_run",
+    "export_run_prompt",
+    "persist_run_snapshot",
+]

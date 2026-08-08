@@ -55,6 +55,14 @@ OCR and all other supplied evidence are explicitly untrusted, so embedded prompt
 injection text is never treated as an instruction. Image data URIs remain multimodal
 image inputs and are never copied into text prompts.
 
+After a run, **Download prompt** and **View prompt** offer two server-generated
+formats for that run only: **Canonical JSON** is the persisted source result, and
+**Compact table (TSV/CSV-style)** is the exact evidence-only TSV serializer used for
+LLM context. Trusted task instructions remain server-owned because they vary by LLM
+operation; they are not exported. The endpoint validates the run ID and format,
+reads only that run's `result.json`, and omits inline image data and secret-like
+fields. TSV downloads use the `.tsv` extension.
+
 `EVENT_EVIDENCE_MAX_CHARS` caps the complete projection; the
 `EVENT_EVIDENCE_TABLE_MAX_ROWS` and `EVENT_EVIDENCE_TABLE_MAX_CHARS` limits bound
 each nonessential table. When a long recording is trimmed, the `TRUNCATION` table
@@ -103,6 +111,7 @@ Linux/macOS users can replace `.\.venv\Scripts\python.exe` with `.venv/bin/pytho
 | `GET /api/event-monitor/samples` | List locally available sample videos |
 | `POST /api/event-monitor/understand` | Run the complete video-to-event pipeline |
 | `POST /api/event-monitor/complete` | Continue a dry run with the LLM without rerunning CV |
+| `GET /api/event-monitor/runs/{run_id}/prompt?format=json\|tsv` | Download/view a run-scoped canonical JSON or compact evidence artifact |
 | `GET /api/event-monitor/llm-models` | List active vision-capable Azure OpenAI deployments available to the UI |
 | `GET /api/event-monitor/reid-backends` | List registered body ReID backends |
 | `GET /api/event-monitor/superres-backends` | List registered face super-resolution backends |
@@ -309,6 +318,12 @@ Event Monitor 不再孤立地逐帧分析，而是把视频转换为带人物身
 - 带关键帧、身份卡、告警和设置面板的 Web 时间线。
 - 不调用 LLM 的 dry-run 链路检查。
 
+运行结束后的“下载 prompt”和“查看 prompt”均由服务端按 run 生成：**规范 JSON**
+是持久化的源结果，**紧凑表格（TSV/CSV 风格）**是送入 LLM 上下文时使用的精确、
+仅证据 TSV 序列化。可信任务指令会随具体 LLM 操作变化，故仍由服务端持有，不会导出。
+接口只读取已验证 run 的 `result.json`，并省略内联图片数据和疑似密钥字段；表格下载使用
+`.tsv` 扩展名。
+
 ### 环境要求
 
 - Windows 或 Linux。
@@ -348,6 +363,7 @@ Linux/macOS 将 `.\.venv\Scripts\python.exe` 替换为 `.venv/bin/python`。
 | `GET /api/event-monitor/samples` | 列出本地样片 |
 | `POST /api/event-monitor/understand` | 运行完整的视频事件理解流程 |
 | `POST /api/event-monitor/complete` | 在不重跑视觉链路的情况下继续完成 dry-run |
+| `GET /api/event-monitor/runs/{run_id}/prompt?format=json\|tsv` | 查看/下载指定 run 的规范 JSON 或紧凑证据表格 |
 | `GET /api/event-monitor/llm-models` | 列出 UI 可选择的、已启用且支持视觉输入的 Azure OpenAI deployment |
 | `GET /health` | 服务健康检查 |
 
