@@ -523,6 +523,35 @@ console.log(JSON.stringify({{
     assert "Gait evidence" in result["html"] or "步态依据" in result["html"]
 
 
+def test_gallery_missing_scores_render_as_unavailable() -> None:
+    gallery_url = json.dumps(
+        (ROOT / "static" / "js" / "event-monitor" / "identity-gallery.js").as_uri()
+    )
+    bundle = _bundle("en", "gallery", "common")
+    result = _run_module_script(
+        f"""
+globalThis.__EVENT_MONITOR_I18N__ = {bundle};
+const {{ renderSubjectGallery }} = await import({gallery_url});
+console.log(JSON.stringify({{
+  html: renderSubjectGallery({{
+    tracks: {{
+      "1": {{
+        subject_id: 7,
+        score: null,
+        fused: {{ confidence: null }},
+      }},
+    }},
+  }}),
+}}));
+"""
+    )
+
+    assert "Best body score" in result["html"]
+    assert "unavailable" in result["html"].lower()
+    assert "0.00" not in result["html"]
+    assert "0%" not in result["html"]
+
+
 def test_product_reid_selector_shows_one_default_and_four_validated_backends() -> None:
     settings_url = json.dumps(
         (ROOT / "static" / "js" / "event-monitor" / "settings.js").as_uri()

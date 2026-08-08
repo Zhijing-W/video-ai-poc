@@ -88,7 +88,9 @@ function evidenceStatus(record, route) {
 }
 
 function displayScore(value) {
-  return Number.isFinite(Number(value)) ? Number(value).toFixed(2) : common("not_available");
+  return value != null && Number.isFinite(Number(value))
+    ? Number(value).toFixed(2)
+    : common("not_available");
 }
 
 function detailRow(label, value) {
@@ -117,7 +119,7 @@ export function renderSubjectGallery(data) {
     if (identity.reused) group.reused = true;
     if (identity.local_subject) group.local = true;
     if (identity.subject_conflict_split) group.split = true;
-    if (Number.isFinite(Number(identity.score))) {
+    if (identity.score != null && Number.isFinite(Number(identity.score))) {
       group.bestBodyScore = group.bestBodyScore === null
         ? Number(identity.score)
         : Math.max(group.bestBodyScore, Number(identity.score));
@@ -165,7 +167,7 @@ export function renderSubjectGallery(data) {
       detailRow(t("gallery.face_evidence"), evidenceStatus(record, "face")),
       detailRow(t("gallery.gait_evidence"), evidenceStatus(record, "gait")),
     ];
-    if (Number.isFinite(Number(fused.confidence))) {
+    if (fused.confidence != null && Number.isFinite(Number(fused.confidence))) {
       details.push(detailRow(t("gallery.fused_confidence"), `${(Number(fused.confidence) * 100).toFixed(0)}%`));
     }
     if (fused.primary) details.push(detailRow(t("gallery.primary_route"), primary));
