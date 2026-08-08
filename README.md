@@ -55,6 +55,13 @@ OCR and all other supplied evidence are explicitly untrusted, so embedded prompt
 injection text is never treated as an instruction. Image data URIs remain multimodal
 image inputs and are never copied into text prompts.
 
+`EVENT_EVIDENCE_MAX_CHARS` caps the complete projection; the
+`EVENT_EVIDENCE_TABLE_MAX_ROWS` and `EVENT_EVIDENCE_TABLE_MAX_CHARS` limits bound
+each nonessential table. When a long recording is trimmed, the `TRUNCATION` table
+reports the limits and omitted rows. Every window retains a time-range and summary
+citation before deterministic priority evidence (events, subjects, objects, OCR,
+and spatial data) is added.
+
 ### Requirements
 
 - Windows or Linux.

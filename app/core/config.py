@@ -311,6 +311,10 @@ class Settings:
     event_chat_model: str = _get("EVENT_CHAT_MODEL", "auto").strip().lower()
     event_chat_max_tokens: int = int(_get("EVENT_CHAT_MAX_TOKENS", "900"))
     event_chat_history_turns: int = int(_get("EVENT_CHAT_HISTORY_TURNS", "6"))
+    # Compact TSV prompt evidence is bounded independently from output tokens.
+    event_evidence_max_chars: int = int(_get("EVENT_EVIDENCE_MAX_CHARS", "48000"))
+    event_evidence_table_max_rows: int = int(_get("EVENT_EVIDENCE_TABLE_MAX_ROWS", "120"))
+    event_evidence_table_max_chars: int = int(_get("EVENT_EVIDENCE_TABLE_MAX_CHARS", "6000"))
 
     # 选帧②：事件驱动关键帧选择（Phase 4 · Step 25 / 3.3）——喂 LLM 前按"事件"砍图片数。
     keyframe_max: int = int(_get("KEYFRAME_MAX", "24"))            # 喂 LLM 的关键帧上限
@@ -420,6 +424,12 @@ class Settings:
             raise ValueError("FACE_CANDIDATE_MIN_GAP_FRAMES 必须至少为 1")
         if not 0.0 <= self.face_codeformer_fidelity <= 1.0:
             raise ValueError("FACE_CODEFORMER_FIDELITY 必须在 [0, 1] 范围内")
+        if self.event_evidence_max_chars < 4096:
+            raise ValueError("EVENT_EVIDENCE_MAX_CHARS 必须至少为 4096")
+        if self.event_evidence_table_max_rows < 1:
+            raise ValueError("EVENT_EVIDENCE_TABLE_MAX_ROWS 必须至少为 1")
+        if self.event_evidence_table_max_chars < 256:
+            raise ValueError("EVENT_EVIDENCE_TABLE_MAX_CHARS 必须至少为 256")
 
     def object_class_set(self) -> set[str]:
         return {c.strip() for c in self.object_classes.split(",") if c.strip()}
