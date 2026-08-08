@@ -667,11 +667,11 @@ renderLlmModels({{
   auth: "managed_identity",
   defaults: {{ analysis: "auto", chat: "gpt-4.1-mini" }},
   analysis: [
-    {{ alias: "auto", label: "Auto (quality first)", available: true }},
+    {{ alias: "auto", label: "Auto", available: true }},
     {{ alias: "gpt-4.1", label: "GPT-4.1", available: true }},
   ],
   chat: [
-    {{ alias: "auto", label: "Auto (question complexity)", available: true }},
+    {{ alias: "auto", label: "Auto", available: true }},
     {{ alias: "gpt-4.1-mini", label: "GPT-4.1 mini", available: true }},
   ],
 }});
@@ -688,11 +688,11 @@ console.log(JSON.stringify({{
 
     assert result == {
         "analysis": [
-            {"text": "Auto (quality first)", "value": "auto"},
+            {"text": "Auto", "value": "auto"},
             {"text": "GPT-4.1", "value": "gpt-4.1"},
         ],
         "chat": [
-            {"text": "Auto (question complexity)", "value": "auto"},
+            {"text": "Auto", "value": "auto"},
             {"text": "GPT-4.1 mini", "value": "gpt-4.1-mini"},
         ],
         "analysisValue": "auto",
@@ -719,4 +719,16 @@ def test_model_picker_uses_accessible_popover_instead_of_model_selects() -> None
     assert 'event.key === "Escape"' in source
     assert 'event.key === "ArrowDown"' in source
     assert 'providerMark(option.provider)' in source
+    assert 'class="em-provider-slot"' in source
+    assert 'brand-assets/${mark.asset}' in source
     assert ".em-model-popover" in css
+    assert ".em-provider-slot" in css
+    assert ".em-model-copy { min-width: 0; }" in css
+    assert "overflow-wrap: anywhere;" in css
+
+    assets = ROOT / "static" / "vendor" / "brand-assets"
+    assert (assets / "auto-routing.svg").is_file()
+    assert (assets / "openai.svg").is_file()
+    assert (assets / "microsoft.svg").is_file()
+    assert (assets / "deepseek.svg").is_file()
+    assert "CC0-1.0" in (assets / "README.md").read_text(encoding="utf-8")

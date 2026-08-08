@@ -248,17 +248,30 @@
 }
 .em-model-option:hover,
 .em-model-option.is-active { background: var(--panel2); }
+.em-provider-slot {
+  display: flex;
+  width: 20px;
+  min-width: 20px;
+  align-items: center;
+  justify-content: center;
+}
+.em-model-copy { min-width: 0; }
 .em-model-primary { display: block; font-size: .75rem; font-weight: 700; }
 .em-model-secondary {
   display: block;
   margin-top: 2px;
-  overflow: hidden;
   color: var(--muted);
   font-size: .62rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
-.em-provider-mark { width: 18px; height: 18px; color: var(--fg); }
+.em-provider-mark {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  color: var(--fg);
+}
+.em-provider-mark img { width: 100%; height: 100%; }
 .em-model-check { color: var(--accent); font-size: .9rem; }
 .em-model-info { color: var(--muted); font-size: .7rem; }
 .em-model-manage {

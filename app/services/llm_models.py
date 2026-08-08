@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-import re
 from typing import Any
 
 from ..core.config import settings
@@ -73,6 +72,28 @@ _REQUEST_FAMILY = {
     "gpt-5.6-terra": "gpt5",
 }
 
+# This is a reviewed product policy, not a model-version comparison. New reviewed
+# models must be added deliberately after validating the event-analysis contract.
+_ANALYSIS_AUTO_PRIORITY = (
+    "gpt-5.4",
+    "gpt-5.6-luna",
+    "gpt-5.4-mini",
+    "gpt-4.1",
+    "gpt-4o",
+    "gpt-4.1-mini",
+)
+_CHAT_EVIDENCE_PRIORITY = (
+    "gpt-5.6-terra",
+    "gpt-5.4",
+    "gpt-5.6-luna",
+    "gpt-4.1",
+    "gpt-4o",
+    "phi-4-reasoning",
+    "deepseek-v4-flash",
+    "gpt-5.4-mini",
+    "gpt-4.1-mini",
+)
+
 
 def _resolved_auth_mode() -> str:
     if settings.azure_openai_auth == "auto":
@@ -94,24 +115,14 @@ def _targets(task: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     return targets, catalog
 
 
-def _model_rank(model: str) -> tuple[int, str]:
-    """A deterministic quality ordering with a stable lexical tie-breaker."""
-    value = (model or "").lower()
-    match = re.search(r"gpt-(\d+)(?:\.(\d+))?", value)
-    if not match:
-        return (0, value)
-    major = int(match.group(1))
-    minor = int(match.group(2) or 0)
-    # "mini" is deliberately a capacity qualifier, not a deployment name.
-    # This keeps the ordering extensible while preferring full models on ties.
-    return (major * 100 + minor * 10 - (1 if "mini" in value else 0), value)
-
-
-def _best_target(targets: list[dict[str, Any]]) -> dict[str, Any]:
+def _reviewed_priority_target(
+    targets: list[dict[str, Any]], priority: tuple[str, ...]
+) -> dict[str, Any]:
+    positions = {model: index for index, model in enumerate(priority)}
     return sorted(
         targets,
         key=lambda target: (
-            -_model_rank(str(target.get("model") or ""))[0],
+            positions.get(str(target.get("model") or "").lower(), len(positions)),
             str(target.get("deployment") or "").lower(),
         ),
     )[0]
@@ -152,23 +163,25 @@ def model_catalog(*, locale: str | None = None) -> dict:
 
     auto_analysis = {
         "alias": "auto",
-        "label": _text(locale, "Auto (best compatible deployment)", "自动（最佳兼容部署）"),
+        "label": _text(locale, "Auto", "自动"),
         "model": None,
+        "provider": "auto",
         "description": _text(
             locale,
-            "Deterministically selects the highest-ranked image-capable deployment.",
-            "确定性选择排名最高的图像输入兼容部署。",
+            "Uses the configured, smoke-tested analysis deployment when available; otherwise follows reviewed analysis priority.",
+            "优先使用已配置且已冒烟验证的分析部署；不可用时按已审核的分析优先级选择。",
         ),
         "available": bool(analysis),
     }
     auto_chat = {
         "alias": "auto",
-        "label": _text(locale, "Auto (task-aware deployment)", "自动（按任务选择部署）"),
+        "label": _text(locale, "Auto", "自动"),
         "model": None,
+        "provider": "auto",
         "description": _text(
             locale,
-            "Uses the configured chat deployment for short follow-ups and the highest-ranked compatible deployment for evidence-heavy questions.",
-            "简短追问使用已配置的聊天部署，证据推理问题使用排名最高的兼容部署。",
+            "Uses the configured low-latency chat deployment for simple follow-ups and a reviewed quality target for complex evidence questions.",
+            "简单追问使用已配置的低延迟聊天部署，复杂证据问题使用已审核的高质量目标。",
         ),
         "available": bool(chat),
     }
@@ -231,33 +244,57 @@ def resolve_model(
                 source=str(catalog.get("source") or "configured"),
             )
         if task == "analysis":
-            selected = _best_target(targets)
-            reason = _text(
-                locale,
-                "Auto selected the highest-ranked image-capable deployment.",
-                "自动选择排名最高的图像输入兼容部署。",
+            selected = _configured_target(
+                targets, settings.foundry_analysis_deployment
             )
+            if selected:
+                reason = _text(
+                    locale,
+                    "Auto used the configured, smoke-tested analysis deployment.",
+                    "自动使用了已配置且已冒烟验证的分析部署。",
+                )
+            else:
+                selected = _reviewed_priority_target(
+                    targets, _ANALYSIS_AUTO_PRIORITY
+                )
+                reason = _text(
+                    locale,
+                    "Auto used the reviewed analysis-priority fallback because the configured analysis deployment is unavailable.",
+                    "由于已配置的分析部署不可用，自动使用了已审核的分析优先级回退。",
+                )
         else:
             text = (prompt or "").lower()
             complex_question = len(text) > 180 or any(
                 cue in text for cue in _COMPLEX_CHAT_CUES
             )
             if complex_question:
-                selected = _best_target(targets)
+                selected = _reviewed_priority_target(
+                    targets, _CHAT_EVIDENCE_PRIORITY
+                )
                 reason = _text(
                     locale,
-                    "Auto selected the highest-ranked compatible deployment for evidence reasoning.",
-                    "自动为证据推理选择排名最高的兼容部署。",
+                    "Auto used the reviewed chat-quality target for a complex evidence question.",
+                    "自动为复杂证据问题使用了已审核的聊天高质量目标。",
                 )
             else:
                 selected = _configured_target(
                     targets, settings.foundry_chat_deployment
-                ) or _best_target(targets)
-                reason = _text(
-                    locale,
-                    "Auto selected the configured chat deployment for a short follow-up.",
-                    "自动为简短追问选择已配置的聊天部署。",
                 )
+                if selected:
+                    reason = _text(
+                        locale,
+                        "Auto used the configured low-latency chat deployment for a simple follow-up.",
+                        "自动为简单追问使用了已配置的低延迟聊天部署。",
+                    )
+                else:
+                    selected = _reviewed_priority_target(
+                        targets, _CHAT_EVIDENCE_PRIORITY
+                    )
+                    reason = _text(
+                        locale,
+                        "Auto used the reviewed chat-quality fallback because the configured chat deployment is unavailable.",
+                        "由于已配置的聊天部署不可用，自动使用了已审核的聊天高质量回退。",
+                    )
         requested_value = "auto"
     else:
         selected = allowed.get(alias)

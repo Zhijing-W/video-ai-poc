@@ -41,9 +41,9 @@ def test_auto_routing_uses_discovered_targets_and_reports_actual_reason(
                     "capabilities": {"chat": True, "image_input": True},
                 },
                 {
-                    "deployment": "analysis-gpt5",
-                    "model": "gpt-5",
-                    "label": "analysis-gpt5 (gpt-5)",
+                    "deployment": "analysis-gpt54",
+                    "model": "gpt-5.4",
+                    "label": "analysis-gpt54 (gpt-5.4)",
                     "capabilities": {"chat": True, "image_input": True},
                 },
                 {
@@ -56,6 +56,7 @@ def test_auto_routing_uses_discovered_targets_and_reports_actual_reason(
         ),
     )
     with settings.override(
+        foundry_analysis_deployment="analysis-gpt41",
         foundry_chat_deployment="chat-mini",
     ):
         analysis = resolve_model("analysis", "auto", locale="en")
@@ -67,14 +68,36 @@ def test_auto_routing_uses_discovered_targets_and_reports_actual_reason(
             locale="en",
         )
 
-    assert analysis.selected == "analysis-gpt5"
-    assert analysis.deployment == "analysis-gpt5"
-    assert "highest-ranked image-capable" in analysis.reason
+    assert analysis.selected == "analysis-gpt41"
+    assert analysis.deployment == "analysis-gpt41"
+    assert analysis.reason == "Auto used the configured, smoke-tested analysis deployment."
     assert simple.selected == "chat-mini"
     assert simple.deployment == "chat-mini"
-    assert "configured chat deployment" in simple.reason
-    assert complex_question.selected == "analysis-gpt5"
-    assert "evidence reasoning" in complex_question.reason
+    assert simple.reason == (
+        "Auto used the configured low-latency chat deployment for a simple follow-up."
+    )
+    assert complex_question.selected == "analysis-gpt54"
+    assert complex_question.reason == (
+        "Auto used the reviewed chat-quality target for a complex evidence question."
+    )
+
+    with settings.override(
+        foundry_analysis_deployment="missing-analysis",
+        foundry_chat_deployment="missing-chat",
+    ):
+        fallback_analysis = resolve_model("analysis", "auto", locale="en")
+        fallback_chat = resolve_model("chat", "auto", prompt="short", locale="en")
+
+    assert fallback_analysis.selected == "analysis-gpt54"
+    assert fallback_analysis.reason == (
+        "Auto used the reviewed analysis-priority fallback because the configured "
+        "analysis deployment is unavailable."
+    )
+    assert fallback_chat.selected == "analysis-gpt54"
+    assert fallback_chat.reason == (
+        "Auto used the reviewed chat-quality fallback because the configured chat "
+        "deployment is unavailable."
+    )
 
 
 def test_legacy_environment_lookup_and_unconfigured_dry_run(monkeypatch) -> None:
@@ -155,14 +178,21 @@ def test_model_labels_and_auto_reasons_follow_page_language(monkeypatch) -> None
 
     english = model_catalog(locale="en")
     chinese = model_catalog(locale="zh-CN")
-    english_selection = resolve_model("analysis", "auto", locale="en")
-    chinese_selection = resolve_model("analysis", "auto", locale="zh-CN")
+    with settings.override(foundry_analysis_deployment="missing-analysis"):
+        english_selection = resolve_model("analysis", "auto", locale="en")
+        chinese_selection = resolve_model("analysis", "auto", locale="zh-CN")
 
-    assert english["analysis"][0]["label"] == "Auto (best compatible deployment)"
-    assert "质量" not in english["analysis"][0]["label"]
-    assert "highest-ranked" in english_selection.reason
-    assert chinese["analysis"][0]["label"] == "自动（最佳兼容部署）"
-    assert "自动选择" in chinese_selection.reason
+    assert english["analysis"][0]["label"] == "Auto"
+    assert "reviewed analysis priority" in english["analysis"][0]["description"]
+    assert english_selection.reason == (
+        "Auto used the reviewed analysis-priority fallback because the configured "
+        "analysis deployment is unavailable."
+    )
+    assert chinese["analysis"][0]["label"] == "自动"
+    assert "已审核的分析优先级" in chinese["analysis"][0]["description"]
+    assert chinese_selection.reason == (
+        "由于已配置的分析部署不可用，自动使用了已审核的分析优先级回退。"
+    )
 
 
 def test_gpt5_uses_supported_completion_parameter() -> None:

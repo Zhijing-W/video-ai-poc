@@ -645,6 +645,12 @@ def test_llm_model_catalog_and_unknown_analysis_model_validation(monkeypatch) ->
     body = catalog.json()
     assert body["defaults"] == {"analysis": "auto", "chat": "auto"}
     assert body["auth"] in {"managed_identity", "api_key"}
+    assert body["analysis"][0]["label"] == "自动"
+    assert "已冒烟验证" in body["analysis"][0]["description"]
+    english_catalog = client.get("/api/event-monitor/llm-models?language=en")
+    assert english_catalog.status_code == 200
+    assert english_catalog.json()["analysis"][0]["label"] == "Auto"
+    assert "smoke-tested" in english_catalog.json()["analysis"][0]["description"]
     assert {"auto", "analysis-unit", "chat-unit"} <= {
         item["alias"] for item in body["analysis"]
     }
