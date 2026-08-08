@@ -643,6 +643,7 @@ def _finish_session(
 
         # ---- LANE D：场景文字 OCR —— 在该窗关键帧上读时间戳/车牌/单号，汇成 scene_context ----
         scene_context = ""
+        ocr_evidence: list[dict] = []
         if ocr_use:
             per_frame = []
             for i in sel:
@@ -655,6 +656,7 @@ def _finish_session(
                     "timestamp": metas[i].timestamp if 0 <= i < len(metas) else None,
                     "texts": ocr_cache[i],
                 })
+            ocr_evidence = per_frame
             scene_context = ocr_mod.format_scene_context(
                 per_frame,
                 language=report_language,
@@ -683,6 +685,7 @@ def _finish_session(
         }
         if scene_context:
             window_out["scene_context"] = scene_context
+            window_out["ocr_evidence"] = ocr_evidence
         if object_context:
             window_out["object_context"] = object_context
             window_out["objects"] = object_list
@@ -702,6 +705,7 @@ def _finish_session(
                 object_context=object_context or None,
                 language=report_language,
                 model=llm_model,
+                window=window_out,
             )
             event_understanding_seconds += time.perf_counter() - event_understanding_started
         else:

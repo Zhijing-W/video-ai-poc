@@ -138,6 +138,7 @@ def complete_from_dry_run(body: dict = Body(...)) -> dict:
             scene_context=w.get("scene_context") or None,
             object_context=w.get("object_context") or None,
             language=report_language,
+            window=w,
         )
 
     payload["dry_run"] = False

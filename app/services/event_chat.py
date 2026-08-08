@@ -11,6 +11,7 @@ from ..core.config import OUTPUT_DIR, settings
 from ..event_monitor_i18n import normalize_report_language
 from ..openai_client import get_client, parse_json
 from .llm_models import ModelSelection
+from .prompt_compaction import compact_evidence
 
 RUNS_DIR = OUTPUT_DIR / "event-monitor"
 _RUN_ID = re.compile(r"^[a-f0-9]{12}$")
@@ -60,6 +61,9 @@ def _compact_payload(payload: dict) -> dict:
                 "time_range": window.get("time_range"),
                 "event": window.get("event"),
                 "people": window.get("people"),
+                "spatial_grounding": window.get("spatial_grounding"),
+                "ocr_evidence": window.get("ocr_evidence"),
+                "objects": window.get("objects"),
                 "identity_context": window.get("identity_context"),
                 "scene_context": window.get("scene_context"),
                 "object_context": window.get("object_context"),
@@ -83,6 +87,7 @@ def _compact_payload(payload: dict) -> dict:
 
 
 def persist_run_snapshot(payload: dict) -> None:
+    """Persist canonical JSON evidence; compact TSV is generated only at prompt time."""
     run_id = str(payload.get("run_id") or "")
     path = _run_dir(run_id)
     path.mkdir(parents=True, exist_ok=True)
@@ -141,7 +146,11 @@ def chat_about_run(
             {
                 "role": "system",
                 "content": "【本次视频分析证据】\n"
-                + json.dumps(snapshot, ensure_ascii=False, separators=(",", ":")),
+                + compact_evidence(
+                    snapshot.get("windows") or [],
+                    overall=snapshot.get("overall"),
+                    run_metadata=snapshot,
+                ),
             }
         )
         messages.append(

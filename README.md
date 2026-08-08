@@ -41,6 +41,19 @@ The traditional computer-vision pipeline determines **who is present and where**
 - Multimodal event reports and a text-only overall video summary.
 - Web timeline with keyframes, identity cards, alerts, and per-run settings.
 - Dry-run mode for validating the CV pipeline without calling the LLM.
+- Compact normalized evidence tables for LLM calls and run follow-up chat.
+
+### Compact LLM evidence protocol
+
+`result.json` remains the canonical JSON artifact. Immediately before a per-window
+report, dry-run completion, overall summary, or follow-up chat call, the service
+projects that JSON into deterministic `EM-EVIDENCE-TSV/1` tables. Each table has one
+header and uses subject IDs and window IDs as references, avoiding repeated JSON
+field names while preserving window/time, subjects, actions, spatial evidence, OCR,
+and object citations. Tabs, newlines, and Unicode are JSON-escaped inside cells.
+OCR and all other supplied evidence are explicitly untrusted, so embedded prompt
+injection text is never treated as an instruction. Image data URIs remain multimodal
+image inputs and are never copied into text prompts.
 
 ### Requirements
 
