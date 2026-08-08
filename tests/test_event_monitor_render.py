@@ -206,6 +206,68 @@ console.log(JSON.stringify({{
     assert "实测阶段耗时" not in result["stage"]
 
 
+@pytest.mark.parametrize(
+    ("locale", "expand_text", "collapse_text", "unavailable_text"),
+    [
+        ("en", "Show details", "Hide details", "unavailable"),
+        ("zh-CN", "展开详情", "收起详情", "不可用"),
+    ],
+)
+def test_measured_timings_are_collapsed_and_keep_truthful_widths(
+    locale: str,
+    expand_text: str,
+    collapse_text: str,
+    unavailable_text: str,
+) -> None:
+    render_url = json.dumps(
+        (ROOT / "static" / "js" / "event-monitor" / "render.js").as_uri()
+    )
+    bundle = _bundle(locale, "results", "timings")
+    result = _run_module_script(
+        f"""
+globalThis.__EVENT_MONITOR_I18N__ = {bundle};
+const elements = {{
+  timings: {{ hidden: true, innerHTML: "" }},
+}};
+globalThis.document = {{
+  getElementById: (id) => elements[id],
+}};
+const {{ renderTimings }} = await import({render_url});
+renderTimings({{
+  elapsed_seconds: "5",
+  stage_timings: {{
+    longest: 4,
+    tiny: 0.02,
+    zero: 0,
+    invalid: "not-a-number",
+    negative: -1,
+  }},
+}});
+console.log(JSON.stringify(elements.timings));
+"""
+    )
+
+    html = result["innerHTML"]
+    assert result["hidden"] is False
+    assert '<details class="em-timings-details">' in html
+    assert '<details class="em-timings-details" open' not in html
+    assert expand_text in html
+    assert collapse_text in html
+    assert "not live progress" in html or "不是实时进度" in html
+    assert 'style="width:100.000%"' in html
+    assert 'style="width:0.500%"' in html
+    assert 'class="em-tbar-marker"' in html
+    assert "0ms · 0%" in html
+    assert html.count(unavailable_text) >= 2
+    assert "NaN" not in html
+    assert "Infinity" not in html
+    timing_css = (ROOT / "static" / "css" / "event-monitor" / "polish.css").read_text(
+        encoding="utf-8"
+    )
+    assert ".em-tbar-fill {\n  display: block;" in timing_css
+    assert ".em-tbar-marker {" in timing_css
+
+
 def test_dynamic_translation_and_gallery_markup_follow_selected_language() -> None:
     render_url = json.dumps(
         (ROOT / "static" / "js" / "event-monitor" / "render.js").as_uri()

@@ -213,7 +213,7 @@
       <div id="meta" class="em-meta"></div>
       <div id="cfgSummary" class="em-cfgsummary" hidden></div>
       <div id="reidDiagnostics" class="em-reid-diagnostics" hidden></div>
-      <div id="timings" class="em-timings" hidden></div>
+      <section id="timings" class="em-timings" aria-live="polite" hidden></section>
       <div id="resultTools" class="em-tools" hidden>
         <button id="btnSendLlm" class="em-tool-btn" hidden>{{ ui.results.send_llm_button }}</button>
         <button id="btnDownloadJson" class="em-tool-btn">{{ ui.results.download_json_button }}</button>
@@ -257,6 +257,6 @@
   <script>
     globalThis.__EVENT_MONITOR_I18N__ = {{ ui_bundle | tojson }};
   </script>
-  <script type="module" src="/static/js/event-monitor/main.js?v=20260808-foundry-routing"></script>
+  <script type="module" src="/static/js/event-monitor/main.js?v=20260808-timing-panel-ux"></script>
 </body>
 </html>

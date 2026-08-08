@@ -182,6 +182,9 @@ separately. These overlapping per-call totals are diagnostic and must not be add
 to the mutually exclusive `stage_timings`. DIFFER CPU and high-concurrency
 performance are not validated; operators should measure the target demo video on
 the target hardware (including the intended T4) before making a latency claim.
+The Event Monitor presents post-run `stage_timings` in a collapsed-by-default
+details panel. Its bars are relative to the longest measured stage (with a distinct
+marker for sub-1% nonzero stages), and are not live progress indicators.
 
 ### Project structure
 

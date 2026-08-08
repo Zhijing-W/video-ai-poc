@@ -17,7 +17,7 @@ import {
   setBackendIndicator,
   setStatus,
   showRunFailure,
-} from "./render.js?v=20260808-foundry-routing";
+} from "./render.js?v=20260808-timing-panel-ux";
 import {
   closeSettings,
   collectAnalysisRequest,

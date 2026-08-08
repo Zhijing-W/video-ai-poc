@@ -137,42 +137,105 @@ function renderConfigSummary(data) {
   $("cfgSummary").innerHTML = `${t("results.config_title")} ${chips.map((chip) => `<span class="em-cfgchip">${chip}</span>`).join(" ")}`;
 }
 
-function renderTimings(data) {
-  const stageTimings = data.stage_timings || {};
+function parseTimingValue(value) {
+  if (typeof value !== "number" && typeof value !== "string") return null;
+  const normalized = typeof value === "string" ? value.trim() : value;
+  if (normalized === "") return null;
+  const seconds = Number(normalized);
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
+}
+
+function formatTimingDuration(seconds) {
+  if (seconds === 0) return "0ms";
+  if (seconds < 0.001) return `${(seconds * 1000000).toFixed(0)}μs`;
+  if (seconds < 1) return `${(seconds * 1000).toFixed(seconds < 0.01 ? 1 : 0)}ms`;
+  return `${seconds.toFixed(2)}s`;
+}
+
+export function renderTimings(data) {
+  const stageTimings = data.stage_timings;
+  if (!stageTimings || typeof stageTimings !== "object" || Array.isArray(stageTimings)) {
+    $("timings").hidden = true;
+    return;
+  }
+
   const rows = Object.entries(stageTimings)
-    .map(([key, value]) => ({ key, value: +value }))
-    .filter((row) => Number.isFinite(row.value) && row.value > 0)
-    .sort((left, right) => right.value - left.value);
+    .map(([key, rawValue]) => ({
+      key,
+      value: parseTimingValue(rawValue),
+    }))
+    .sort((left, right) => {
+      if (left.value === null) return right.value === null ? 0 : 1;
+      if (right.value === null) return -1;
+      return right.value - left.value;
+    });
 
   if (!rows.length) {
     $("timings").hidden = true;
     return;
   }
 
-  const max = Math.max(...rows.map((row) => row.value), 0.01);
-  const total = rows.reduce((sum, row) => sum + row.value, 0);
-  const formatDuration = (seconds) => {
-    if (seconds < 0.001) return `${(seconds * 1000000).toFixed(0)}μs`;
-    if (seconds < 1) return `${(seconds * 1000).toFixed(seconds < 0.01 ? 1 : 0)}ms`;
-    return `${seconds.toFixed(2)}s`;
-  };
+  const positiveRows = rows.filter((row) => row.value !== null && row.value > 0);
+  const max = positiveRows.length ? Math.max(...positiveRows.map((row) => row.value)) : 0;
+  const total = positiveRows.reduce((sum, row) => sum + row.value, 0);
   const bars = rows
     .map((row, index) => {
-      const pct = (row.value / max) * 100;
-      const share = total > 0 ? ((row.value / total) * 100).toFixed(0) : "0";
+      const stageText = stageLabel(row.key) || row.key;
+      const stage = esc(stageText);
+      if (row.value === null) {
+        return (
+          `<div class="em-tbar is-unavailable">` +
+          `<span class="em-tbar-label">${stage}</span>` +
+          `<span class="em-tbar-track" role="img" aria-label="${esc(t("results.timings_invalid_bar_label", { stage: stageText }))}"></span>` +
+          `<span class="em-tbar-val">${esc(t("results.timings_invalid"))}</span></div>`
+        );
+      }
+
+      if (row.value === 0) {
+        return (
+          `<div class="em-tbar is-zero">` +
+          `<span class="em-tbar-label">${stage}</span>` +
+          `<span class="em-tbar-track" role="img" aria-label="${esc(t("results.timings_zero_bar_label", { stage: stageText }))}"></span>` +
+          `<span class="em-tbar-val">${esc(t("results.timings_zero"))}</span></div>`
+        );
+      }
+
+      const relativePct = (row.value / max) * 100;
+      const share = (row.value / total) * 100;
+      const duration = formatTimingDuration(row.value);
+      const tiny = relativePct < 1;
+      const fill = `<span class="em-tbar-fill" aria-hidden="true" style="width:${relativePct.toFixed(3)}%"></span>`;
+      const marker = tiny
+        ? `<span class="em-tbar-marker" aria-hidden="true" title="${esc(t("results.timings_tiny_marker"))}"></span>`
+        : "";
       return (
         `<div class="em-tbar ${index === 0 ? "top" : ""}">` +
-        `<span class="em-tbar-label">${esc(stageLabel(row.key) || row.key)}</span>` +
-        `<span class="em-tbar-track"><span class="em-tbar-fill" style="width:${pct.toFixed(1)}%"></span></span>` +
-        `<span class="em-tbar-val">${formatDuration(row.value)} · ${share}%</span></div>`
+        `<span class="em-tbar-label">${stage}</span>` +
+        `<span class="em-tbar-track${tiny ? " has-tiny-marker" : ""}" role="img" aria-label="${esc(t("results.timings_bar_label", {
+          stage: stageText,
+          duration,
+          share: share.toFixed(1),
+        }))}">${fill}${marker}</span>` +
+        `<span class="em-tbar-val">${duration} · ${share.toFixed(1)}%</span></div>`
       );
     })
     .join("");
 
+  const elapsedSeconds = parseTimingValue(data.elapsed_seconds);
+  const totalLabel = elapsedSeconds === null
+    ? esc(t("results.timings_invalid"))
+    : esc(t("results.timings_total", { seconds: elapsedSeconds }));
   $("timings").hidden = false;
   $("timings").innerHTML =
-    `<div class="em-timings-head">${esc(t("results.timings_title"))}` +
-    `<span class="tot">${esc(t("results.timings_total", { seconds: data.elapsed_seconds }))}</span></div>${bars}`;
+    `<details class="em-timings-details">` +
+    `<summary aria-label="${esc(t("results.timings_toggle_label"))}" aria-describedby="timingsMeasuredNote">` +
+    `<span class="em-timings-title">${esc(t("results.timings_title"))}</span>` +
+    `<span class="em-timings-action em-timings-expand" aria-hidden="true">${esc(t("results.timings_expand"))}</span>` +
+    `<span class="em-timings-action em-timings-collapse" aria-hidden="true">${esc(t("results.timings_collapse"))}</span></summary>` +
+    `<div class="em-timings-content">` +
+    `<div id="timingsMeasuredNote" class="em-timings-note">${esc(t("results.timings_measured_note"))}</div>` +
+    `<div class="em-timings-head"><span>${esc(t("results.timings_relative_hint"))}</span>` +
+    `<span class="tot">${totalLabel}</span></div>${bars}</div></details>`;
 }
 
 export function renderReidDiagnostics(data) {
