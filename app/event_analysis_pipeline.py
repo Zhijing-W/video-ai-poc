@@ -179,6 +179,7 @@ def analyze_event_stream(
     overall_summary: bool | None = None,
     report_language: str | None = None,
     llm_model: str | None = None,
+    llm_model_name: str | None = None,
 ) -> dict:
     """对一段视频做"身份感知·多帧事件理解"的完整端到端处理。"""
     video_path = Path(video_path)
@@ -215,6 +216,7 @@ def analyze_event_stream(
             overall_summary=overall_summary,
             report_language=report_language,
             llm_model=llm_model,
+            llm_model_name=llm_model_name,
             stage_timings=stage_timings,
             t_start=t_start,
         ),
@@ -270,6 +272,7 @@ def _finish_session(
     overall_summary: bool | None,
     report_language: str | None,
     llm_model: str | None,
+    llm_model_name: str | None,
     stage_timings: dict[str, float],
     t_start: float,
 ) -> dict:
@@ -709,6 +712,7 @@ def _finish_session(
                 object_context=object_context or None,
                 language=report_language,
                 model=llm_model,
+                model_name=llm_model_name,
                 window=window_out,
             )
             event_understanding_seconds += time.perf_counter() - event_understanding_started
@@ -729,6 +733,7 @@ def _finish_session(
                 out_windows,
                 language=report_language,
                 model=llm_model,
+                model_name=llm_model_name,
             ) or None
         except Exception as exc:  # 总结失败不致命：逐窗结果仍在
             overall = {"error": str(exc)}

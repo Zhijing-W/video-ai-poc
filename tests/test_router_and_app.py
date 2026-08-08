@@ -605,19 +605,31 @@ def test_llm_model_catalog_and_unknown_analysis_model_validation(monkeypatch) ->
                     "deployment": "analysis-unit",
                     "model": "gpt-4.1",
                     "label": "analysis-unit (gpt-4.1)",
-                    "capabilities": {"chat": True, "image_input": True},
+                    "capabilities": {
+                        "chat": True,
+                        "image_input": True,
+                        "json_output": True,
+                    },
                 },
                 {
                     "deployment": "chat-unit",
                     "model": "gpt-4.1-mini",
                     "label": "chat-unit (gpt-4.1-mini)",
-                    "capabilities": {"chat": True, "image_input": True},
+                    "capabilities": {
+                        "chat": True,
+                        "image_input": True,
+                        "json_output": True,
+                    },
                 },
                 {
                     "deployment": "embedding",
                     "model": "text-embedding-3-large",
                     "label": "embedding (text-embedding-3-large)",
-                    "capabilities": {"chat": False, "image_input": False},
+                    "capabilities": {
+                        "chat": False,
+                        "image_input": False,
+                        "json_output": False,
+                    },
                 },
             ],
         },
@@ -686,7 +698,11 @@ def test_run_chat_uses_validated_backend_model_alias(monkeypatch) -> None:
                     "deployment": "chat-unit",
                     "model": "gpt-4.1-mini",
                     "label": "chat-unit (gpt-4.1-mini)",
-                    "capabilities": {"chat": True, "image_input": True},
+                    "capabilities": {
+                        "chat": True,
+                        "image_input": True,
+                        "json_output": True,
+                    },
                 }
             ],
         },

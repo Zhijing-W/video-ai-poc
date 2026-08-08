@@ -153,5 +153,44 @@ def test_reviewed_gpt5_metadata_is_callable_for_image_analysis() -> None:
         "description": "Highest quality for complex visual evidence.",
         "context": "Large context",
         "performance": "Complex tasks",
-        "capabilities": {"chat": True, "image_input": True},
+        "capabilities": {"chat": True, "image_input": True, "json_output": True},
     }
+
+
+def test_metadata_rejects_a_provider_format_mismatch() -> None:
+    assert llm_catalog._target(
+        "not-openai",
+        "gpt-5.4",
+        "Succeeded",
+        {"chatCompletion": "true"},
+        "DeepSeek",
+    ) is None
+
+
+def test_reviewed_partner_metadata_matches_smoke_test_contract() -> None:
+    phi = llm_catalog._target(
+        "Phi-4-reasoning",
+        "Phi-4-reasoning",
+        "Succeeded",
+        {"chatCompletion": "true"},
+        "Microsoft",
+    )
+    deepseek = llm_catalog._target(
+        "DeepSeek-V4-Flash",
+        "DeepSeek-V4-Flash",
+        "Succeeded",
+        {"chatCompletion": "true"},
+        "DeepSeek",
+    )
+
+    assert phi["provider"] == "microsoft"
+    assert phi["capabilities"] == {
+        "chat": True,
+        "image_input": False,
+        "json_output": True,
+    }
+    assert deepseek["provider"] == "deepseek"
+    assert deepseek["capabilities"]["image_input"] is True
+    assert llm_catalog._target(
+        "Kimi-K2.6", "Kimi-K2.6", "Succeeded", {"chatCompletion": "true"}, "MoonshotAI"
+    ) is None

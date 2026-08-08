@@ -16,6 +16,8 @@ from app.services.llm_models import (
 
 
 def _catalog(targets: list[dict]) -> dict:
+    for target in targets:
+        target.setdefault("capabilities", {}).setdefault("json_output", True)
     return {
         "source": "arm",
         "warning": None,
@@ -170,6 +172,94 @@ def test_gpt5_uses_supported_completion_parameter() -> None:
     assert chat_completion_options(
         "gpt-4.1", max_tokens=400, temperature=0.2
     ) == {"max_tokens": 400, "temperature": 0.2}
+
+
+def test_chat_uses_model_identifier_not_opaque_gpt5_deployment(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(event_chat, "RUNS_DIR", tmp_path)
+    event_chat.persist_run_snapshot(
+        {"run_id": "abcdef123456", "video": "demo.mp4", "windows": []}
+    )
+    requests: list[dict] = []
+    response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(
+                    content='{"answer":"ok","evidence":[],"limitations":""}'
+                )
+            )
+        ],
+        usage=None,
+    )
+    monkeypatch.setattr(
+        event_chat,
+        "get_client",
+        lambda: SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(
+                    create=lambda **kwargs: requests.append(kwargs) or response
+                )
+            )
+        ),
+    )
+    selection = ModelSelection(
+        task="chat",
+        requested="event-quality-gpt54",
+        selected="event-quality-gpt54",
+        model="gpt-5.4",
+        deployment="event-quality-gpt54",
+        reason="unit test",
+    )
+
+    event_chat.chat_about_run("abcdef123456", "What happened?", selection)
+
+    assert requests[0]["model"] == "event-quality-gpt54"
+    assert requests[0]["max_completion_tokens"] > 0
+    assert "max_tokens" not in requests[0]
+    assert "temperature" not in requests[0]
+
+
+def test_partner_capabilities_only_offer_phi_for_json_chat(monkeypatch) -> None:
+    monkeypatch.setattr(
+        llm_models,
+        "event_llm_catalog",
+        lambda: _catalog(
+            [
+                {
+                    "deployment": "Phi-4-reasoning",
+                    "model": "Phi-4-reasoning",
+                    "label": "Phi-4 reasoning",
+                    "provider": "microsoft",
+                    "capabilities": {
+                        "chat": True,
+                        "image_input": False,
+                        "json_output": True,
+                    },
+                },
+                {
+                    "deployment": "DeepSeek-V4-Flash",
+                    "model": "DeepSeek-V4-Flash",
+                    "label": "DeepSeek V4 Flash",
+                    "provider": "deepseek",
+                    "capabilities": {
+                        "chat": True,
+                        "image_input": True,
+                        "json_output": True,
+                    },
+                },
+            ]
+        ),
+    )
+
+    catalog = model_catalog(locale="en")
+    assert [item["alias"] for item in catalog["analysis"]] == [
+        "auto",
+        "DeepSeek-V4-Flash",
+    ]
+    assert {item["alias"] for item in catalog["chat"]} == {
+        "auto",
+        "Phi-4-reasoning",
+        "DeepSeek-V4-Flash",
+    }
 
 
 def test_run_snapshot_omits_images_and_chat_persists_bounded_history(

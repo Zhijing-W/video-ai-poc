@@ -223,6 +223,44 @@ def test_reporter_paths_send_compact_evidence(monkeypatch) -> None:
     assert "THIS_MUST_NOT_APPEAR_IN_TEXT" not in overall_text
 
 
+def test_opaque_gpt5_deployment_uses_its_model_metadata(monkeypatch) -> None:
+    calls: list[dict] = []
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content='{"events":[]}'))],
+        usage=None,
+    )
+    monkeypatch.setattr(
+        event_reporter,
+        "get_client",
+        lambda: SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(
+                    create=lambda **kwargs: calls.append(kwargs) or response
+                )
+            )
+        ),
+    )
+    window = _window(1)
+    event_reporter.understand_event(
+        [{"timestamp": "00:01:00", "image": "data:image/jpeg;base64,IMAGE_ONLY"}],
+        model="event-quality-gpt54",
+        model_name="gpt-5.4",
+        window=window,
+    )
+    event_reporter.summarize_event_windows(
+        [window],
+        model="event-quality-gpt54",
+        model_name="gpt-5.4",
+    )
+
+    assert [call["model"] for call in calls] == [
+        "event-quality-gpt54",
+        "event-quality-gpt54",
+    ]
+    assert all(call["max_completion_tokens"] > 0 for call in calls)
+    assert all("max_tokens" not in call and "temperature" not in call for call in calls)
+
+
 def test_dry_run_completion_passes_canonical_window_to_compact_reporter(monkeypatch) -> None:
     captured: list[dict] = []
     selection = ModelSelection(
@@ -247,6 +285,8 @@ def test_dry_run_completion_passes_canonical_window_to_compact_reporter(monkeypa
 
     assert captured[0]["window"]["objects"][0]["label"] == "backpack"
     assert captured[0]["window"]["ocr_evidence"][0]["texts"][0]["text"].startswith("CAM-01")
+    assert captured[0]["model"] == "analysis-unit"
+    assert captured[0]["model_name"] == "gpt-4.1"
 
 
 def test_chat_prompt_uses_compact_evidence_without_images(monkeypatch, tmp_path) -> None:

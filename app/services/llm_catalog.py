@@ -37,7 +37,8 @@ _MODEL_METADATA: dict[str, dict[str, Any]] = {
         "description": "Balanced multimodal analysis.",
         "context": "128K context",
         "performance": "Balanced speed and quality",
-        "capabilities": {"chat": True, "image_input": True},
+        "capabilities": {"chat": True, "image_input": True, "json_output": True},
+        "formats": {"OpenAI"},
     },
     "gpt-4.1": {
         "friendly_name": "GPT-4.1",
@@ -46,7 +47,8 @@ _MODEL_METADATA: dict[str, dict[str, Any]] = {
         "description": "Strong detail and evidence reasoning.",
         "context": "Up to 1M context",
         "performance": "Quality-first",
-        "capabilities": {"chat": True, "image_input": True},
+        "capabilities": {"chat": True, "image_input": True, "json_output": True},
+        "formats": {"OpenAI"},
     },
     "gpt-4.1-mini": {
         "friendly_name": "GPT-4.1 mini",
@@ -55,7 +57,8 @@ _MODEL_METADATA: dict[str, dict[str, Any]] = {
         "description": "Fast, efficient follow-up chat.",
         "context": "Up to 1M context",
         "performance": "Fast responses",
-        "capabilities": {"chat": True, "image_input": True},
+        "capabilities": {"chat": True, "image_input": True, "json_output": True},
+        "formats": {"OpenAI"},
     },
     # These versions were deployed and image/JSON smoke-tested through the VM
     # managed identity on 2026-08-08. New model names are not inferred.
@@ -66,7 +69,8 @@ _MODEL_METADATA: dict[str, dict[str, Any]] = {
         "description": "Highest quality for complex visual evidence.",
         "context": "Large context",
         "performance": "Complex tasks",
-        "capabilities": {"chat": True, "image_input": True},
+        "capabilities": {"chat": True, "image_input": True, "json_output": True},
+        "formats": {"OpenAI"},
     },
     "gpt-5.4-mini": {
         "friendly_name": "GPT-5.4 mini",
@@ -75,7 +79,8 @@ _MODEL_METADATA: dict[str, dict[str, Any]] = {
         "description": "Efficient multimodal analysis and chat.",
         "context": "Large context",
         "performance": "Fast responses",
-        "capabilities": {"chat": True, "image_input": True},
+        "capabilities": {"chat": True, "image_input": True, "json_output": True},
+        "formats": {"OpenAI"},
     },
     "gpt-5.6-luna": {
         "friendly_name": "GPT-5.6 Luna",
@@ -84,7 +89,38 @@ _MODEL_METADATA: dict[str, dict[str, Any]] = {
         "description": "Versatile multimodal reasoning.",
         "context": "Large context",
         "performance": "Balanced speed and quality",
-        "capabilities": {"chat": True, "image_input": True},
+        "capabilities": {"chat": True, "image_input": True, "json_output": True},
+        "formats": {"OpenAI"},
+    },
+    "gpt-5.6-terra": {
+        "friendly_name": "GPT-5.6 Terra",
+        "provider": "openai",
+        "group": "Quality",
+        "description": "Highest-quality multimodal reasoning.",
+        "context": "Large context",
+        "performance": "Complex tasks",
+        "capabilities": {"chat": True, "image_input": True, "json_output": True},
+        "formats": {"OpenAI"},
+    },
+    "phi-4-reasoning": {
+        "friendly_name": "Phi-4 reasoning",
+        "provider": "microsoft",
+        "group": "Quality",
+        "description": "Reasoning-focused text and structured chat.",
+        "context": "Text-only",
+        "performance": "Deliberate reasoning",
+        "capabilities": {"chat": True, "image_input": False, "json_output": True},
+        "formats": {"Microsoft"},
+    },
+    "deepseek-v4-flash": {
+        "friendly_name": "DeepSeek V4 Flash",
+        "provider": "deepseek",
+        "group": "Fast",
+        "description": "Fast multimodal reasoning.",
+        "context": "Multimodal",
+        "performance": "Fast responses",
+        "capabilities": {"chat": True, "image_input": True, "json_output": True},
+        "formats": {"DeepSeek"},
     },
 }
 
@@ -104,7 +140,7 @@ def _model_capabilities(model: str | None, raw: object = None) -> dict[str, bool
     value = (model or "").strip().lower()
     profile = _MODEL_METADATA.get(value)
     if profile is None:
-        return {"chat": False, "image_input": False}
+        return {"chat": False, "image_input": False, "json_output": False}
     capabilities = raw if isinstance(raw, dict) else {}
     normalized = {str(key).lower(): str(item).lower() for key, item in capabilities.items()}
 
@@ -123,6 +159,7 @@ def _model_capabilities(model: str | None, raw: object = None) -> dict[str, bool
         "image_input": profile["capabilities"]["image_input"] if image is None else (
             profile["capabilities"]["image_input"] and image
         ),
+        "json_output": profile["capabilities"]["json_output"],
     }
 
 
@@ -131,6 +168,7 @@ def _target(
     model: object,
     status: object,
     capabilities: object = None,
+    model_format: object = None,
 ) -> dict[str, Any] | None:
     deployment_name = str(deployment or "").strip()
     model_name = str(model or deployment_name).strip()
@@ -139,6 +177,8 @@ def _target(
         return None
     profile = _MODEL_METADATA.get(model_name.lower())
     if profile is None:
+        return None
+    if model_format and str(model_format) not in profile["formats"]:
         return None
     return {
         "deployment": deployment_name,
@@ -243,6 +283,7 @@ def _fetch_arm_targets() -> list[dict[str, Any]]:
                 model.get("name") if isinstance(model, dict) else model,
                 properties.get("provisioningState"),
                 properties.get("capabilities"),
+                model.get("format") if isinstance(model, dict) else None,
             )
         )
     return _dedupe_targets([item for item in targets if item])
@@ -276,6 +317,7 @@ def _fetch_api_targets() -> list[dict[str, Any]]:
                 model,
                 item.get("status") or properties.get("provisioningState"),
                 properties.get("capabilities"),
+                (properties.get("model") or {}).get("format"),
             )
         )
     return _dedupe_targets([item for item in targets if item])

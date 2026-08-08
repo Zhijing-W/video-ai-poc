@@ -76,6 +76,17 @@ const modelPickerState = new Map();
 let modelPickerDocumentEventsWired = false;
 
 function providerMark(provider) {
+  if (provider === "microsoft") {
+    return `<svg class="em-provider-mark" viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="currentColor" d="M3 3h8v8H3zm10 0h8v8h-8zM3 13h8v8H3zm10 0h8v8h-8z"/>
+    </svg>`;
+  }
+  if (provider === "deepseek") {
+    return `<svg class="em-provider-mark" viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" d="M3 7.5 8.5 4l7 2 5.5 5-4 7H8l-5-4.5 4-3z"/>
+      <path fill="currentColor" d="M10 10h2v2h-2zm4 0h2v2h-2z"/>
+    </svg>`;
+  }
   if (provider !== "openai") return "";
   return `<svg class="em-provider-mark" viewBox="0 0 24 24" aria-hidden="true">
     <path fill="currentColor" d="M12 2.5a4.5 4.5 0 0 1 4.1 2.65 4.5 4.5 0 0 1 4.6 3.85 4.5 4.5 0 0 1-2.1 4.4 4.5 4.5 0 0 1-1.3 5.85 4.5 4.5 0 0 1-4.9-.3 4.5 4.5 0 0 1-5.65-2.1 4.5 4.5 0 0 1-3.15-3.75 4.5 4.5 0 0 1 2.1-4.35A4.5 4.5 0 0 1 7.1 3.1 4.5 4.5 0 0 1 12 2.5Zm0 2a2.5 2.5 0 0 0-2.45 2l-.03.18 3.73 2.15v4.3l-3.75 2.16A2.5 2.5 0 0 0 12 17.5a2.5 2.5 0 0 0 2.45-2l.03-.18-3.73-2.15v-4.3l3.75-2.16A2.5 2.5 0 0 0 12 4.5Z"/>

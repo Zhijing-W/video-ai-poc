@@ -140,6 +140,7 @@ def complete_from_dry_run(body: dict = Body(...)) -> dict:
             w.get("identity_context") or "",
             objective=objective,
             model=selection.deployment,
+            model_name=selection.model,
             scene_context=w.get("scene_context") or None,
             object_context=w.get("object_context") or None,
             language=report_language,
@@ -156,6 +157,7 @@ def complete_from_dry_run(body: dict = Body(...)) -> dict:
                 summarize_event_windows(
                     payload["windows"],
                     model=selection.deployment,
+                    model_name=selection.model,
                     language=report_language,
                 )
                 or None
@@ -367,6 +369,7 @@ async def understand(
                     session_id=f"event-monitor-{run_id}",
                     report_language=report_language,
                     llm_model=analysis_selection.deployment,
+                    llm_model_name=analysis_selection.model,
                 )
         except EventAnalysisRunError as exc:
             timing = exc.body_reid_timing

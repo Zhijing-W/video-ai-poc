@@ -61,6 +61,16 @@ _MODEL_DESCRIPTIONS_ZH = {
     "gpt-5.4": "适合复杂视觉证据的最高质量分析。",
     "gpt-5.4-mini": "高效的多模态分析与聊天。",
     "gpt-5.6-luna": "均衡的多模态推理。",
+    "gpt-5.6-terra": "最高质量的多模态推理。",
+    "phi-4-reasoning": "专注推理的文本和结构化聊天。",
+    "deepseek-v4-flash": "快速多模态推理。",
+}
+
+_REQUEST_FAMILY = {
+    "gpt-5.4": "gpt5",
+    "gpt-5.4-mini": "gpt5",
+    "gpt-5.6-luna": "gpt5",
+    "gpt-5.6-terra": "gpt5",
 }
 
 
@@ -78,6 +88,7 @@ def _targets(task: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         for target in catalog.get("callable_targets", [])
         if target.get("deployment")
         and (target.get("capabilities") or {}).get(capability) is True
+        and (target.get("capabilities") or {}).get("json_output") is True
         and (task != "analysis" or (target.get("capabilities") or {}).get("chat") is True)
     ]
     return targets, catalog
@@ -177,7 +188,7 @@ def chat_completion_options(
     model: str, *, max_tokens: int, temperature: float | None
 ) -> dict[str, Any]:
     """Return the supported output control for the selected reviewed model."""
-    if model.lower().startswith("gpt-5"):
+    if _REQUEST_FAMILY.get(model.lower()) == "gpt5":
         return {"max_completion_tokens": max_tokens}
     options: dict[str, Any] = {"max_tokens": max_tokens}
     if temperature is not None:

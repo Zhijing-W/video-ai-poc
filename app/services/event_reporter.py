@@ -113,6 +113,7 @@ def understand_event(
     identity: str | list[dict] | None = None,
     objective: str | None = None,
     model: str | None = None,
+    model_name: str | None = None,
     scene_context: str | None = None,
     object_context: str | None = None,
     language: str | None = None,
@@ -211,7 +212,9 @@ def understand_event(
     }
     request.update(
         chat_completion_options(
-            deployment, max_tokens=settings.event_llm_max_tokens, temperature=0.2
+            model_name or deployment,
+            max_tokens=settings.event_llm_max_tokens,
+            temperature=0.2,
         )
     )
     resp = _create_with_retry(client, **request)
@@ -255,6 +258,7 @@ WINDOW_SUMMARY_SCHEMA = (
 def summarize_event_windows(
     windows: list[dict],
     model: str | None = None,
+    model_name: str | None = None,
     language: str | None = None,
 ) -> dict:
     """把若干事件窗整合成整段视频的连贯事件故事（纯文本调用）。
@@ -298,7 +302,9 @@ def summarize_event_windows(
     }
     request.update(
         chat_completion_options(
-            deployment, max_tokens=settings.event_llm_max_tokens, temperature=0.2
+            model_name or deployment,
+            max_tokens=settings.event_llm_max_tokens,
+            temperature=0.2,
         )
     )
     resp = _create_with_retry(client, **request)
