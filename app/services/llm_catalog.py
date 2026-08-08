@@ -122,17 +122,6 @@ _MODEL_METADATA: dict[str, dict[str, Any]] = {
         "capabilities": {"chat": True, "image_input": False, "json_output": True},
         "formats": {"DeepSeek"},
     },
-    "kimi-k2.6": {
-    "friendly_name": "Kimi K2.6",
-    "provider": "moonshot",
-    "group": "Versatile",
-    "description": "Preview structured chat deployment.",
-    "context": "Chat-only",
-    "performance": "Long-context chat",
-    "preview": True,
-    "capabilities": {"chat": True, "image_input": False, "json_output": True},
-    "formats": {"MoonshotAI"},
-    },
 }
 
 
@@ -204,7 +193,6 @@ def _target(
         "description": profile["description"],
         "context": profile["context"],
         "performance": profile["performance"],
-        "preview": bool(profile.get("preview")),
         "capabilities": _model_capabilities(model_name, capabilities),
     }
 

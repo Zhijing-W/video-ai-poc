@@ -87,11 +87,6 @@ function providerMark(provider) {
       <path fill="currentColor" d="M10 10h2v2h-2zm4 0h2v2h-2z"/>
     </svg>`;
   }
-  if (provider === "moonshot") {
-    return `<svg class="em-provider-mark" viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="none" stroke="currentColor" stroke-width="2" d="M15.8 3.5a8.5 8.5 0 1 0 4.7 14.8A7.2 7.2 0 0 1 15.8 3.5Z"/>
-    </svg>`;
-  }
   if (provider !== "openai") return "";
   return `<svg class="em-provider-mark" viewBox="0 0 24 24" aria-hidden="true">
     <path fill="currentColor" d="M12 2.5a4.5 4.5 0 0 1 4.1 2.65 4.5 4.5 0 0 1 4.6 3.85 4.5 4.5 0 0 1-2.1 4.4 4.5 4.5 0 0 1-1.3 5.85 4.5 4.5 0 0 1-4.9-.3 4.5 4.5 0 0 1-5.65-2.1 4.5 4.5 0 0 1-3.15-3.75 4.5 4.5 0 0 1 2.1-4.35A4.5 4.5 0 0 1 7.1 3.1 4.5 4.5 0 0 1 12 2.5Zm0 2a2.5 2.5 0 0 0-2.45 2l-.03.18 3.73 2.15v4.3l-3.75 2.16A2.5 2.5 0 0 0 12 17.5a2.5 2.5 0 0 0 2.45-2l.03-.18-3.73-2.15v-4.3l3.75-2.16A2.5 2.5 0 0 0 12 4.5Z"/>
@@ -173,10 +168,9 @@ function renderPickerOptions(state) {
       const deployment = option.alias === "auto"
         ? option.description
         : `${option.description || ""} · ${option.context || ""} · ${option.performance || ""} · ${option.alias}`;
-      const preview = option.preview ? `<span class="em-model-preview">Preview</span>` : "";
       return `<button id="${state.task}ModelOption${optionIndex}" class="em-model-option${optionIndex === state.activeIndex ? " is-active" : ""}" type="button" role="option" aria-selected="${selectedOption}" data-alias="${esc(option.alias)}" title="${esc(deployment)}">
         ${providerMark(option.provider)}
-        <span><span class="em-model-primary">${esc(option.label)}${preview}</span><span class="em-model-secondary">${esc(deployment)}</span></span>
+        <span><span class="em-model-primary">${esc(option.label)}</span><span class="em-model-secondary">${esc(deployment)}</span></span>
         <span class="em-model-check">${selectedOption ? "✓" : `<span class="em-model-info" aria-label="${esc(t("panel.model_details"))}">ⓘ</span>`}</span>
       </button>`;
     }).join("");
