@@ -69,6 +69,32 @@ export function routeBadges(record) {
   return `<span class="em-routes">${badges.join("")}${confidence}</span>`;
 }
 
+function decisionLabel(decision) {
+  const known = new Set(["hit", "new", "grey", "stitched", "conflict_split"]);
+  return t(`gallery.decision_${known.has(decision) ? decision : "unknown"}`);
+}
+
+function evidenceStatus(record, route) {
+  if (route === "face") {
+    const face = record.face;
+    return face && face.observed !== false && face.eligibility !== "none"
+      ? t("gallery.evidence_available")
+      : t("gallery.evidence_unavailable");
+  }
+  const gait = record.gait;
+  return gait && gait.score != null
+    ? t("gallery.evidence_available")
+    : t("gallery.evidence_unavailable");
+}
+
+function displayScore(value) {
+  return Number.isFinite(Number(value)) ? Number(value).toFixed(2) : common("not_available");
+}
+
+function detailRow(label, value) {
+  return `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`;
+}
+
 export function renderSubjectGallery(data) {
   const tracks = data.tracks || {};
   const subjectMap = {};
@@ -80,16 +106,22 @@ export function renderSubjectGallery(data) {
       reused: false,
       local: false,
       split: false,
-      score: 0,
+      bestBodyScore: null,
       best: null,
       bestScore: -1,
+      decisions: new Set(),
     });
 
     group.tracks.push(trackId);
+    if (identity.decision) group.decisions.add(identity.decision);
     if (identity.reused) group.reused = true;
     if (identity.local_subject) group.local = true;
     if (identity.subject_conflict_split) group.split = true;
-    group.score = Math.max(group.score, identity.score || 0);
+    if (Number.isFinite(Number(identity.score))) {
+      group.bestBodyScore = group.bestBodyScore === null
+        ? Number(identity.score)
+        : Math.max(group.bestBodyScore, Number(identity.score));
+    }
 
     const score = identity.score || 0;
     if (identity.thumb && score >= group.bestScore) {
@@ -114,15 +146,41 @@ export function renderSubjectGallery(data) {
     if (group.reused) flags.push(`<span class="reused">${esc(t("gallery.return_visitor"))}</span>`);
     if (group.local) flags.push(esc(t("gallery.local_subject")));
     if (group.split) flags.push(esc(t("gallery.split_subject")));
+    const decisions = group.decisions.size
+      ? [...group.decisions].map(decisionLabel).join(", ")
+      : decisionLabel();
+    const fused = record.fused || {};
+    const primary = {
+      face: common("primary_face"),
+      body: common("primary_body"),
+      gait: common("primary_gait"),
+    }[fused.primary] || common("not_available");
+    const details = [
+      detailRow(t("gallery.track_ids"), group.tracks.join(", ")),
+      detailRow(t("gallery.decision"), decisions),
+      detailRow(t("gallery.reused"), t(group.reused ? "gallery.yes" : "gallery.no")),
+      detailRow(t("gallery.local"), t(group.local ? "gallery.yes" : "gallery.no")),
+      detailRow(t("gallery.conflict"), t(group.split ? "gallery.yes" : "gallery.no")),
+      detailRow(t("gallery.best_body_score"), displayScore(group.bestBodyScore)),
+      detailRow(t("gallery.face_evidence"), evidenceStatus(record, "face")),
+      detailRow(t("gallery.gait_evidence"), evidenceStatus(record, "gait")),
+    ];
+    if (Number.isFinite(Number(fused.confidence))) {
+      details.push(detailRow(t("gallery.fused_confidence"), `${(Number(fused.confidence) * 100).toFixed(0)}%`));
+    }
+    if (fused.primary) details.push(detailRow(t("gallery.primary_route"), primary));
 
     return (
-      `<div class="em-subcard" style="--hue:${hue}">` +
+      `<details class="em-subcard" style="--hue:${hue}">` +
+      `<summary class="em-subcard-summary" aria-label="${esc(t("gallery.details_toggle", { subject: title }))}">` +
       `<div class="em-avatar">${thumb}</div>` +
       `<div class="em-subinfo">` +
       `<div class="em-subtitle">${esc(title)}</div>` +
       `<div class="em-submeta">${esc(t("gallery.tracks", { count: group.tracks.length }))}${flags.length ? ` · ${flags.join(" · ")}` : ""}</div>` +
       routeBadges(record) +
-      "</div></div>"
+      `</div></summary>` +
+      `<div class="em-subdetails"><div class="em-subdetails-title">${esc(t("gallery.details"))}</div>` +
+      `<dl class="em-subdetails-grid">${details.join("")}</dl></div></details>`
     );
   });
 

@@ -8,8 +8,9 @@ import time
 from pathlib import Path
 
 from ..core.config import OUTPUT_DIR, settings
-from ..event_monitor_i18n import normalize_report_language
+from ..event_monitor_i18n import normalize_report_language, resolve_report_language
 from ..openai_client import get_client, parse_json
+from ..subject_language import normalize_subject_references
 from .llm_models import ModelSelection, chat_completion_options
 from .prompt_compaction import compact_evidence
 
@@ -94,11 +95,16 @@ def _compact_payload(payload: dict) -> dict:
 
 def persist_run_snapshot(payload: dict) -> None:
     """Persist canonical JSON evidence; compact TSV is generated only at prompt time."""
-    run_id = str(payload.get("run_id") or "")
+    report_language = resolve_report_language(payload.get("report_language"))
+    normalized_payload = normalize_subject_references(payload, report_language)
+    if not isinstance(normalized_payload, dict):
+        raise TypeError("分析结果格式无效")
+    normalized_payload["report_language"] = report_language
+    run_id = str(normalized_payload.get("run_id") or "")
     path = _run_dir(run_id)
     path.mkdir(parents=True, exist_ok=True)
     (path / "result.json").write_text(
-        json.dumps(_compact_payload(payload), ensure_ascii=False, indent=2),
+        json.dumps(_compact_payload(normalized_payload), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
@@ -185,6 +191,7 @@ def chat_about_run(
     selection: ModelSelection,
 ) -> dict:
     run_dir, snapshot = _load_snapshot(run_id)
+    report_language = resolve_report_language(snapshot.get("report_language"))
     with _LOCKS_GUARD:
         lock = _LOCKS.setdefault(run_id, threading.Lock())
 
@@ -196,7 +203,7 @@ def chat_about_run(
         messages.append(
             {
                 "role": "system",
-                "content": _language_instruction(snapshot.get("report_language")),
+                "content": _language_instruction(report_language),
             }
         )
         messages.append(
@@ -241,10 +248,13 @@ def chat_about_run(
         )
         response = get_client().chat.completions.create(**request)
         latency_ms = round((time.perf_counter() - started) * 1000, 1)
-        result = parse_json(response.choices[0].message.content or "{}")
+        result = parse_json(
+            response.choices[0].message.content or "{}",
+            language=report_language,
+        )
         answer = str(result.get("answer") or result.get("summary") or "").strip()
         if not answer:
-            answer = _fallback_answer(snapshot.get("report_language"))
+            answer = _fallback_answer(report_language)
         result["answer"] = answer
         result.setdefault("evidence", [])
         result.setdefault("limitations", "")

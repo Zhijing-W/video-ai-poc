@@ -223,6 +223,66 @@ def test_reporter_paths_send_compact_evidence(monkeypatch) -> None:
     assert "THIS_MUST_NOT_APPEAR_IN_TEXT" not in overall_text
 
 
+def test_reporter_normalizes_window_and_overall_subject_references(monkeypatch) -> None:
+    response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(
+                    content=json.dumps(
+                        {
+                            "events": [{"subject": "主体 #7", "action": "subject#7 leaves"}],
+                            "summary": "主体#7 leaves",
+                            "notification": "subject#7 alert",
+                            "subjects_involved": ["主体#7"],
+                            "overall_summary": "subject#7 appears",
+                            "story": [{"subject": "主体#7", "action": "subject #7 waits"}],
+                            "subjects": ["主体#7: observed"],
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+            )
+        ],
+        usage=None,
+    )
+    monkeypatch.setattr(
+        event_reporter,
+        "get_client",
+        lambda: SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(create=lambda **kwargs: response)
+            )
+        ),
+    )
+    window = _window(1)
+
+    per_window = event_reporter.understand_event(
+        [{"timestamp": "00:01:00", "image": "data:image/jpeg;base64,IMAGE_ONLY"}],
+        model="unit",
+        language="en",
+        window=window,
+    )
+    overall = event_reporter.summarize_event_windows(
+        [window],
+        model="unit",
+        language="en",
+    )
+
+    assert per_window["events"][0] == {
+        "subject": "subject#7",
+        "action": "subject#7 leaves",
+    }
+    assert per_window["summary"] == "subject#7 leaves"
+    assert per_window["notification"] == "subject#7 alert"
+    assert per_window["subjects_involved"] == ["subject#7"]
+    assert overall["overall_summary"] == "subject#7 appears"
+    assert overall["story"][0] == {
+        "subject": "subject#7",
+        "action": "subject#7 waits",
+    }
+    assert overall["subjects"] == ["subject#7: observed"]
+
+
 def test_opaque_gpt5_deployment_uses_its_model_metadata(monkeypatch) -> None:
     calls: list[dict] = []
     response = SimpleNamespace(

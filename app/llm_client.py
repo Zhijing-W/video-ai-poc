@@ -12,6 +12,7 @@ from azure.identity import (
 from openai import AzureOpenAI
 
 from .core.config import settings
+from .subject_language import normalize_subject_references
 from .utils.image_utils import image_to_data_uri
 from .video_processor import Frame
 
@@ -138,13 +139,14 @@ REALTIME_SYSTEM = (
 )
 
 
-def _parse_json(raw: str) -> dict:
+def _parse_json(raw: str, *, language: str | None = None) -> dict:
     try:
-        return json.loads(raw)
+        parsed = json.loads(raw)
     except json.JSONDecodeError:
         cleaned = raw.strip().strip("`")
         cleaned = cleaned[cleaned.find("{") : cleaned.rfind("}") + 1]
-        return json.loads(cleaned)
+        parsed = json.loads(cleaned)
+    return normalize_subject_references(parsed, language)
 
 
 def _format_detections(detections: list[dict] | None, img_w: int | None, img_h: int | None) -> str:

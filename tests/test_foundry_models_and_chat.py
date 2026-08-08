@@ -269,6 +269,7 @@ def test_run_snapshot_omits_images_and_chat_persists_bounded_history(
         "video": "C:\\videos\\demo.mp4",
         "fps": 2,
         "frames_total": 10,
+        "report_language": "en",
         "windows": [
             {
                 "window_index": 1,
@@ -288,6 +289,7 @@ def test_run_snapshot_omits_images_and_chat_persists_bounded_history(
         (tmp_path / "abcdef123456" / "result.json").read_text(encoding="utf-8")
     )
     assert saved["windows"][0]["keyframe_timestamps"] == ["00:03"]
+    assert saved["windows"][0]["event"]["summary"] == "subject#1 离开。"
     assert "secret-image" not in json.dumps(saved)
 
     response = SimpleNamespace(
@@ -336,7 +338,7 @@ def test_run_snapshot_omits_images_and_chat_persists_bounded_history(
 
     result = event_chat.chat_about_run("abcdef123456", "谁离开了？", selection)
 
-    assert result["answer"].startswith("主体#1")
+    assert result["answer"].startswith("subject#1")
     assert result["usage"]["total_tokens"] == 120
     assert result["selection"]["model"] == "gpt-4.1-mini"
     history = json.loads(
@@ -438,3 +440,55 @@ def test_chat_uses_saved_report_language(monkeypatch, tmp_path) -> None:
 
     assert result["answer"] == "The available evidence is insufficient to answer the question."
     assert any("in English" in message["content"] for message in requests[0]["messages"])
+
+
+def test_chat_normalizes_answer_evidence_and_limitations_to_saved_language(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(event_chat, "RUNS_DIR", tmp_path)
+    event_chat.persist_run_snapshot(
+        {
+            "run_id": "abcdef123456",
+            "video": "demo.mp4",
+            "report_language": "en",
+            "windows": [],
+        }
+    )
+    response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(
+                    content=(
+                        '{"answer":"主体#1 leaves",'
+                        '"evidence":[{"reason":"主体 #1 appears"}],'
+                        '"limitations":"subject#1 is obscured"}'
+                    )
+                )
+            )
+        ],
+        usage=None,
+    )
+    monkeypatch.setattr(
+        event_chat,
+        "get_client",
+        lambda: SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(create=lambda **kwargs: response)
+            )
+        ),
+    )
+    selection = ModelSelection(
+        task="chat",
+        requested="auto",
+        selected="gpt-4.1-mini",
+        model="gpt-4.1-mini",
+        deployment="chat-unit",
+        reason="unit test",
+    )
+
+    result = event_chat.chat_about_run("abcdef123456", "What happened?", selection)
+
+    assert result["answer"] == "subject#1 leaves"
+    assert result["evidence"] == [{"reason": "subject#1 appears"}]
+    assert result["limitations"] == "subject#1 is obscured"

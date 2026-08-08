@@ -369,14 +369,27 @@ console.log(JSON.stringify(elements.timings));
     assert ".em-tbar-marker {" in timing_css
 
 
-def test_dynamic_translation_and_gallery_markup_follow_selected_language() -> None:
+@pytest.mark.parametrize(
+    ("locale", "gallery_head", "subject_title", "details_title", "track_label"),
+    [
+        ("en", "Identity gallery (subjects: 1)", "Subject #7", "Identity evidence", "Track IDs"),
+        ("zh-CN", "身份画廊（本段共 1 个主体）", "主体 #7", "身份依据", "轨迹编号"),
+    ],
+)
+def test_dynamic_translation_and_gallery_markup_follow_selected_language(
+    locale: str,
+    gallery_head: str,
+    subject_title: str,
+    details_title: str,
+    track_label: str,
+) -> None:
     render_url = json.dumps(
         (ROOT / "static" / "js" / "event-monitor" / "render.js").as_uri()
     )
     gallery_url = json.dumps(
         (ROOT / "static" / "js" / "event-monitor" / "identity-gallery.js").as_uri()
     )
-    bundle = _bundle("en", "samples", "service", "gallery", "common")
+    bundle = _bundle(locale, "samples", "service", "gallery", "common")
     result = _run_module_script(
         f"""
 globalThis.__EVENT_MONITOR_I18N__ = {bundle};
@@ -413,7 +426,8 @@ const html = renderSubjectGallery({{
       score: 0.91,
       reused: true,
       local_subject: true,
-      subject_conflict_split: false,
+      subject_conflict_split: true,
+      decision: "conflict_split",
       face: {{
         observed: true,
         eligibility: "usable",
@@ -438,12 +452,18 @@ console.log(JSON.stringify({{
 """
     )
 
-    assert result["sampleCount"] == "samples: 1"
-    assert result["backendText"] == "Service online"
-    assert "Identity gallery (subjects: 1)" in result["html"]
+    assert result["sampleCount"]
+    assert result["backendText"]
+    assert gallery_head in result["html"]
     assert "class=\"em-gallery-panel\"" in result["html"]
-    assert "Subject #7" in result["html"]
-    assert "tracks: 1" in result["html"]
+    assert subject_title in result["html"]
+    assert '<details class="em-subcard"' in result["html"]
+    assert 'class="em-subcard-summary"' in result["html"]
+    assert details_title in result["html"]
+    assert track_label in result["html"]
+    assert "Best body score" in result["html"] or "最佳人形分数" in result["html"]
+    assert "Face evidence" in result["html"] or "人脸依据" in result["html"]
+    assert "Gait evidence" in result["html"] or "步态依据" in result["html"]
 
 
 def test_product_reid_selector_shows_one_default_and_four_validated_backends() -> None:

@@ -21,7 +21,7 @@ import time
 from openai import RateLimitError
 
 from ..core.config import settings
-from ..event_monitor_i18n import normalize_report_language
+from ..event_monitor_i18n import normalize_report_language, resolve_report_language
 from ..openai_client import get_client, parse_json
 from ..utils.image_utils import image_to_data_uri
 from ..identity.identity_context import format_identity_grounding
@@ -138,6 +138,7 @@ def understand_event(
           events:[{time, subject, action, abnormal}], summary,
           subjects_involved:[...], alert_level, notification
     """
+    report_language = resolve_report_language(language)
     if not frames:
         return {"events": [], "summary": "（无关键帧）", "subjects_involved": [],
                 "alert_level": "normal", "notification": ""}
@@ -166,7 +167,7 @@ def understand_event(
         "以及每个关键帧的 bbox/center 坐标 grounding，理解并叙述这段时间发生的跨帧事件。"
         "坐标用于把主体绑定到画面位置、移动方向和相互关系；不要把它当成让你重新检测的任务。\n" + schema
     )
-    language_instruction = _language_instruction(language)
+    language_instruction = _language_instruction(report_language)
     if language_instruction:
         prompt += f"\n\n{language_instruction}"
     if objective:
@@ -218,7 +219,10 @@ def understand_event(
         )
     )
     resp = _create_with_retry(client, **request)
-    result = parse_json(resp.choices[0].message.content or "{}")
+    result = parse_json(
+        resp.choices[0].message.content or "{}",
+        language=report_language,
+    )
     result.setdefault("events", [])
     result.setdefault("alert_level", "normal")
     result["_model"] = deployment
@@ -271,6 +275,7 @@ def summarize_event_windows(
         dict：overall_summary, story[{time,subject,action}], subjects[], overall_alert_level, notification。
         无任何已理解的窗时返回 {}（上层据此跳过）。
     """
+    report_language = resolve_report_language(language)
     ev_windows = [w for w in windows if w.get("event")]
     if not ev_windows:
         return {}
@@ -285,7 +290,7 @@ def summarize_event_windows(
             max_table_chars=settings.event_evidence_table_max_chars,
         )
     )
-    language_instruction = _language_instruction(language)
+    language_instruction = _language_instruction(report_language)
     if language_instruction:
         prompt += f"\n\n{language_instruction}"
 
@@ -308,7 +313,10 @@ def summarize_event_windows(
         )
     )
     resp = _create_with_retry(client, **request)
-    result = parse_json(resp.choices[0].message.content or "{}")
+    result = parse_json(
+        resp.choices[0].message.content or "{}",
+        language=report_language,
+    )
     result.setdefault("story", [])
     result.setdefault("overall_alert_level", "normal")
     result["_model"] = deployment
