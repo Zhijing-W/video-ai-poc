@@ -178,15 +178,30 @@
 
       <section class="em-model-card" aria-labelledby="aiModuleTitle">
         <div id="aiModuleTitle" class="em-model-title">{{ ui.panel.ai_title }} <span id="llmAuthBadge" class="em-model-auth">{{ ui.panel.ai_loading }}</span></div>
-        <label class="em-label" for="analysisModel">{{ ui.panel.analysis_model_label }}</label>
-        <select id="analysisModel" class="em-input" disabled>
-          <option value="auto">{{ ui.panel.ai_loading }}</option>
-        </select>
-        <label class="em-label" for="chatModel" style="margin-top:8px">{{ ui.panel.chat_model_label }}</label>
-        <select id="chatModel" class="em-input" disabled>
-          <option value="auto">{{ ui.panel.ai_loading }}</option>
-        </select>
+        <label id="analysisModelLabel" class="em-label">{{ ui.panel.analysis_model_label }}</label>
+        <div id="analysisModelPicker" class="em-model-picker" data-task="analysis">
+          <input id="analysisModel" type="hidden" value="auto" />
+          <button id="analysisModelTrigger" class="em-model-picker-trigger" type="button" aria-labelledby="analysisModelLabel analysisModelValue" aria-expanded="false" aria-controls="analysisModelPopover">
+            <span id="analysisModelValue">{{ ui.panel.ai_loading }}</span><span aria-hidden="true">⌄</span>
+          </button>
+          <div id="analysisModelPopover" class="em-model-popover" role="dialog" aria-label="{{ ui.panel.analysis_model_label }}" hidden>
+            <input class="em-model-search" type="search" autocomplete="off" placeholder="{{ ui.panel.model_search_placeholder }}" aria-label="{{ ui.panel.model_search_label }}" />
+            <div class="em-model-options" role="listbox"></div>
+          </div>
+        </div>
+        <label id="chatModelLabel" class="em-label" style="margin-top:8px">{{ ui.panel.chat_model_label }}</label>
+        <div id="chatModelPicker" class="em-model-picker" data-task="chat">
+          <input id="chatModel" type="hidden" value="auto" />
+          <button id="chatModelTrigger" class="em-model-picker-trigger" type="button" aria-labelledby="chatModelLabel chatModelValue" aria-expanded="false" aria-controls="chatModelPopover">
+            <span id="chatModelValue">{{ ui.panel.ai_loading }}</span><span aria-hidden="true">⌄</span>
+          </button>
+          <div id="chatModelPopover" class="em-model-popover" role="dialog" aria-label="{{ ui.panel.chat_model_label }}" hidden>
+            <input class="em-model-search" type="search" autocomplete="off" placeholder="{{ ui.panel.model_search_placeholder }}" aria-label="{{ ui.panel.model_search_label }}" />
+            <div class="em-model-options" role="listbox"></div>
+          </div>
+        </div>
         <div id="llmModelHint" class="em-ai-hint">{{ ui.panel.routing_hint }}</div>
+        <a class="em-model-manage" href="https://ai.azure.com/" target="_blank" rel="noopener noreferrer">{{ ui.panel.manage_deployments }}</a>
       </section>
 
       <button id="btnRun" class="em-btn em-btn-cta"><span class="em-btn-ico">▶</span> {{ ui.panel.run_button }}</button>

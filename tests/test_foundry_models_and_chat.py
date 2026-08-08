@@ -7,7 +7,12 @@ from app.core import config as config_mod
 from app.core.config import settings
 from app.services import event_chat
 from app.services import llm_models
-from app.services.llm_models import ModelSelection, model_catalog, resolve_model
+from app.services.llm_models import (
+    ModelSelection,
+    chat_completion_options,
+    model_catalog,
+    resolve_model,
+)
 
 
 def _catalog(targets: list[dict]) -> dict:
@@ -156,6 +161,15 @@ def test_model_labels_and_auto_reasons_follow_page_language(monkeypatch) -> None
     assert "highest-ranked" in english_selection.reason
     assert chinese["analysis"][0]["label"] == "自动（最佳兼容部署）"
     assert "自动选择" in chinese_selection.reason
+
+
+def test_gpt5_uses_supported_completion_parameter() -> None:
+    assert chat_completion_options(
+        "gpt-5.4", max_tokens=400, temperature=0.2
+    ) == {"max_completion_tokens": 400}
+    assert chat_completion_options(
+        "gpt-4.1", max_tokens=400, temperature=0.2
+    ) == {"max_tokens": 400, "temperature": 0.2}
 
 
 def test_run_snapshot_omits_images_and_chat_persists_bounded_history(

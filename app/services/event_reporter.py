@@ -26,6 +26,7 @@ from ..openai_client import get_client, parse_json
 from ..utils.image_utils import image_to_data_uri
 from ..identity.identity_context import format_identity_grounding
 from .prompt_compaction import compact_evidence, compact_window_evidence
+from .llm_models import chat_completion_options
 
 EVENT_SYSTEM = (
     "你是监控视频的事件理解助手。下面给你一段监控视频里**按时间顺序的若干关键帧**，以及画面中"
@@ -200,17 +201,20 @@ def understand_event(
     deployment = model or settings.event_llm_deployment or settings.azure_openai_deployment
     client = get_client()
     started = time.perf_counter()
-    resp = _create_with_retry(
-        client,
-        model=deployment,
-        messages=[
+    request = {
+        "model": deployment,
+        "messages": [
             {"role": "system", "content": EVENT_SYSTEM},
             {"role": "user", "content": content},
         ],
-        response_format={"type": "json_object"},
-        temperature=0.2,
-        max_tokens=settings.event_llm_max_tokens,
+        "response_format": {"type": "json_object"},
+    }
+    request.update(
+        chat_completion_options(
+            deployment, max_tokens=settings.event_llm_max_tokens, temperature=0.2
+        )
     )
+    resp = _create_with_retry(client, **request)
     result = parse_json(resp.choices[0].message.content or "{}")
     result.setdefault("events", [])
     result.setdefault("alert_level", "normal")
@@ -284,17 +288,20 @@ def summarize_event_windows(
     deployment = model or settings.event_llm_deployment or settings.azure_openai_deployment
     client = get_client()
     started = time.perf_counter()
-    resp = _create_with_retry(
-        client,
-        model=deployment,
-        messages=[
+    request = {
+        "model": deployment,
+        "messages": [
             {"role": "system", "content": WINDOW_SUMMARY_SYSTEM},
             {"role": "user", "content": prompt},
         ],
-        response_format={"type": "json_object"},
-        temperature=0.2,
-        max_tokens=settings.event_llm_max_tokens,
+        "response_format": {"type": "json_object"},
+    }
+    request.update(
+        chat_completion_options(
+            deployment, max_tokens=settings.event_llm_max_tokens, temperature=0.2
+        )
     )
+    resp = _create_with_retry(client, **request)
     result = parse_json(resp.choices[0].message.content or "{}")
     result.setdefault("story", [])
     result.setdefault("overall_alert_level", "normal")

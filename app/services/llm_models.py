@@ -54,6 +54,16 @@ def _text(locale: str | None, english: str, chinese: str) -> str:
     return english if _is_english(locale) else chinese
 
 
+_MODEL_DESCRIPTIONS_ZH = {
+    "gpt-4o": "均衡的多模态分析。",
+    "gpt-4.1": "适合细节和证据推理。",
+    "gpt-4.1-mini": "快速、高效的追问聊天。",
+    "gpt-5.4": "适合复杂视觉证据的最高质量分析。",
+    "gpt-5.4-mini": "高效的多模态分析与聊天。",
+    "gpt-5.6-luna": "均衡的多模态推理。",
+}
+
+
 def _resolved_auth_mode() -> str:
     if settings.azure_openai_auth == "auto":
         return "api_key" if settings.azure_openai_api_key else "managed_identity"
@@ -114,10 +124,17 @@ def model_catalog(*, locale: str | None = None) -> dict:
             "alias": target["deployment"],
             "label": target["label"],
             "model": target["model"],
+            "provider": target.get("provider", "openai"),
+            "group": target.get("group", "Versatile"),
+            "context": target.get("context"),
+            "performance": target.get("performance"),
             "description": _text(
                 locale,
-                "Server-discovered callable deployment.",
-                "服务端发现的可调用部署。",
+                str(target.get("description") or "Callable Foundry deployment."),
+                _MODEL_DESCRIPTIONS_ZH.get(
+                    str(target.get("model") or "").lower(),
+                    "服务端发现并验证可调用的 Foundry 部署。",
+                ),
             ),
             "available": True,
         }
@@ -154,6 +171,18 @@ def model_catalog(*, locale: str | None = None) -> dict:
         "analysis": [auto_analysis, *map(option, analysis)],
         "chat": [auto_chat, *map(option, chat)],
     }
+
+
+def chat_completion_options(
+    model: str, *, max_tokens: int, temperature: float | None
+) -> dict[str, Any]:
+    """Return the supported output control for the selected reviewed model."""
+    if model.lower().startswith("gpt-5"):
+        return {"max_completion_tokens": max_tokens}
+    options: dict[str, Any] = {"max_tokens": max_tokens}
+    if temperature is not None:
+        options["temperature"] = temperature
+    return options
 
 
 def resolve_model(
@@ -243,4 +272,9 @@ def resolve_model(
     )
 
 
-__all__ = ["ModelSelection", "model_catalog", "resolve_model"]
+__all__ = [
+    "ModelSelection",
+    "chat_completion_options",
+    "model_catalog",
+    "resolve_model",
+]

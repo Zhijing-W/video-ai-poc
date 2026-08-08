@@ -26,6 +26,68 @@ _RESOURCE_ID = re.compile(
 _cache_lock = threading.Lock()
 _success_cache: tuple[float, dict[str, Any]] | None = None
 
+# This is deliberately a small, reviewed allowlist rather than a prefix match.
+# A target must be both ARM-provisioned and known to support this application's
+# Chat Completions JSON + image-input contract before it reaches the UI.
+_MODEL_METADATA: dict[str, dict[str, Any]] = {
+    "gpt-4o": {
+        "friendly_name": "GPT-4o",
+        "provider": "openai",
+        "group": "Versatile",
+        "description": "Balanced multimodal analysis.",
+        "context": "128K context",
+        "performance": "Balanced speed and quality",
+        "capabilities": {"chat": True, "image_input": True},
+    },
+    "gpt-4.1": {
+        "friendly_name": "GPT-4.1",
+        "provider": "openai",
+        "group": "Quality",
+        "description": "Strong detail and evidence reasoning.",
+        "context": "Up to 1M context",
+        "performance": "Quality-first",
+        "capabilities": {"chat": True, "image_input": True},
+    },
+    "gpt-4.1-mini": {
+        "friendly_name": "GPT-4.1 mini",
+        "provider": "openai",
+        "group": "Fast",
+        "description": "Fast, efficient follow-up chat.",
+        "context": "Up to 1M context",
+        "performance": "Fast responses",
+        "capabilities": {"chat": True, "image_input": True},
+    },
+    # These versions were deployed and image/JSON smoke-tested through the VM
+    # managed identity on 2026-08-08. New model names are not inferred.
+    "gpt-5.4": {
+        "friendly_name": "GPT-5.4",
+        "provider": "openai",
+        "group": "Quality",
+        "description": "Highest quality for complex visual evidence.",
+        "context": "Large context",
+        "performance": "Complex tasks",
+        "capabilities": {"chat": True, "image_input": True},
+    },
+    "gpt-5.4-mini": {
+        "friendly_name": "GPT-5.4 mini",
+        "provider": "openai",
+        "group": "Fast",
+        "description": "Efficient multimodal analysis and chat.",
+        "context": "Large context",
+        "performance": "Fast responses",
+        "capabilities": {"chat": True, "image_input": True},
+    },
+    "gpt-5.6-luna": {
+        "friendly_name": "GPT-5.6 Luna",
+        "provider": "openai",
+        "group": "Versatile",
+        "description": "Versatile multimodal reasoning.",
+        "context": "Large context",
+        "performance": "Balanced speed and quality",
+        "capabilities": {"chat": True, "image_input": True},
+    },
+}
+
 
 class _DiscoveryError(RuntimeError):
     """A transient discovery failure that must not replace a good catalog."""
@@ -38,8 +100,11 @@ def _resolved_auth_mode() -> str:
 
 
 def _model_capabilities(model: str | None, raw: object = None) -> dict[str, bool]:
-    """Return only capabilities which can be established from deployment metadata."""
+    """Return reviewed capabilities, narrowed by explicit ARM metadata when present."""
     value = (model or "").strip().lower()
+    profile = _MODEL_METADATA.get(value)
+    if profile is None:
+        return {"chat": False, "image_input": False}
     capabilities = raw if isinstance(raw, dict) else {}
     normalized = {str(key).lower(): str(item).lower() for key, item in capabilities.items()}
 
@@ -49,15 +114,15 @@ def _model_capabilities(model: str | None, raw: object = None) -> dict[str, bool
                 return normalized[name.lower()] in {"true", "1", "yes", "enabled"}
         return None
 
-    known_chat = value.startswith(
-        ("gpt-35", "gpt-3.5", "gpt-4", "gpt-5", "o1", "o3", "o4")
-    )
-    known_image = value.startswith(("gpt-4o", "gpt-4.1", "gpt-4.5", "gpt-5"))
     chat = explicit("chat", "chatcompletion", "chat_completions")
     image = explicit("imageinput", "image_input", "vision")
     return {
-        "chat": known_chat if chat is None else chat,
-        "image_input": known_image if image is None else image,
+        "chat": profile["capabilities"]["chat"] if chat is None else (
+            profile["capabilities"]["chat"] and chat
+        ),
+        "image_input": profile["capabilities"]["image_input"] if image is None else (
+            profile["capabilities"]["image_input"] and image
+        ),
     }
 
 
@@ -72,14 +137,18 @@ def _target(
     state = str(status or "").strip().lower()
     if not deployment_name or state not in {"succeeded", "success"}:
         return None
+    profile = _MODEL_METADATA.get(model_name.lower())
+    if profile is None:
+        return None
     return {
         "deployment": deployment_name,
         "model": model_name,
-        "label": (
-            deployment_name
-            if deployment_name == model_name
-            else f"{deployment_name} ({model_name})"
-        ),
+        "label": profile["friendly_name"],
+        "provider": profile["provider"],
+        "group": profile["group"],
+        "description": profile["description"],
+        "context": profile["context"],
+        "performance": profile["performance"],
         "capabilities": _model_capabilities(model_name, capabilities),
     }
 

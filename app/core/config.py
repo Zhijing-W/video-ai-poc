@@ -50,7 +50,9 @@ class Settings:
     azure_openai_endpoint: str | None = _get("AZURE_OPENAI_ENDPOINT")
     azure_openai_api_key: str | None = _get("AZURE_OPENAI_API_KEY")
     azure_openai_deployment: str | None = _get("AZURE_OPENAI_DEPLOYMENT")
-    azure_openai_api_version: str = _get("AZURE_OPENAI_API_VERSION", "2024-10-21")
+    # GPT-5 Chat Completions needs the current API surface; it remains
+    # compatible with the existing GPT-4.1 and GPT-4o deployments.
+    azure_openai_api_version: str = _get("AZURE_OPENAI_API_VERSION", "2025-04-01-preview")
     azure_openai_auth: str = _get("AZURE_OPENAI_AUTH", "auto").strip().lower()
     azure_openai_managed_identity_client_id: str | None = _get(
         "AZURE_OPENAI_MANAGED_IDENTITY_CLIENT_ID"

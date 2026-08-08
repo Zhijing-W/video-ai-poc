@@ -71,13 +71,11 @@ def test_arm_catalog_lists_deployed_targets_without_credentials(monkeypatch) -> 
 
     assert catalog["source"] == "arm"
     assert [target["deployment"] for target in catalog["callable_targets"]] == [
-        "embedding",
         "event-gpt41",
     ]
-    assert catalog["catalog_models"] == [
-        {"model": "gpt-4.1"},
-        {"model": "text-embedding-3-large"},
-    ]
+    assert catalog["callable_targets"][0]["label"] == "GPT-4.1"
+    assert catalog["callable_targets"][0]["provider"] == "openai"
+    assert catalog["catalog_models"] == [{"model": "gpt-4.1"}]
     assert observed["authorization"] == "Bearer not-a-real-token"
     assert "not-a-real-token" not in json.dumps(catalog)
 
@@ -121,7 +119,7 @@ def test_transient_arm_failure_keeps_last_successful_targets(monkeypatch) -> Non
     assert "temporarily failed" in fallback["warning"]
 
 
-def test_configured_fallback_requires_known_capabilities() -> None:
+def test_configured_fallback_does_not_expose_unreviewed_models() -> None:
     with settings.override(
         azure_openai_resource_id=None,
         azure_openai_endpoint=None,
@@ -135,7 +133,25 @@ def test_configured_fallback_requires_known_capabilities() -> None:
         catalog = llm_catalog.event_llm_catalog()
 
     assert catalog["source"] == "configured"
-    assert catalog["callable_targets"][0]["capabilities"] == {
-        "chat": False,
-        "image_input": False,
+    assert catalog["callable_targets"] == []
+
+
+def test_reviewed_gpt5_metadata_is_callable_for_image_analysis() -> None:
+    target = llm_catalog._target(
+        "event-quality-gpt54",
+        "gpt-5.4",
+        "Succeeded",
+        {"chatCompletion": "true"},
+    )
+
+    assert target == {
+        "deployment": "event-quality-gpt54",
+        "model": "gpt-5.4",
+        "label": "GPT-5.4",
+        "provider": "openai",
+        "group": "Quality",
+        "description": "Highest quality for complex visual evidence.",
+        "context": "Large context",
+        "performance": "Complex tasks",
+        "capabilities": {"chat": True, "image_input": True},
     }

@@ -10,7 +10,7 @@ from pathlib import Path
 from ..core.config import OUTPUT_DIR, settings
 from ..event_monitor_i18n import normalize_report_language
 from ..openai_client import get_client, parse_json
-from .llm_models import ModelSelection
+from .llm_models import ModelSelection, chat_completion_options
 from .prompt_compaction import compact_evidence
 
 RUNS_DIR = OUTPUT_DIR / "event-monitor"
@@ -227,13 +227,19 @@ def chat_about_run(
         )
         messages.append({"role": "user", "content": question})
         started = time.perf_counter()
-        response = get_client().chat.completions.create(
-            model=selection.deployment,
-            messages=messages,
-            response_format={"type": "json_object"},
-            temperature=0.1,
-            max_tokens=settings.event_chat_max_tokens,
+        request = {
+            "model": selection.deployment,
+            "messages": messages,
+            "response_format": {"type": "json_object"},
+        }
+        request.update(
+            chat_completion_options(
+                selection.model,
+                max_tokens=settings.event_chat_max_tokens,
+                temperature=0.1,
+            )
         )
+        response = get_client().chat.completions.create(**request)
         latency_ms = round((time.perf_counter() - started) * 1000, 1)
         result = parse_json(response.choices[0].message.content or "{}")
         answer = str(result.get("answer") or result.get("summary") or "").strip()

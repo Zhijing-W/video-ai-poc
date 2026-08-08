@@ -623,3 +623,23 @@ console.log(JSON.stringify({{
         "badge": "VM managed identity",
         "disabled": False,
     }
+
+
+def test_model_picker_uses_accessible_popover_instead_of_model_selects() -> None:
+    template = (ROOT / "templates" / "event-monitor.html").read_text(encoding="utf-8")
+    source = (
+        ROOT / "static" / "js" / "event-monitor" / "settings.js"
+    ).read_text(encoding="utf-8")
+    css = (ROOT / "static" / "css" / "event-monitor" / "polish.css").read_text(
+        encoding="utf-8"
+    )
+
+    assert '<select id="analysisModel"' not in template
+    assert '<select id="chatModel"' not in template
+    assert 'role="listbox"' in template
+    assert 'class="em-model-search"' in template
+    assert 'modelPickerDocumentEventsWired' in source
+    assert 'event.key === "Escape"' in source
+    assert 'event.key === "ArrowDown"' in source
+    assert 'providerMark(option.provider)' in source
+    assert ".em-model-popover" in css
