@@ -157,10 +157,10 @@ def test_fastapi_health_page_and_openapi_are_available() -> None:
     assert page.status_code == 200
     assert "event-monitor" in page.text.lower()
     assert 'id="withBody" checked' in page.text
-    assert "默认（ArcFace）" in page.text
-    assert "默认（关闭）" in page.text
+    assert "ArcFace (default)" in page.text
+    assert "Off (default)" in page.text
     assert '<select id="reidBackend" class="em-input" disabled>' in page.text
-    assert '<option value="">使用服务端默认（加载中…）</option>' in page.text
+    assert '<option value="">Use server default (loading…)</option>' in page.text
     assert '<option value="differ"' not in page.text
     assert 'id="reidDiagnostics"' in page.text
     reid_select = page.text.split('id="reidBackend"', 1)[1].split("</select>", 1)[0]

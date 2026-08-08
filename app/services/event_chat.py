@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 from ..core.config import OUTPUT_DIR, settings
+from ..event_monitor_i18n import normalize_report_language
 from ..openai_client import get_client, parse_json
 from .llm_models import ModelSelection
 
@@ -24,6 +25,21 @@ CHAT_SYSTEM = (
     '{"answer":"回答","evidence":[{"window_index":1,"time_range":["开始","结束"],'
     '"reason":"引用原因"}],"limitations":"证据限制"}。'
 )
+
+
+def _language_instruction(language: object) -> str:
+    if normalize_report_language(str(language or "")) == "en":
+        return (
+            "Output requirement: write the answer, evidence reasons, and limitations "
+            "in English."
+        )
+    return "输出要求：请使用简体中文回答，包含证据原因和限制。"
+
+
+def _fallback_answer(language: object) -> str:
+    if normalize_report_language(str(language or "")) == "en":
+        return "The available evidence is insufficient to answer the question."
+    return "现有证据不足，无法回答该问题。"
 
 
 def _run_dir(run_id: str) -> Path:
@@ -58,6 +74,7 @@ def _compact_payload(payload: dict) -> dict:
         "video": Path(str(payload.get("video") or "")).name,
         "fps": payload.get("fps"),
         "frames_total": payload.get("frames_total"),
+        "report_language": payload.get("report_language"),
         "config_used": payload.get("config_used"),
         "llm_selection": payload.get("llm_selection"),
         "overall": payload.get("overall"),
@@ -127,6 +144,12 @@ def chat_about_run(
                 + json.dumps(snapshot, ensure_ascii=False, separators=(",", ":")),
             }
         )
+        messages.append(
+            {
+                "role": "system",
+                "content": _language_instruction(snapshot.get("report_language")),
+            }
+        )
         messages.extend(
             {
                 "role": item["role"],
@@ -148,7 +171,7 @@ def chat_about_run(
         result = parse_json(response.choices[0].message.content or "{}")
         answer = str(result.get("answer") or result.get("summary") or "").strip()
         if not answer:
-            answer = "现有证据不足，无法回答该问题。"
+            answer = _fallback_answer(snapshot.get("report_language"))
         result["answer"] = answer
         result.setdefault("evidence", [])
         result.setdefault("limitations", "")

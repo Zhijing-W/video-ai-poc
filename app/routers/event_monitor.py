@@ -222,13 +222,13 @@ async def understand(
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
-        report_language = normalize_report_language(language)
-        try:
+    try:
         selected_reid_backend = reid_mod.validate_backend(
             reid_backend if reid_backend is not None else settings.reid_backend
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    report_language = normalize_report_language(language)
     try:
         analysis_selection = resolve_model(
             "analysis",

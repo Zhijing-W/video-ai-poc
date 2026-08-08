@@ -390,7 +390,7 @@ console.log(JSON.stringify({{ options: select.options }}));
     ]
 
 
-def test_ai_model_selector_renders_discovered_deployments() -> None:
+def test_llm_model_selector_renders_allowlisted_aliases() -> None:
     settings_url = json.dumps(
         (ROOT / "static" / "js" / "event-monitor" / "settings.js").as_uri()
     )
@@ -404,48 +404,59 @@ globalThis.Option = class {{
     this.value = value;
   }}
 }};
-const hint = {{
-  textContent: "",
-  classList: {{ toggle: () => {{}} }},
-}};
-const select = {{
-  dataset: {{}},
+const analysis = {{
   disabled: true,
   options: [],
   value: null,
   replaceChildren() {{ this.options = []; }},
   add(option) {{ this.options.push({{ text: option.text, value: option.value }}); }},
 }};
+const chat = {{ ...analysis, options: [] }};
+const hint = {{ textContent: "" }};
+const badge = {{ textContent: "", className: "" }};
 globalThis.document = {{
   getElementById: (id) => ({{
-    aiModel: select,
-    aiModelHint: hint,
+    analysisModel: analysis,
+    chatModel: chat,
+    llmModelHint: hint,
+    llmAuthBadge: badge,
   }})[id] || null,
 }};
-const {{ renderAiModels }} = await import({settings_url});
-renderAiModels({{
-  default: "gpt-4o",
-  models: [
-    {{ deployment: "gpt-4o", model: "gpt-4o", label: "gpt-4o", default: true }},
-    {{ deployment: "event-gpt41", model: "gpt-4.1", label: "event-gpt41 (gpt-4.1)", default: false }},
+const {{ renderLlmModels }} = await import({settings_url});
+renderLlmModels({{
+  auth: "managed_identity",
+  defaults: {{ analysis: "auto", chat: "gpt-4.1-mini" }},
+  analysis: [
+    {{ alias: "auto", label: "Auto (quality first)", available: true }},
+    {{ alias: "gpt-4.1", label: "GPT-4.1", available: true }},
+  ],
+  chat: [
+    {{ alias: "auto", label: "Auto (question complexity)", available: true }},
+    {{ alias: "gpt-4.1-mini", label: "GPT-4.1 mini", available: true }},
   ],
 }});
 console.log(JSON.stringify({{
-  options: select.options,
-  defaultModel: select.dataset.defaultModel,
-  disabled: select.disabled,
+  analysis: analysis.options,
+  chat: chat.options,
+  analysisValue: analysis.value,
+  chatValue: chat.value,
+  badge: badge.textContent,
+  disabled: analysis.disabled || chat.disabled,
 }}));
 """
     )
 
     assert result == {
-        "options": [
-            {"text": "gpt-4o (default)", "value": ""},
-            {
-                "text": "event-gpt41 (gpt-4.1)",
-                "value": "event-gpt41",
-            },
+        "analysis": [
+            {"text": "Auto (quality first)", "value": "auto"},
+            {"text": "GPT-4.1", "value": "gpt-4.1"},
         ],
-        "defaultModel": "gpt-4o",
+        "chat": [
+            {"text": "Auto (question complexity)", "value": "auto"},
+            {"text": "GPT-4.1 mini", "value": "gpt-4.1-mini"},
+        ],
+        "analysisValue": "auto",
+        "chatValue": "gpt-4.1-mini",
+        "badge": "VM managed identity",
         "disabled": False,
     }

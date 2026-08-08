@@ -225,3 +225,44 @@ def test_chat_history_file_is_bounded(monkeypatch, tmp_path) -> None:
         {"role": "user", "content": "next"},
         {"role": "assistant", "content": "ok"},
     ]
+
+
+def test_chat_uses_saved_report_language(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(event_chat, "RUNS_DIR", tmp_path)
+    event_chat.persist_run_snapshot(
+        {
+            "run_id": "abcdef123456",
+            "video": "demo.mp4",
+            "report_language": "en",
+            "windows": [],
+        }
+    )
+    requests: list[dict] = []
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="{}"))],
+        usage=None,
+    )
+    monkeypatch.setattr(
+        event_chat,
+        "get_client",
+        lambda: SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(
+                    create=lambda **kwargs: requests.append(kwargs) or response
+                )
+            )
+        ),
+    )
+    selection = ModelSelection(
+        task="chat",
+        requested="auto",
+        selected="gpt-4.1-mini",
+        model="gpt-4.1-mini",
+        deployment="chat-unit",
+        reason="latency-sensitive follow-up",
+    )
+
+    result = event_chat.chat_about_run("abcdef123456", "What happened?", selection)
+
+    assert result["answer"] == "The available evidence is insufficient to answer the question."
+    assert any("in English" in message["content"] for message in requests[0]["messages"])
