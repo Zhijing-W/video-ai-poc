@@ -192,8 +192,9 @@ def _seg_model():
         weights = Path(settings.gait_seg_model).expanduser()
         if not weights.is_file():
             raise FileNotFoundError(
-                f"步态分割权重不存在：{weights}；请先运行 "
-                "python scripts\\download_models.py --include-optional-yolo"
+                f"Gait segmentation weight not found: {weights}. Run "
+                "python scripts\\download_models.py --include-optional-yolo "
+                "to provision it."
             )
         from ultralytics import YOLO
 
@@ -206,8 +207,9 @@ def _pose_model():
         weights = Path(settings.pose_model).expanduser()
         if not weights.is_file():
             raise FileNotFoundError(
-                f"姿态权重不存在：{weights}；请先运行 "
-                "python scripts\\download_models.py --include-optional-yolo"
+                f"Pose weight not found: {weights}. Run "
+                "python scripts\\download_models.py --include-optional-yolo "
+                "to provision it."
             )
         from ultralytics import YOLO
 

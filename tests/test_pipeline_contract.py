@@ -30,6 +30,13 @@ def test_analyze_event_stream_keeps_top_level_contract_with_lightweight_mocks(mo
     monkeypatch.setattr(pipeline.tracker_mod, "active_backend", lambda: "mock-tracker")
     monkeypatch.setattr(pipeline.reid_mod, "active_backend", lambda: "mock-reid")
     monkeypatch.setattr(pipeline.reid_mod, "active_device", lambda: "cpu")
+    monkeypatch.setattr(
+        pipeline.gait_mod,
+        "available",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("disabled gait must not be initialized")
+        ),
+    )
 
     result = pipeline.analyze_event_stream(
         video_path="ignored.mp4",
@@ -65,6 +72,8 @@ def test_analyze_event_stream_keeps_top_level_contract_with_lightweight_mocks(mo
     assert result["body_reid_timing"]["call_count"] == 0
     assert result["body_reid_timing"]["mean_ms"] is None
     assert result["body_reid_timing"]["p95_ms"] is None
+    assert result["with_gait"] is False
+    assert result["gait_error"] is None
 
 
 def test_analyze_event_stream_can_disable_body_identity_without_blocking_other_routes(

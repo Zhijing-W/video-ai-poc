@@ -119,6 +119,13 @@ def test_deployment_surfaces_pass_differ_and_require_its_assets() -> None:
 
     cpu_dockerfile = (ROOT / "Dockerfile.cpu").read_text(encoding="utf-8")
     assert "MODEL_ROOT=/models" in cpu_dockerfile
+    for dockerfile in (
+        cpu_dockerfile,
+        (ROOT / "Dockerfile.gpu.base").read_text(encoding="utf-8"),
+        (ROOT / "Dockerfile.gpu").read_text(encoding="utf-8"),
+    ):
+        assert "POSE_MODEL=/models/detection/yolo/yolov8n-pose.pt" in dockerfile
+        assert "GAIT_SEG_MODEL=/models/detection/yolo/yolov8m-seg.pt" in dockerfile
 
     gpu_workflow = (
         ROOT / ".github" / "workflows" / "build-gpu-image.yml"

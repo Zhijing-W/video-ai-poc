@@ -13,6 +13,15 @@ ROOT = Path(__file__).resolve().parents[1]
 NODE = shutil.which("node")
 
 
+def test_gait_summary_uses_effective_pipeline_state() -> None:
+    source = (
+        ROOT / "static" / "js" / "event-monitor" / "render.js"
+    ).read_text(encoding="utf-8")
+
+    assert "const withGait = data.with_gait ?? configUsed.with_gait;" in source
+    assert 't("results.config_gait", { state: on(withGait) })' in source
+
+
 def _run_module_script(script: str) -> dict:
     if NODE is None:
         pytest.skip("Node.js is not installed")

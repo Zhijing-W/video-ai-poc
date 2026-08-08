@@ -58,6 +58,28 @@
 
 部署脚本使用 VM 托管身份从 ACR 拉取镜像，不依赖 SSH 端口，也不在 GitHub 或 VM 中保存 ACR 密码。`.env` 和模型权重继续保存在 VM，不进入 Git 仓库或镜像。容器内 `MODEL_ROOT=/models`；精度优先的 GPU POC 默认后端 DIFFER 必须已准备在宿主机 `/home/azureuser/vp/models/reid/differ/`。可运行 `python scripts/download_models.py --reid --model-root /home/azureuser/vp/models` 准备全部 ReID 资产；CLIP-ReID 是延迟敏感的显式替代项，显式 `.env` 配置仍可切换 SigLIP2、OSNet 或 `auto`。CPU 和高并发性能尚未验证；在目标演示视频和实际 T4 上用结果页的单 crop Body ReID 调用数、总耗时、均值、P95 及服务端阶段/总耗时完成测量后，再判断 DIFFER 是否构成瓶颈。健康检查成功后保留当前和部署前的镜像用于回退，并清理更旧的 ACR/legacy 应用标签与七天前的构建缓存。
 
+### Optional gait assets
+
+The single-VM bind mount maps `/home/azureuser/vp/models` to `/models`. The
+canonical paths for the optional gait YOLO weights are:
+
+```text
+/home/azureuser/vp/models/detection/yolo/yolov8n-pose.pt
+/home/azureuser/vp/models/detection/yolo/yolov8m-seg.pt
+```
+
+From a checkout with the application dependencies installed, provision them
+with:
+
+```bash
+python scripts/download_models.py --include-optional-yolo \
+  --model-root /home/azureuser/vp/models
+```
+
+The container defaults use the matching `/models/detection/yolo/...` paths.
+When Gait is selected and an optional asset is absent, the run returns an
+explicit warning and does not report Gait as having run.
+
 ## 未来演进路径
 
 单 VM 撑到什么时候需要升级：

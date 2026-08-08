@@ -96,6 +96,7 @@ function renderConfigSummary(data) {
   const chips = [];
   const on = (enabled) => (enabled ? common("on") : common("off"));
   const withBody = configUsed.with_body ?? data.with_body ?? true;
+  const withGait = data.with_gait ?? configUsed.with_gait;
   const bodyMode = configUsed.reid_consistency_enabled
     ? t("results.config_body_mode_topk", { topk: configUsed.reid_decision_top_k })
     : t("results.config_body_mode_top1");
@@ -124,7 +125,7 @@ function renderConfigSummary(data) {
       detail: configUsed.with_face ? faceDetail : "",
     })
   );
-  chips.push(t("results.config_gait", { state: on(configUsed.with_gait) }));
+  chips.push(t("results.config_gait", { state: on(withGait) }));
   chips.push(t("results.config_ocr", { state: configUsed.with_ocr ? esc(data.ocr_backend || common("on")) : common("off") }));
   chips.push(t("results.config_objects", { state: on(configUsed.with_objects) }));
   chips.push(t("results.config_ai", {

@@ -19,6 +19,9 @@ USER appuser
 
 ENV MODEL_ROOT=/models \
     OUTPUT_DIR=/results \
+    YOLO_MODEL=/models/detection/yolo/yolov8m.pt \
+    POSE_MODEL=/models/detection/yolo/yolov8n-pose.pt \
+    GAIT_SEG_MODEL=/models/detection/yolo/yolov8m-seg.pt \
     REID_BACKEND=differ \
     REID_BACKEND=differ
 

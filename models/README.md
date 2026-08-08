@@ -14,7 +14,9 @@ python scripts\download_models.py --all
 ```
 
 只准备某一类时可使用 `--reid`、`--superres`、`--face`。不带类别参数时只准备主
-YOLO 检测权重；`--include-optional-yolo` 同时准备姿态和分割权重。
+YOLO 检测权重；`--include-optional-yolo` 同时准备姿态和分割权重。容器运行时
+默认从相同的`MODEL_ROOT/detection/yolo/`路径读取，不能将这些可选权重放在
+`MODEL_ROOT`根目录。
 
 ## 自动准备
 
