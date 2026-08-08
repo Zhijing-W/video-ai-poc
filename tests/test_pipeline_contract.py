@@ -139,7 +139,13 @@ def test_analyze_event_stream_can_disable_body_identity_without_blocking_other_r
         lambda: (_ for _ in ()).throw(AssertionError("body backend must stay unresolved")),
     )
     monkeypatch.setattr(pipeline.gait_mod, "available", lambda: True)
-    monkeypatch.setattr(pipeline.gait_mod, "extract_persons", lambda image: [])
+    monkeypatch.setattr(
+        pipeline.gait_mod,
+        "extract_persons",
+        lambda image: (_ for _ in ()).throw(
+            FileNotFoundError("Pose weight not found: unit-test")
+        ),
+    )
     monkeypatch.setattr(pipeline.gait_mod, "load_error", lambda: None)
 
     def fake_attach_faces(frames, tracks, identities, session_id, **kwargs):
@@ -163,7 +169,8 @@ def test_analyze_event_stream_can_disable_body_identity_without_blocking_other_r
     assert result["reid_backend"] is None
     assert result["reid_dim"] is None
     assert result["with_face"] is True
-    assert result["with_gait"] is True
+    assert result["with_gait"] is False
+    assert result["gait_error"] == "Pose weight not found: unit-test"
     assert result["runtime"]["detector_device"] == "cuda:0"
     assert result["runtime"]["reid_device"] is None
     assert result["body_reid_timing"]["call_count"] == 0

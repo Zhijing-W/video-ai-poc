@@ -30,7 +30,15 @@ from .config import settings
 GAIT_DIM = None  # 实际维度在首次推理后确定（c*p）
 
 _lock = threading.Lock()
-_state: dict = {"ready": False, "model": None, "heat": None, "seg": None, "pose": None, "error": None}
+_state: dict = {
+    "ready": False,
+    "model": None,
+    "heat": None,
+    "seg": None,
+    "pose": None,
+    "error": None,
+    "asset_error": None,
+}
 
 
 # ---------------- 懒加载：建模型 + 热图变换 ----------------
@@ -102,13 +110,33 @@ def _ensure() -> bool:
             return False
 
 
+def _asset_error() -> str | None:
+    missing = []
+    for label, value in (
+        ("Pose", settings.pose_model),
+        ("Gait segmentation", settings.gait_seg_model),
+    ):
+        path = Path(value).expanduser()
+        if not path.is_file():
+            missing.append(f"{label} weight not found: {path}")
+    if not missing:
+        return None
+    return (
+        "; ".join(missing)
+        + ". Run python scripts\\download_models.py --include-optional-yolo "
+        "to provision optional Gait assets."
+    )
+
+
 def available() -> bool:
-    """步态分支是否可用（OpenGait + 权重就绪）。"""
-    return _ensure()
+    """步态分支是否可用（OpenGait + checkpoint + Pose/Seg 权重均就绪）。"""
+    asset_error = _asset_error()
+    _state["asset_error"] = asset_error
+    return asset_error is None and _ensure()
 
 
 def load_error() -> str | None:
-    return _state.get("error")
+    return _state.get("asset_error") or _state.get("error")
 
 
 # ---------------- 剪影标准化（复用 OpenGait imgs2pickle 的裁剪逻辑）----------------

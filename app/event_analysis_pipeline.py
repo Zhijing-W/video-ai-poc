@@ -487,6 +487,10 @@ def _finish_session(
                         t.setdefault("sil_seq", []).append(best["mask"])
             except Exception as exc:  # 步态采集失败不致命
                 gait_collect_error = str(exc)
+        if gait_collect_error and not any(
+            track.get("pose_seq") for track in tracks.values()
+        ):
+            gait_use = False
         _record("gait_collect", gait_collect_started)
 
     # ---- 认人：每条 track 用最佳 crop 提指纹、查/登记主体记忆库 → 身份 ----
@@ -758,7 +762,8 @@ def _finish_session(
         "with_gait": gait_use,
         "with_ocr": ocr_use,
         "with_objects": obj_use,
-        "gait_error": (gait_mod.load_error() if (with_gait and not gait_use) else gait_collect_error),
+        "gait_error": gait_collect_error
+        or (gait_mod.load_error() if (with_gait and not gait_use) else None),
         "ocr_backend": (ocr_mod.active_backend() if ocr_use else None),
         "ocr_error": (ocr_mod.load_error() if ocr_use else None),
         "object_classes": (sorted(obj_classes) if obj_use else None),

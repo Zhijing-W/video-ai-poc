@@ -23,6 +23,7 @@ def _arm_response(items: list[dict]) -> io.BytesIO:
 
 
 def test_arm_catalog_lists_deployed_targets_without_credentials(monkeypatch) -> None:
+    observed = {}
     items = [
         {
             "name": "event-gpt41",
@@ -53,11 +54,11 @@ def test_arm_catalog_lists_deployed_targets_without_credentials(monkeypatch) -> 
             get_token=lambda scope: SimpleNamespace(token="not-a-real-token")
         ),
     )
-    monkeypatch.setattr(
-        llm_catalog.urllib.request,
-        "urlopen",
-        lambda request, timeout: _arm_response(items),
-    )
+    def open_arm(request, timeout):
+        observed["authorization"] = request.get_header("Authorization")
+        return _arm_response(items)
+
+    monkeypatch.setattr(llm_catalog.urllib.request, "urlopen", open_arm)
 
     with settings.override(
         azure_openai_resource_id=(
@@ -77,6 +78,7 @@ def test_arm_catalog_lists_deployed_targets_without_credentials(monkeypatch) -> 
         {"model": "gpt-4.1"},
         {"model": "text-embedding-3-large"},
     ]
+    assert observed["authorization"] == "Bearer not-a-real-token"
     assert "not-a-real-token" not in json.dumps(catalog)
 
 
