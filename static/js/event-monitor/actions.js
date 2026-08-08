@@ -16,8 +16,10 @@ import {
 import { boxesHtml } from "./timeline.js";
 import { $ } from "./utils.js";
 
+const DEFAULT_PROMPT_FORMAT = "tsv";
+
 function selectedPromptFormat() {
-  return $("promptFormat").value;
+  return $("promptFormat").value === "json" ? "json" : DEFAULT_PROMPT_FORMAT;
 }
 
 function promptRunId() {

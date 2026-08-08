@@ -273,22 +273,20 @@
   .em-model-popover { position: fixed; left: 12px; right: 12px; width: auto; }
 }
 .em-chat {
-  margin: 20px 0 16px;
+  margin: 14px 0 16px;
   overflow: hidden;
-  border: 1px solid rgba(184,98,63,.36);
-  border-radius: 12px;
+  border: 1px solid rgba(42,144,103,.38);
+  border-radius: 10px;
   background: var(--panel);
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 2px 7px rgba(35,70,54,.08);
 }
 .em-chat-head {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  padding: 18px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--line);
-  background: linear-gradient(105deg, rgba(204,120,92,.09), transparent);
+  background: rgba(42,144,103,.05);
 }
-.em-chat-icon { background: var(--ok); box-shadow: 0 3px 8px rgba(42,144,103,.2); }
 .em-chat-kind {
   border-color: rgba(42,144,103,.28);
   background: rgba(42,144,103,.1);
@@ -302,15 +300,15 @@
   font-size: .66rem;
   font-weight: 600;
 }
-.em-chat-messages { max-height: 300px; overflow-y: auto; padding: 14px 18px 4px; }
+.em-chat-messages { max-height: 280px; overflow-y: auto; padding: 10px 14px 2px; }
 .em-chat-message { margin-bottom: 10px; }
 .em-chat-role { color: var(--muted); font-size: .62rem; font-weight: 700; text-transform: uppercase; }
 .em-chat-text { margin-top: 3px; padding: 9px 11px; border-radius: 9px; background: var(--panel2); color: var(--fg); font-size: .76rem; line-height: 1.55; white-space: pre-wrap; }
 .em-chat-message.user .em-chat-text { background: rgba(200,112,60,.12); }
 .em-chat-meta { margin-top: 3px; color: var(--muted); font-family: var(--mono); font-size: .6rem; }
-.em-chat-compose { display: flex; gap: 10px; padding: 12px 18px 18px; }
-.em-chat-compose textarea { flex: 1; resize: vertical; min-height: 46px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); color: var(--fg); font: inherit; font-size: .74rem; }
-.em-chat-compose .em-btn { width: auto; min-width: 88px; min-height: 46px; margin: 0; }
+.em-chat-compose { display: flex; gap: 8px; padding: 10px 14px 14px; }
+.em-chat-compose textarea { flex: 1; resize: vertical; min-height: 40px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); color: var(--fg); font: inherit; font-size: .74rem; }
+.em-chat-compose .em-btn { width: auto; min-width: 68px; min-height: 40px; margin: 0; padding-inline: 12px; }
 .em-ai-action-button:focus-visible,
 .em-tool-btn:focus-visible,
 .em-chat-compose textarea:focus-visible,
@@ -320,10 +318,10 @@
 }
 
 @media (max-width: 640px) {
-  .em-chat-head { padding: 16px; }
-  .em-chat-messages { padding-inline: 16px; }
-  .em-chat-compose { flex-direction: column; padding: 12px 16px 16px; }
-  .em-chat-compose .em-btn { width: 100%; }
+  .em-chat-head { padding: 12px; }
+  .em-chat-messages { padding-inline: 12px; }
+  .em-chat-compose { flex-direction: column; padding: 10px 12px 12px; }
+  .em-chat-compose .em-btn { align-self: flex-end; }
 }
 
 /* ---------- 主按钮 CTA 强化 ---------- */

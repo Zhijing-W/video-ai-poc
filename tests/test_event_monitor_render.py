@@ -40,14 +40,24 @@ def test_post_analysis_ai_actions_are_separate_and_run_scoped() -> None:
     assert 'id="btnSendLlm" class="em-ai-action-button" type="button"' in template
     assert 'class="em-result-utilities" aria-labelledby="resultUtilitiesTitle"' in template
     assert '<section id="chatPanel" class="em-chat em-evidence-chat"' in template
+    assert template.index('class="em-result-utilities"') < template.index('id="dryRunAction"')
+    assert template.index('id="dryRunAction"') < template.index('id="chatPanel"')
+    utilities_start = template.index('class="em-result-utilities"')
+    assert utilities_start < template.index('id="promptView"') < template.index('id="dryRunAction"')
+    assert "em-ai-action-icon" not in template
+    assert "em-chat-icon" not in template
     assert 'id="chatModelStatus" class="em-chat-model-status" role="status" aria-live="polite"' in template
     assert 'aria-describedby="chatEvidenceMeta"' in template
     assert "$(\"dryRunAction\").hidden = !data.dry_run;" in render_source
     assert "chatPanel.dataset.runId = data.run_id;" in render_source
     assert ".em-ai-action[hidden]" in results_css
+    assert ".em-ai-action-icon" not in results_css
+    assert "grid-template-columns: minmax(0, 1fr) auto;" in results_css
+    assert ".em-ai-action-button { justify-self: start; }" in results_css
     assert "@media (max-width: 640px)" in results_css
     assert ".em-ai-action-button:focus-visible" in polish_css
-    assert ".em-chat-compose { flex-direction: column;" in polish_css
+    assert ".em-chat-icon" not in polish_css
+    assert ".em-chat-compose .em-btn { align-self: flex-end; }" in polish_css
 
     for locale in ("en", "zh-CN"):
         messages = build_page_bundle(locale)["messages"]
@@ -58,15 +68,27 @@ def test_post_analysis_ai_actions_are_separate_and_run_scoped() -> None:
 
 
 def test_prompt_artifact_controls_are_localized_and_label_tsv_accurately() -> None:
+    template = (ROOT / "templates" / "event-monitor.html").read_text(encoding="utf-8")
+    actions_source = (
+        ROOT / "static" / "js" / "event-monitor" / "actions.js"
+    ).read_text(encoding="utf-8")
     english = build_page_bundle("en")["messages"]["results"]
     chinese = build_page_bundle("zh-CN")["messages"]["results"]
 
+    assert '<option value="tsv" selected>' in template
+    assert template.index('id="promptView"') < template.index('id="dryRunAction"')
+    assert 'const DEFAULT_PROMPT_FORMAT = "tsv";' in actions_source
+    assert 'return $("promptFormat").value === "json" ? "json" : DEFAULT_PROMPT_FORMAT;' in actions_source
+    assert 'const format = selectedPromptFormat();' in actions_source
+    assert "anchor.download = `event-monitor_${runId}_prompt.${format}`;" in actions_source
     assert english["download_prompt_button"] == "⬇ Download prompt"
     assert english["view_prompt_show"] == "View prompt"
     assert english["prompt_format_tsv"] == "Compact table (TSV/CSV-style)"
     assert chinese["download_prompt_button"] == "⬇ 下载提示词"
     assert chinese["view_prompt_show"] == "查看提示词"
     assert "TSV/CSV" in chinese["prompt_format_tsv"]
+    assert "default" in english["prompt_export_hint"]
+    assert "默认" in chinese["prompt_export_hint"]
 
 
 def _run_module_script(script: str) -> dict:
@@ -249,6 +271,41 @@ console.log(JSON.stringify({{
             "options": None,
         },
         "content": "EM-EVIDENCE-TSV/1",
+    }
+
+
+def test_prompt_download_defaults_to_tsv_when_the_control_has_no_value() -> None:
+    actions_url = json.dumps(
+        (ROOT / "static" / "js" / "event-monitor" / "actions.js").as_uri()
+    )
+    state_url = json.dumps(
+        (ROOT / "static" / "js" / "event-monitor" / "state.js").as_uri()
+    )
+    result = _run_module_script(
+        f"""
+const elements = {{
+  promptFormat: {{ value: "" }},
+}};
+let download = null;
+globalThis.document = {{
+  getElementById: (id) => elements[id],
+  createElement: () => ({{
+    click() {{
+      download = {{ href: this.href, filename: this.download }};
+    }},
+  }}),
+}};
+const {{ setLastPayload }} = await import({state_url});
+const {{ downloadPrompt }} = await import({actions_url});
+setLastPayload({{ run_id: "abcdef123456" }});
+downloadPrompt();
+console.log(JSON.stringify(download));
+"""
+    )
+
+    assert result == {
+        "href": "/api/event-monitor/runs/abcdef123456/prompt?format=tsv",
+        "filename": "event-monitor_abcdef123456_prompt.tsv",
     }
 
 
