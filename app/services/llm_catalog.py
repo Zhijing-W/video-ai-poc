@@ -122,17 +122,17 @@ _MODEL_METADATA: dict[str, dict[str, Any]] = {
         "capabilities": {"chat": True, "image_input": False, "json_output": True},
         "formats": {"DeepSeek"},
     },
-}
-
-_QWEN_CHAT_PROFILE: dict[str, Any] = {
-    "friendly_name": "Qwen",
-    "provider": "qwen",
+    "kimi-k2.6": {
+    "friendly_name": "Kimi K2.6",
+    "provider": "moonshot",
     "group": "Versatile",
-    "description": "Chat-only Qwen deployment.",
+    "description": "Preview structured chat deployment.",
     "context": "Chat-only",
-    "performance": "Versatile chat",
+    "performance": "Long-context chat",
+    "preview": True,
     "capabilities": {"chat": True, "image_input": False, "json_output": True},
-    "formats": {"Qwen"},
+    "formats": {"MoonshotAI"},
+    },
 }
 
 
@@ -140,16 +140,9 @@ class _DiscoveryError(RuntimeError):
     """A transient discovery failure that must not replace a good catalog."""
 
 
-def _model_profile(model: str | None) -> tuple[dict[str, Any] | None, bool]:
+def _model_profile(model: str | None) -> dict[str, Any] | None:
     value = (model or "").strip().lower()
-    profile = _MODEL_METADATA.get(value)
-    if profile:
-        return profile, False
-    # This narrow, format-checked family rule is intentionally the only
-    # forward-compatible exception to the exact model allowlist.
-    if value.startswith("qwen"):
-        return _QWEN_CHAT_PROFILE, True
-    return None, False
+    return _MODEL_METADATA.get(value)
 
 
 def _resolved_auth_mode() -> str:
@@ -160,7 +153,7 @@ def _resolved_auth_mode() -> str:
 
 def _model_capabilities(model: str | None, raw: object = None) -> dict[str, bool]:
     """Return reviewed capabilities, narrowed by explicit ARM metadata when present."""
-    profile, _ = _model_profile(model)
+    profile = _model_profile(model)
     if profile is None:
         return {"chat": False, "image_input": False, "json_output": False}
     capabilities = raw if isinstance(raw, dict) else {}
@@ -197,24 +190,21 @@ def _target(
     state = str(status or "").strip().lower()
     if not deployment_name or state not in {"succeeded", "success"}:
         return None
-    profile, is_generic_profile = _model_profile(model_name)
+    profile = _model_profile(model_name)
     if profile is None:
-        return None
-    if is_generic_profile and not model_format:
         return None
     if model_format and str(model_format) not in profile["formats"]:
         return None
     return {
         "deployment": deployment_name,
         "model": model_name,
-        "label": (
-            model_name.replace("-", " ") if is_generic_profile else profile["friendly_name"]
-        ),
+        "label": profile["friendly_name"],
         "provider": profile["provider"],
         "group": profile["group"],
         "description": profile["description"],
         "context": profile["context"],
         "performance": profile["performance"],
+        "preview": bool(profile.get("preview")),
         "capabilities": _model_capabilities(model_name, capabilities),
     }
 

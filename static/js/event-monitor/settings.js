@@ -87,9 +87,9 @@ function providerMark(provider) {
       <path fill="currentColor" d="M10 10h2v2h-2zm4 0h2v2h-2z"/>
     </svg>`;
   }
-  if (provider === "qwen") {
+  if (provider === "moonshot") {
     return `<svg class="em-provider-mark" viewBox="0 0 24 24" aria-hidden="true">
-      <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M4 7c3-4 8-4 11 0 3 4 2 8-1 10-3 2-7 1-9-2m5-6 6 7"/>
+      <path fill="none" stroke="currentColor" stroke-width="2" d="M15.8 3.5a8.5 8.5 0 1 0 4.7 14.8A7.2 7.2 0 0 1 15.8 3.5Z"/>
     </svg>`;
   }
   if (provider !== "openai") return "";
@@ -173,9 +173,10 @@ function renderPickerOptions(state) {
       const deployment = option.alias === "auto"
         ? option.description
         : `${option.description || ""} · ${option.context || ""} · ${option.performance || ""} · ${option.alias}`;
+      const preview = option.preview ? `<span class="em-model-preview">Preview</span>` : "";
       return `<button id="${state.task}ModelOption${optionIndex}" class="em-model-option${optionIndex === state.activeIndex ? " is-active" : ""}" type="button" role="option" aria-selected="${selectedOption}" data-alias="${esc(option.alias)}" title="${esc(deployment)}">
         ${providerMark(option.provider)}
-        <span><span class="em-model-primary">${esc(option.label)}</span><span class="em-model-secondary">${esc(deployment)}</span></span>
+        <span><span class="em-model-primary">${esc(option.label)}${preview}</span><span class="em-model-secondary">${esc(deployment)}</span></span>
         <span class="em-model-check">${selectedOption ? "✓" : `<span class="em-model-info" aria-label="${esc(t("panel.model_details"))}">ⓘ</span>`}</span>
       </button>`;
     }).join("");

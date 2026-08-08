@@ -259,6 +259,16 @@
   white-space: nowrap;
 }
 .em-provider-mark { width: 18px; height: 18px; color: var(--fg); }
+.em-model-preview {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(204,138,60,.16);
+  color: var(--warn);
+  font-size: .58rem;
+  font-weight: 700;
+  vertical-align: middle;
+}
 .em-model-check { color: var(--accent); font-size: .9rem; }
 .em-model-info { color: var(--muted); font-size: .7rem; }
 .em-model-manage {

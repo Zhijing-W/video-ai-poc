@@ -64,6 +64,7 @@ _MODEL_DESCRIPTIONS_ZH = {
     "gpt-5.6-terra": "最高质量的结构化聊天推理。",
     "phi-4-reasoning": "专注推理的文本和结构化聊天。",
     "deepseek-v4-flash": "快速结构化聊天推理。",
+    "kimi-k2.6": "预览版长上下文结构化聊天。",
 }
 
 _REQUEST_FAMILY = {
@@ -139,6 +140,7 @@ def model_catalog(*, locale: str | None = None) -> dict:
             "group": target.get("group", "Versatile"),
             "context": target.get("context"),
             "performance": target.get("performance"),
+            "preview": bool(target.get("preview")),
             "description": _text(
                 locale,
                 str(target.get("description") or "Callable Foundry deployment."),
