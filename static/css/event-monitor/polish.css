@@ -331,9 +331,10 @@
   top: 1px;
   bottom: 1px;
   left: 1px;
-  width: 2px;
-  border-radius: 2px;
+  width: 1px;
+  border-radius: 1px;
   background: var(--accent2);
+  opacity: .65;
 }
 .em-tbar-val { min-width: 74px; text-align: right; font-family: var(--mono); font-size: .68rem; color: var(--muted); }
 .em-tbar.top .em-tbar-fill, .em-tbar.top .em-tbar-marker { background: linear-gradient(90deg, var(--alert), #e06a4e); }

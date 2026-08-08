@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 
@@ -243,10 +244,11 @@ globalThis.document = {{
 }};
 const {{ renderTimings }} = await import({render_url});
 renderTimings({{
-  elapsed_seconds: "5",
+  elapsed_seconds: "10",
   stage_timings: {{
-    longest: 4,
-    tiny: 0.02,
+    longest: 3.09,
+    other_overhead: 6.9,
+    tiny: 0.01,
     zero: 0,
     invalid: "not-a-number",
     negative: -1,
@@ -263,8 +265,21 @@ console.log(JSON.stringify(elements.timings));
     assert expand_text in html
     assert collapse_text in html
     assert "not live progress" in html or "不是实时进度" in html
-    assert 'style="width:100.000%"' in html
-    assert 'style="width:0.500%"' in html
+    assert 'style="width:30.900%"' in html
+    assert 'style="width:69.000%"' in html
+    assert 'style="width:0.100%"' in html
+    assert 'style="width:100.000%"' not in html
+    assert "30.9%" in html
+    assert "69.0%" in html
+    assert "0.1%" in html
+    widths = [
+        float(width)
+        for width in re.findall(r'style="width:([0-9.]+)%"', html)
+    ]
+    assert sum(widths) == pytest.approx(100.0)
+    assert "Measured stages" in html or "实测阶段" in html
+    assert "longest measured stage" not in html
+    assert "最长的实测阶段" not in html
     assert 'class="em-tbar-marker"' in html
     assert "0ms · 0%" in html
     assert html.count(unavailable_text) >= 2

@@ -177,8 +177,7 @@ export function renderTimings(data) {
   }
 
   const positiveRows = rows.filter((row) => row.value !== null && row.value > 0);
-  const max = positiveRows.length ? Math.max(...positiveRows.map((row) => row.value)) : 0;
-  const total = positiveRows.reduce((sum, row) => sum + row.value, 0);
+  const measuredTotal = positiveRows.reduce((sum, row) => sum + row.value, 0);
   const bars = rows
     .map((row, index) => {
       const stageText = stageLabel(row.key) || row.key;
@@ -201,11 +200,10 @@ export function renderTimings(data) {
         );
       }
 
-      const relativePct = (row.value / max) * 100;
-      const share = (row.value / total) * 100;
+      const share = (row.value / measuredTotal) * 100;
       const duration = formatTimingDuration(row.value);
-      const tiny = relativePct < 1;
-      const fill = `<span class="em-tbar-fill" aria-hidden="true" style="width:${relativePct.toFixed(3)}%"></span>`;
+      const tiny = share < 1;
+      const fill = `<span class="em-tbar-fill" aria-hidden="true" style="width:${share.toFixed(3)}%"></span>`;
       const marker = tiny
         ? `<span class="em-tbar-marker" aria-hidden="true" title="${esc(t("results.timings_tiny_marker"))}"></span>`
         : "";
@@ -223,9 +221,12 @@ export function renderTimings(data) {
     .join("");
 
   const elapsedSeconds = parseTimingValue(data.elapsed_seconds);
-  const totalLabel = elapsedSeconds === null
+  const elapsedLabel = elapsedSeconds === null
     ? esc(t("results.timings_invalid"))
     : esc(t("results.timings_total", { seconds: elapsedSeconds }));
+  const measuredTotalLabel = esc(t("results.timings_measured_total", {
+    seconds: formatTimingDuration(measuredTotal),
+  }));
   $("timings").hidden = false;
   $("timings").innerHTML =
     `<details class="em-timings-details">` +
@@ -236,7 +237,7 @@ export function renderTimings(data) {
     `<div class="em-timings-content">` +
     `<div id="timingsMeasuredNote" class="em-timings-note">${esc(t("results.timings_measured_note"))}</div>` +
     `<div class="em-timings-head"><span>${esc(t("results.timings_relative_hint"))}</span>` +
-    `<span class="tot">${totalLabel}</span></div>${bars}</div></details>`;
+    `<span class="tot">${measuredTotalLabel} · ${elapsedLabel}</span></div>${bars}</div></details>`;
 }
 
 export function renderReidDiagnostics(data) {
