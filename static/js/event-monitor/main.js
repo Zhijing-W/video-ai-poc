@@ -1,5 +1,5 @@
 import { downloadJson, openLightbox, closeLightbox, sendDryRunToLlm, toggleJson } from "./actions.js";
-import { clockLocale, t } from "./i18n.js";
+import { clockLocale, reportLanguage, t } from "./i18n.js";
 import {
   health,
   listLlmModels,
@@ -60,7 +60,7 @@ async function loadReidOptions() {
 
 async function loadLlmOptions() {
   try {
-    renderLlmModels(await listLlmModels());
+    renderLlmModels(await listLlmModels(reportLanguage()));
   } catch (_) {
     renderLlmModels();
   }

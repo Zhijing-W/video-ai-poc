@@ -55,6 +55,9 @@ class Settings:
     azure_openai_managed_identity_client_id: str | None = _get(
         "AZURE_OPENAI_MANAGED_IDENTITY_CLIENT_ID"
     )
+    # ARM resource ID for discovery.  It is intentionally separate from the
+    # data-plane endpoint so deployment enumeration can use managed identity.
+    azure_openai_resource_id: str | None = _get("AZURE_OPENAI_RESOURCE_ID")
     foundry_analysis_deployment: str | None = _first_env(
         "FOUNDRY_ANALYSIS_DEPLOYMENT",
         "EVENT_LLM_DEPLOYMENT",
@@ -65,6 +68,10 @@ class Settings:
         "FOUNDRY_ANALYSIS_DEPLOYMENT",
         "AZURE_OPENAI_DEPLOYMENT",
     )
+    foundry_analysis_model: str | None = _get(
+        "FOUNDRY_ANALYSIS_MODEL", "gpt-4.1"
+    )
+    foundry_chat_model: str | None = _get("FOUNDRY_CHAT_MODEL", "gpt-4.1-mini")
 
     frame_interval_seconds: int = int(_get("FRAME_INTERVAL_SECONDS", "5"))
     max_frames: int = int(_get("MAX_FRAMES", "8"))

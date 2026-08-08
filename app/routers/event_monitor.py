@@ -51,6 +51,7 @@ def _inline_keyframe_image(value: object) -> str:
 class RunChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     model: str | None = None
+    language: str | None = None
 
 
 @router.get("/samples")
@@ -90,8 +91,8 @@ def list_reid_backends() -> dict:
 
 
 @router.get("/llm-models")
-def list_llm_models() -> dict:
-    return model_catalog()
+def list_llm_models(language: str | None = None) -> dict:
+    return model_catalog(locale=normalize_report_language(language))
 
 
 @router.post("/complete")
@@ -104,7 +105,11 @@ def complete_from_dry_run(body: dict = Body(...)) -> dict:
         payload.get("report_language")
     )
     try:
-        selection = resolve_model("analysis", body.get("analysis_model"))
+        selection = resolve_model(
+            "analysis",
+            body.get("analysis_model"),
+            locale=report_language,
+        )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     except RuntimeError as exc:
@@ -162,7 +167,12 @@ def chat_with_run(run_id: str, body: RunChatRequest) -> dict:
     if not question:
         raise HTTPException(400, "问题不能为空")
     try:
-        selection = resolve_model("chat", body.model, prompt=question)
+        selection = resolve_model(
+            "chat",
+            body.model,
+            prompt=question,
+            locale=normalize_report_language(body.language),
+        )
         return chat_about_run(run_id, question, selection)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -234,6 +244,7 @@ async def understand(
             "analysis",
             analysis_model,
             require_deployment=not dry_run,
+            locale=report_language,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc

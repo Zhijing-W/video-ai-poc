@@ -27,8 +27,9 @@ export async function listReidBackends() {
   return response.json();
 }
 
-export async function listLlmModels() {
-  const response = await fetch("/api/event-monitor/llm-models");
+export async function listLlmModels(language) {
+  const query = language ? `?language=${encodeURIComponent(language)}` : "";
+  const response = await fetch(`/api/event-monitor/llm-models${query}`);
   if (!response.ok) await readError(response);
   return response.json();
 }
@@ -57,11 +58,11 @@ export async function completeDryRun(payload, objective, language, analysisModel
   return response.json();
 }
 
-export async function chatAboutRun(runId, question, model) {
+export async function chatAboutRun(runId, question, model, language) {
   const response = await fetch(`/api/event-monitor/runs/${encodeURIComponent(runId)}/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question, model: model || null }),
+    body: JSON.stringify({ question, model: model || null, language: language || null }),
   });
   if (!response.ok) await readError(response);
   return response.json();

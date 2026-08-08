@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app import face
 from app.routers import event_monitor
+from app.services import llm_models
 
 
 def test_router_generates_unique_run_and_session_ids(monkeypatch) -> None:
@@ -506,6 +507,35 @@ def test_router_rejects_invalid_codeformer_fidelity_before_processing(
 
 
 def test_llm_model_catalog_and_unknown_analysis_model_validation(monkeypatch) -> None:
+    monkeypatch.setattr(
+        llm_models,
+        "event_llm_catalog",
+        lambda: {
+            "source": "arm",
+            "warning": None,
+            "catalog_models": [{"model": "gpt-4.1"}],
+            "callable_targets": [
+                {
+                    "deployment": "analysis-unit",
+                    "model": "gpt-4.1",
+                    "label": "analysis-unit (gpt-4.1)",
+                    "capabilities": {"chat": True, "image_input": True},
+                },
+                {
+                    "deployment": "chat-unit",
+                    "model": "gpt-4.1-mini",
+                    "label": "chat-unit (gpt-4.1-mini)",
+                    "capabilities": {"chat": True, "image_input": True},
+                },
+                {
+                    "deployment": "embedding",
+                    "model": "text-embedding-3-large",
+                    "label": "embedding (text-embedding-3-large)",
+                    "capabilities": {"chat": False, "image_input": False},
+                },
+            ],
+        },
+    )
     client = TestClient(app)
     with event_monitor.settings.override(
         foundry_analysis_deployment="analysis-unit",
@@ -517,9 +547,11 @@ def test_llm_model_catalog_and_unknown_analysis_model_validation(monkeypatch) ->
     body = catalog.json()
     assert body["defaults"] == {"analysis": "auto", "chat": "auto"}
     assert body["auth"] in {"managed_identity", "api_key"}
-    assert {"auto", "gpt-4.1", "gpt-4.1-mini"} <= {
+    assert {"auto", "analysis-unit", "chat-unit"} <= {
         item["alias"] for item in body["analysis"]
     }
+    assert "embedding" not in {item["alias"] for item in body["analysis"]}
+    assert body["catalog_models"] == [{"model": "gpt-4.1"}]
 
     called = False
 
@@ -536,7 +568,7 @@ def test_llm_model_catalog_and_unknown_analysis_model_validation(monkeypatch) ->
     )
 
     assert invalid.status_code == 400
-    assert "未知analysis模型" in invalid.json()["detail"]
+    assert "未知或不可用的可调用部署" in invalid.json()["detail"]
     assert called is False
 
 
@@ -556,13 +588,30 @@ def test_run_chat_uses_validated_backend_model_alias(monkeypatch) -> None:
         }
 
     monkeypatch.setattr(event_monitor, "chat_about_run", fake_chat)
+    monkeypatch.setattr(
+        llm_models,
+        "event_llm_catalog",
+        lambda: {
+            "source": "arm",
+            "warning": None,
+            "catalog_models": [],
+            "callable_targets": [
+                {
+                    "deployment": "chat-unit",
+                    "model": "gpt-4.1-mini",
+                    "label": "chat-unit (gpt-4.1-mini)",
+                    "capabilities": {"chat": True, "image_input": True},
+                }
+            ],
+        },
+    )
     with event_monitor.settings.override(
         foundry_analysis_deployment="analysis-unit",
         foundry_chat_deployment="chat-unit",
     ):
         response = TestClient(app).post(
             "/api/event-monitor/runs/abcdef123456/chat",
-            json={"question": "谁离开了？", "model": "gpt-4.1-mini"},
+            json={"question": "谁离开了？", "model": "chat-unit", "language": "en"},
         )
 
     assert response.status_code == 200
@@ -571,9 +620,9 @@ def test_run_chat_uses_validated_backend_model_alias(monkeypatch) -> None:
         "question": "谁离开了？",
         "selection": {
             "task": "chat",
-            "requested": "gpt-4.1-mini",
-            "selected": "gpt-4.1-mini",
+            "requested": "chat-unit",
+            "selected": "chat-unit",
             "model": "gpt-4.1-mini",
-            "reason": "explicit user selection",
+            "reason": "Explicit callable deployment selection.",
         },
     }

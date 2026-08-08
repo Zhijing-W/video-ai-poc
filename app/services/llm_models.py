@@ -1,27 +1,12 @@
-"""Backend-owned model aliases and deterministic routing for the PoC."""
+"""Backend-owned routing over server-discovered callable Foundry targets."""
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
+from typing import Any
 
 from ..core.config import settings
-
-
-@dataclass(frozen=True)
-class ModelOption:
-    alias: str
-    label: str
-    model: str
-    deployment: str | None
-    description: str
-
-    def public_dict(self) -> dict:
-        return {
-            "alias": self.alias,
-            "label": self.label,
-            "model": self.model,
-            "description": self.description,
-            "available": bool(self.deployment),
-        }
+from .llm_catalog import event_llm_catalog
 
 
 @dataclass(frozen=True)
@@ -32,6 +17,7 @@ class ModelSelection:
     model: str
     deployment: str
     reason: str
+    source: str = "configured"
 
     def public_dict(self) -> dict:
         return {
@@ -41,67 +27,6 @@ class ModelSelection:
             "model": self.model,
             "reason": self.reason,
         }
-
-
-def _options() -> dict[str, ModelOption]:
-    return {
-        "gpt-4.1": ModelOption(
-            alias="gpt-4.1",
-            label="GPT-4.1（质量优先）",
-            model="gpt-4.1",
-            deployment=settings.foundry_analysis_deployment,
-            description="多帧视觉分析和复杂证据推理。",
-        ),
-        "gpt-4.1-mini": ModelOption(
-            alias="gpt-4.1-mini",
-            label="GPT-4.1 mini（低延迟）",
-            model="gpt-4.1-mini",
-            deployment=settings.foundry_chat_deployment,
-            description="低成本问答，也可用于快速分析。",
-        ),
-    }
-
-
-def model_catalog() -> dict:
-    options = [option.public_dict() for option in _options().values()]
-    return {
-        "auth": (
-            "api_key"
-            if settings.azure_openai_auth == "api_key"
-            or (
-                settings.azure_openai_auth == "auto"
-                and settings.azure_openai_api_key
-            )
-            else "managed_identity"
-        ),
-        "defaults": {
-            "analysis": settings.event_analysis_model,
-            "chat": settings.event_chat_model,
-        },
-        "analysis": [
-            {
-                "alias": "auto",
-                "label": "Auto（质量优先）",
-                "model": None,
-                "description": "当前自动选择 GPT-4.1，后续可扩展评测驱动路由。",
-                "available": bool(settings.foundry_analysis_deployment),
-            },
-            *options,
-        ],
-        "chat": [
-            {
-                "alias": "auto",
-                "label": "Auto（按问题复杂度）",
-                "model": None,
-                "description": "简单问题走 mini，复杂证据推理走 GPT-4.1。",
-                "available": bool(
-                    settings.foundry_analysis_deployment
-                    and settings.foundry_chat_deployment
-                ),
-            },
-            *options,
-        ],
-    }
 
 
 _COMPLEX_CHAT_CUES = (
@@ -121,55 +46,200 @@ _COMPLEX_CHAT_CUES = (
 )
 
 
+def _is_english(locale: str | None) -> bool:
+    return (locale or "").lower().startswith("en")
+
+
+def _text(locale: str | None, english: str, chinese: str) -> str:
+    return english if _is_english(locale) else chinese
+
+
+def _resolved_auth_mode() -> str:
+    if settings.azure_openai_auth == "auto":
+        return "api_key" if settings.azure_openai_api_key else "managed_identity"
+    return settings.azure_openai_auth
+
+
+def _targets(task: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    catalog = event_llm_catalog()
+    capability = "image_input" if task == "analysis" else "chat"
+    targets = [
+        target
+        for target in catalog.get("callable_targets", [])
+        if target.get("deployment")
+        and (target.get("capabilities") or {}).get(capability) is True
+        and (task != "analysis" or (target.get("capabilities") or {}).get("chat") is True)
+    ]
+    return targets, catalog
+
+
+def _model_rank(model: str) -> tuple[int, str]:
+    """A deterministic quality ordering with a stable lexical tie-breaker."""
+    value = (model or "").lower()
+    match = re.search(r"gpt-(\d+)(?:\.(\d+))?", value)
+    if not match:
+        return (0, value)
+    major = int(match.group(1))
+    minor = int(match.group(2) or 0)
+    # "mini" is deliberately a capacity qualifier, not a deployment name.
+    # This keeps the ordering extensible while preferring full models on ties.
+    return (major * 100 + minor * 10 - (1 if "mini" in value else 0), value)
+
+
+def _best_target(targets: list[dict[str, Any]]) -> dict[str, Any]:
+    return sorted(
+        targets,
+        key=lambda target: (
+            -_model_rank(str(target.get("model") or ""))[0],
+            str(target.get("deployment") or "").lower(),
+        ),
+    )[0]
+
+
+def _configured_target(
+    targets: list[dict[str, Any]], deployment: str | None
+) -> dict[str, Any] | None:
+    return next(
+        (target for target in targets if target["deployment"] == deployment), None
+    )
+
+
+def model_catalog(*, locale: str | None = None) -> dict:
+    """Public UI data. Catalog model metadata is never a callable selection."""
+    analysis, raw = _targets("analysis")
+    chat, _ = _targets("chat")
+
+    def option(target: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "alias": target["deployment"],
+            "label": target["label"],
+            "model": target["model"],
+            "description": _text(
+                locale,
+                "Server-discovered callable deployment.",
+                "服务端发现的可调用部署。",
+            ),
+            "available": True,
+        }
+
+    auto_analysis = {
+        "alias": "auto",
+        "label": _text(locale, "Auto (best compatible deployment)", "自动（最佳兼容部署）"),
+        "model": None,
+        "description": _text(
+            locale,
+            "Deterministically selects the highest-ranked image-capable deployment.",
+            "确定性选择排名最高的图像输入兼容部署。",
+        ),
+        "available": bool(analysis),
+    }
+    auto_chat = {
+        "alias": "auto",
+        "label": _text(locale, "Auto (task-aware deployment)", "自动（按任务选择部署）"),
+        "model": None,
+        "description": _text(
+            locale,
+            "Uses the configured chat deployment for short follow-ups and the highest-ranked compatible deployment for evidence-heavy questions.",
+            "简短追问使用已配置的聊天部署，证据推理问题使用排名最高的兼容部署。",
+        ),
+        "available": bool(chat),
+    }
+    return {
+        "auth": _resolved_auth_mode(),
+        "defaults": {"analysis": "auto", "chat": "auto"},
+        "source": raw.get("source"),
+        "warning": raw.get("warning"),
+        "catalog_models": raw.get("catalog_models", []),
+        "callable_targets": raw.get("callable_targets", []),
+        "analysis": [auto_analysis, *map(option, analysis)],
+        "chat": [auto_chat, *map(option, chat)],
+    }
+
+
 def resolve_model(
     task: str,
     requested: str | None = None,
     *,
     prompt: str | None = None,
     require_deployment: bool = True,
+    locale: str | None = None,
 ) -> ModelSelection:
     if task not in {"analysis", "chat"}:
-        raise ValueError(f"未知大模型任务：{task}")
-    default = (
-        settings.event_analysis_model
-        if task == "analysis"
-        else settings.event_chat_model
-    )
-    alias = (requested or default or "auto").strip().lower()
-    options = _options()
+        raise ValueError(_text(locale, f"Unknown LLM task: {task}", f"未知大模型任务：{task}"))
+    alias = (requested or "auto").strip()
+    targets, catalog = _targets(task)
+    allowed = {target["deployment"]: target for target in targets}
 
-    if alias == "auto":
+    if alias.lower() == "auto":
+        if not targets:
+            if require_deployment:
+                capability = "image-capable" if task == "analysis" else "chat-compatible"
+                raise RuntimeError(
+                    _text(
+                        locale,
+                        f"No callable {capability} Microsoft Foundry deployment is available.",
+                        f"没有可调用且{('支持图像输入' if task == 'analysis' else '支持聊天')}的 Microsoft Foundry 部署。",
+                    )
+                )
+            return ModelSelection(
+                task=task,
+                requested="auto",
+                selected="auto",
+                model="",
+                deployment="",
+                reason=_text(locale, "No deployment is required for dry-run.", "dry-run 不需要部署。"),
+                source=str(catalog.get("source") or "configured"),
+            )
         if task == "analysis":
-            selected = "gpt-4.1"
-            reason = "accuracy-first video analysis"
+            selected = _best_target(targets)
+            reason = _text(
+                locale,
+                "Auto selected the highest-ranked image-capable deployment.",
+                "自动选择排名最高的图像输入兼容部署。",
+            )
         else:
             text = (prompt or "").lower()
             complex_question = len(text) > 180 or any(
                 cue in text for cue in _COMPLEX_CHAT_CUES
             )
-            selected = "gpt-4.1" if complex_question else "gpt-4.1-mini"
-            reason = (
-                "complex evidence reasoning"
-                if complex_question
-                else "latency-sensitive follow-up"
-            )
+            if complex_question:
+                selected = _best_target(targets)
+                reason = _text(
+                    locale,
+                    "Auto selected the highest-ranked compatible deployment for evidence reasoning.",
+                    "自动为证据推理选择排名最高的兼容部署。",
+                )
+            else:
+                selected = _configured_target(
+                    targets, settings.foundry_chat_deployment
+                ) or _best_target(targets)
+                reason = _text(
+                    locale,
+                    "Auto selected the configured chat deployment for a short follow-up.",
+                    "自动为简短追问选择已配置的聊天部署。",
+                )
+        requested_value = "auto"
     else:
-        selected = alias
-        reason = "explicit user selection"
+        selected = allowed.get(alias)
+        if selected is None:
+            raise ValueError(
+                _text(
+                    locale,
+                    "Unknown or unavailable callable deployment.",
+                    "未知或不可用的可调用部署。",
+                )
+            )
+        requested_value = alias
+        reason = _text(locale, "Explicit callable deployment selection.", "显式选择可调用部署。")
 
-    option = options.get(selected)
-    if option is None:
-        allowed = ", ".join(["auto", *options])
-        raise ValueError(f"未知{task}模型：{alias}；可选：{allowed}")
-    if require_deployment and not option.deployment:
-        raise RuntimeError(f"模型 {option.label} 尚未配置部署")
     return ModelSelection(
         task=task,
-        requested=alias,
-        selected=selected,
-        model=option.model,
-        deployment=option.deployment or "",
+        requested=requested_value,
+        selected=selected["deployment"],
+        model=selected["model"],
+        deployment=selected["deployment"],
         reason=reason,
+        source=str(catalog.get("source") or "configured"),
     )
 
 

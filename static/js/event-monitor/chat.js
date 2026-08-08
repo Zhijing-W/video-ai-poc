@@ -1,5 +1,5 @@
 import { chatAboutRun } from "./api.js?v=20260808-foundry-routing";
-import { t } from "./i18n.js";
+import { reportLanguage, t } from "./i18n.js";
 import { setStatus } from "./render.js?v=20260808-foundry-routing";
 import { getChatModelValue } from "./settings.js?v=20260808-foundry-routing";
 import { getLastPayload } from "./state.js";
@@ -38,7 +38,12 @@ export async function sendChatQuestion() {
   button.disabled = true;
   setStatus(t("chat.answering"));
   try {
-    const data = await chatAboutRun(payload.run_id, question, getChatModelValue());
+    const data = await chatAboutRun(
+      payload.run_id,
+      question,
+      getChatModelValue(),
+      reportLanguage()
+    );
     const selection = data.selection || {};
     const meta = [
       selection.model,

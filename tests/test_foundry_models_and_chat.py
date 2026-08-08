@@ -6,30 +6,71 @@ from types import SimpleNamespace
 from app.core import config as config_mod
 from app.core.config import settings
 from app.services import event_chat
-from app.services.llm_models import ModelSelection, resolve_model
+from app.services import llm_models
+from app.services.llm_models import ModelSelection, model_catalog, resolve_model
 
 
-def test_auto_routing_prefers_quality_for_analysis_and_mini_for_simple_chat() -> None:
+def _catalog(targets: list[dict]) -> dict:
+    return {
+        "source": "arm",
+        "warning": None,
+        "catalog_models": [],
+        "callable_targets": targets,
+    }
+
+
+def test_auto_routing_uses_discovered_targets_and_reports_actual_reason(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        llm_models,
+        "event_llm_catalog",
+        lambda: _catalog(
+            [
+                {
+                    "deployment": "analysis-gpt41",
+                    "model": "gpt-4.1",
+                    "label": "analysis-gpt41 (gpt-4.1)",
+                    "capabilities": {"chat": True, "image_input": True},
+                },
+                {
+                    "deployment": "analysis-gpt5",
+                    "model": "gpt-5",
+                    "label": "analysis-gpt5 (gpt-5)",
+                    "capabilities": {"chat": True, "image_input": True},
+                },
+                {
+                    "deployment": "chat-mini",
+                    "model": "gpt-4.1-mini",
+                    "label": "chat-mini (gpt-4.1-mini)",
+                    "capabilities": {"chat": True, "image_input": True},
+                },
+            ]
+        ),
+    )
     with settings.override(
-        foundry_analysis_deployment="analysis-unit",
-        foundry_chat_deployment="chat-unit",
+        foundry_chat_deployment="chat-mini",
     ):
-        analysis = resolve_model("analysis", "auto")
-        simple = resolve_model("chat", "auto", prompt="谁离开了？")
+        analysis = resolve_model("analysis", "auto", locale="en")
+        simple = resolve_model("chat", "auto", prompt="谁离开了？", locale="en")
         complex_question = resolve_model(
             "chat",
             "auto",
             prompt="请详细解释异常事件的证据依据，并比较两个事件窗。",
+            locale="en",
         )
 
-    assert analysis.selected == "gpt-4.1"
-    assert analysis.deployment == "analysis-unit"
-    assert simple.selected == "gpt-4.1-mini"
-    assert simple.deployment == "chat-unit"
-    assert complex_question.selected == "gpt-4.1"
+    assert analysis.selected == "analysis-gpt5"
+    assert analysis.deployment == "analysis-gpt5"
+    assert "highest-ranked image-capable" in analysis.reason
+    assert simple.selected == "chat-mini"
+    assert simple.deployment == "chat-mini"
+    assert "configured chat deployment" in simple.reason
+    assert complex_question.selected == "analysis-gpt5"
+    assert "evidence reasoning" in complex_question.reason
 
 
-def test_legacy_deployment_fallback_and_unconfigured_dry_run(monkeypatch) -> None:
+def test_legacy_environment_lookup_and_unconfigured_dry_run(monkeypatch) -> None:
     monkeypatch.delenv("FOUNDRY_ANALYSIS_DEPLOYMENT", raising=False)
     monkeypatch.delenv("FOUNDRY_CHAT_DEPLOYMENT", raising=False)
     monkeypatch.delenv("EVENT_LLM_DEPLOYMENT", raising=False)
@@ -46,22 +87,10 @@ def test_legacy_deployment_fallback_and_unconfigured_dry_run(monkeypatch) -> Non
     ) == "legacy-deployment"
 
     monkeypatch.setattr(
-        settings,
-        "foundry_analysis_deployment",
-        "legacy-deployment",
+        llm_models,
+        "event_llm_catalog",
+        lambda: _catalog([]),
     )
-    monkeypatch.setattr(
-        settings,
-        "foundry_chat_deployment",
-        "legacy-deployment",
-    )
-    analysis = resolve_model("analysis", "gpt-4.1")
-    chat = resolve_model("chat", "gpt-4.1-mini")
-
-    assert analysis.deployment == "legacy-deployment"
-    assert chat.deployment == "legacy-deployment"
-
-    monkeypatch.setattr(settings, "foundry_analysis_deployment", None)
     dry_run = resolve_model(
         "analysis",
         "auto",
@@ -81,10 +110,52 @@ def test_shared_client_validation_allows_chat_only_configuration(monkeypatch) ->
     monkeypatch.setattr(settings, "foundry_analysis_deployment", None)
     monkeypatch.setattr(settings, "azure_openai_deployment", None)
     monkeypatch.setattr(settings, "foundry_chat_deployment", "chat-only")
+    monkeypatch.setattr(
+        llm_models,
+        "event_llm_catalog",
+        lambda: _catalog(
+            [
+                {
+                    "deployment": "chat-only",
+                    "model": "gpt-4.1-mini",
+                    "label": "chat-only (gpt-4.1-mini)",
+                    "capabilities": {"chat": True, "image_input": True},
+                }
+            ]
+        ),
+    )
 
     settings.require_openai()
-    selection = resolve_model("chat", "gpt-4.1-mini")
+    selection = resolve_model("chat", "chat-only")
     assert selection.deployment == "chat-only"
+
+
+def test_model_labels_and_auto_reasons_follow_page_language(monkeypatch) -> None:
+    monkeypatch.setattr(
+        llm_models,
+        "event_llm_catalog",
+        lambda: _catalog(
+            [
+                {
+                    "deployment": "vision",
+                    "model": "gpt-4.1",
+                    "label": "vision (gpt-4.1)",
+                    "capabilities": {"chat": True, "image_input": True},
+                }
+            ]
+        ),
+    )
+
+    english = model_catalog(locale="en")
+    chinese = model_catalog(locale="zh-CN")
+    english_selection = resolve_model("analysis", "auto", locale="en")
+    chinese_selection = resolve_model("analysis", "auto", locale="zh-CN")
+
+    assert english["analysis"][0]["label"] == "Auto (best compatible deployment)"
+    assert "质量" not in english["analysis"][0]["label"]
+    assert "highest-ranked" in english_selection.reason
+    assert chinese["analysis"][0]["label"] == "自动（最佳兼容部署）"
+    assert "自动选择" in chinese_selection.reason
 
 
 def test_run_snapshot_omits_images_and_chat_persists_bounded_history(
