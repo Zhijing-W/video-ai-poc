@@ -214,17 +214,45 @@
       <div id="cfgSummary" class="em-cfgsummary" hidden></div>
       <div id="reidDiagnostics" class="em-reid-diagnostics" hidden></div>
       <section id="timings" class="em-timings" aria-live="polite" hidden></section>
-      <div id="resultTools" class="em-tools" hidden>
-        <button id="btnSendLlm" class="em-tool-btn" hidden>{{ ui.results.send_llm_button }}</button>
-        <button id="btnDownloadJson" class="em-tool-btn">{{ ui.results.download_json_button }}</button>
-        <button id="btnToggleJson" class="em-tool-btn">{{ ui.results.toggle_json_show }}</button>
-        <span class="em-tool-hint">{{ ui.results.tools_hint }}</span>
-      </div>
-      <section id="chatPanel" class="em-chat" hidden>
-        <div class="em-chat-head"><div><b>{{ ui.chat.title }}</b><span id="chatModelStatus">{{ ui.chat.waiting }}</span></div></div>
+      <section id="resultTools" class="em-result-actions" aria-labelledby="resultActionsTitle" hidden>
+        <h2 id="resultActionsTitle" class="em-result-actions-title">{{ ui.results.actions_title }}</h2>
+        <div id="dryRunAction" class="em-ai-action em-ai-action-reuse" hidden>
+          <div class="em-ai-action-copy">
+            <span class="em-ai-action-icon" aria-hidden="true">✦</span>
+            <div>
+              <div class="em-ai-action-title-row">
+                <h3>{{ ui.results.dry_run_action_title }}</h3>
+                <span class="em-ai-action-kind">{{ ui.results.dry_run_action_status }}</span>
+              </div>
+              <p>{{ ui.results.dry_run_action_description }}</p>
+            </div>
+          </div>
+          <button id="btnSendLlm" class="em-ai-action-button" type="button" hidden>{{ ui.results.send_llm_button }}</button>
+        </div>
+        <div class="em-result-utilities" aria-labelledby="resultUtilitiesTitle">
+          <h3 id="resultUtilitiesTitle">{{ ui.results.utilities_title }}</h3>
+          <div class="em-result-utility-controls">
+            <button id="btnDownloadJson" class="em-tool-btn" type="button">{{ ui.results.download_json_button }}</button>
+            <button id="btnToggleJson" class="em-tool-btn" type="button">{{ ui.results.toggle_json_show }}</button>
+          </div>
+          <p class="em-tool-hint">{{ ui.results.tools_hint }}</p>
+        </div>
+      </section>
+      <section id="chatPanel" class="em-chat em-evidence-chat" aria-labelledby="chatTitle" hidden>
+        <div class="em-chat-head">
+          <span class="em-chat-icon" aria-hidden="true">◌</span>
+          <div>
+            <div class="em-chat-title-row">
+              <h2 id="chatTitle">{{ ui.chat.title }}</h2>
+              <span class="em-chat-kind">{{ ui.chat.kind }}</span>
+            </div>
+            <p id="chatEvidenceMeta" class="em-chat-evidence-meta">{{ ui.chat.evidence_scope }}</p>
+            <span id="chatModelStatus" class="em-chat-model-status" role="status" aria-live="polite">{{ ui.chat.waiting }}</span>
+          </div>
+        </div>
         <div id="chatMessages" class="em-chat-messages"></div>
         <div class="em-chat-compose">
-          <textarea id="chatQuestion" rows="2" maxlength="2000" placeholder="{{ ui.chat.placeholder }}"></textarea>
+          <textarea id="chatQuestion" rows="2" maxlength="2000" aria-describedby="chatEvidenceMeta" placeholder="{{ ui.chat.placeholder }}"></textarea>
           <button id="btnChatSend" class="em-btn" type="button">{{ ui.chat.send }}</button>
         </div>
       </section>

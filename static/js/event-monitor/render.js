@@ -323,6 +323,7 @@ export function renderResult(data) {
   $("jsonView").hidden = true;
   $("btnToggleJson").textContent = t("results.toggle_json_show");
   $("btnSendLlm").hidden = !data.dry_run;
+  $("dryRunAction").hidden = !data.dry_run;
   const chatPanel = $("chatPanel");
   if (data.run_id) {
     if (chatPanel.dataset.runId !== data.run_id) $("chatMessages").innerHTML = "";

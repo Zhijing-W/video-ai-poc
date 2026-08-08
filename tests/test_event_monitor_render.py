@@ -23,6 +23,40 @@ def test_gait_summary_uses_effective_pipeline_state() -> None:
     assert 't("results.config_gait", { state: on(withGait) })' in source
 
 
+def test_post_analysis_ai_actions_are_separate_and_run_scoped() -> None:
+    template = (ROOT / "templates" / "event-monitor.html").read_text(encoding="utf-8")
+    results_css = (
+        ROOT / "static" / "css" / "event-monitor" / "results.css"
+    ).read_text(encoding="utf-8")
+    polish_css = (
+        ROOT / "static" / "css" / "event-monitor" / "polish.css"
+    ).read_text(encoding="utf-8")
+    render_source = (
+        ROOT / "static" / "js" / "event-monitor" / "render.js"
+    ).read_text(encoding="utf-8")
+
+    assert 'id="resultTools" class="em-result-actions"' in template
+    assert 'id="dryRunAction" class="em-ai-action em-ai-action-reuse" hidden' in template
+    assert 'id="btnSendLlm" class="em-ai-action-button" type="button"' in template
+    assert 'class="em-result-utilities" aria-labelledby="resultUtilitiesTitle"' in template
+    assert '<section id="chatPanel" class="em-chat em-evidence-chat"' in template
+    assert 'id="chatModelStatus" class="em-chat-model-status" role="status" aria-live="polite"' in template
+    assert 'aria-describedby="chatEvidenceMeta"' in template
+    assert "$(\"dryRunAction\").hidden = !data.dry_run;" in render_source
+    assert "chatPanel.dataset.runId = data.run_id;" in render_source
+    assert ".em-ai-action[hidden]" in results_css
+    assert "@media (max-width: 640px)" in results_css
+    assert ".em-ai-action-button:focus-visible" in polish_css
+    assert ".em-chat-compose { flex-direction: column;" in polish_css
+
+    for locale in ("en", "zh-CN"):
+        messages = build_page_bundle(locale)["messages"]
+        assert messages["results"]["dry_run_action_title"]
+        assert messages["results"]["utilities_title"]
+        assert messages["chat"]["kind"]
+        assert messages["chat"]["evidence_scope"]
+
+
 def _run_module_script(script: str) -> dict:
     if NODE is None:
         pytest.skip("Node.js is not installed")
