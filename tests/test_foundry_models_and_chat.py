@@ -242,7 +242,7 @@ def test_partner_capabilities_only_offer_phi_for_json_chat(monkeypatch) -> None:
                     "provider": "deepseek",
                     "capabilities": {
                         "chat": True,
-                        "image_input": True,
+                        "image_input": False,
                         "json_output": True,
                     },
                 },
@@ -251,10 +251,7 @@ def test_partner_capabilities_only_offer_phi_for_json_chat(monkeypatch) -> None:
     )
 
     catalog = model_catalog(locale="en")
-    assert [item["alias"] for item in catalog["analysis"]] == [
-        "auto",
-        "DeepSeek-V4-Flash",
-    ]
+    assert [item["alias"] for item in catalog["analysis"]] == ["auto"]
     assert {item["alias"] for item in catalog["chat"]} == {
         "auto",
         "Phi-4-reasoning",

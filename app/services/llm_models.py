@@ -61,9 +61,9 @@ _MODEL_DESCRIPTIONS_ZH = {
     "gpt-5.4": "适合复杂视觉证据的最高质量分析。",
     "gpt-5.4-mini": "高效的多模态分析与聊天。",
     "gpt-5.6-luna": "均衡的多模态推理。",
-    "gpt-5.6-terra": "最高质量的多模态推理。",
+    "gpt-5.6-terra": "最高质量的结构化聊天推理。",
     "phi-4-reasoning": "专注推理的文本和结构化聊天。",
-    "deepseek-v4-flash": "快速多模态推理。",
+    "deepseek-v4-flash": "快速结构化聊天推理。",
 }
 
 _REQUEST_FAMILY = {

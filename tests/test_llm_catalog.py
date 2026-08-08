@@ -190,7 +190,32 @@ def test_reviewed_partner_metadata_matches_smoke_test_contract() -> None:
         "json_output": True,
     }
     assert deepseek["provider"] == "deepseek"
-    assert deepseek["capabilities"]["image_input"] is True
+    assert deepseek["capabilities"]["image_input"] is False
     assert llm_catalog._target(
         "Kimi-K2.6", "Kimi-K2.6", "Succeeded", {"chatCompletion": "true"}, "MoonshotAI"
+    ) is None
+
+
+def test_succeeded_qwen_deployment_is_a_strict_chat_only_family_match() -> None:
+    qwen = llm_catalog._target(
+        "qwen-chat",
+        "Qwen3-Next",
+        "Succeeded",
+        {"chatCompletion": "true"},
+        "Qwen",
+    )
+
+    assert qwen["label"] == "Qwen3 Next"
+    assert qwen["provider"] == "qwen"
+    assert qwen["capabilities"] == {
+        "chat": True,
+        "image_input": False,
+        "json_output": True,
+    }
+    assert llm_catalog._target(
+        "qwen-unverified-format",
+        "Qwen3-Next",
+        "Succeeded",
+        {"chatCompletion": "true"},
+        "OpenAI",
     ) is None

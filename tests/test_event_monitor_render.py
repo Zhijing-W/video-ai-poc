@@ -642,4 +642,5 @@ def test_model_picker_uses_accessible_popover_instead_of_model_selects() -> None
     assert 'event.key === "Escape"' in source
     assert 'event.key === "ArrowDown"' in source
     assert 'providerMark(option.provider)' in source
+    assert 'provider === "qwen"' in source
     assert ".em-model-popover" in css
