@@ -15,6 +15,7 @@ from copy import deepcopy
 from pathlib import Path
 
 from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from .. import body_reid as reid_mod
@@ -22,8 +23,9 @@ from .. import face as face_mod
 from ..core.config import ALLOWED_VIDEO_SUFFIXES, DATA_DIR, OUTPUT_DIR, settings
 from ..event_analysis_pipeline import EventAnalysisRunError, analyze_event_stream
 from ..event_monitor_i18n import normalize_report_language, resolve_report_language
+from ..services.event_chat import chat_about_run, persist_run_snapshot
 from ..services.event_reporter import summarize_event_windows, understand_event
-from ..services import llm_catalog as llm_catalog_mod
+from ..services.llm_models import model_catalog, resolve_model
 
 router = APIRouter(prefix="/api/event-monitor", tags=["event-monitor"])
 
@@ -42,8 +44,13 @@ _INLINE_IMAGE_PREFIXES = (
 
 def _inline_keyframe_image(value: object) -> str:
     if not isinstance(value, str) or not value.startswith(_INLINE_IMAGE_PREFIXES):
-        raise HTTPException(400, "dry-run 关键帧必须是内联 image data URI")
+        raise HTTPException(400, "dry-run keyframes must be inline image data URIs")
     return value
+
+
+class RunChatRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+    model: str | None = None
 
 
 @router.get("/samples")
@@ -84,7 +91,7 @@ def list_reid_backends() -> dict:
 
 @router.get("/llm-models")
 def list_llm_models() -> dict:
-    return llm_catalog_mod.event_llm_catalog()
+    return model_catalog()
 
 
 @router.post("/complete")
@@ -96,17 +103,12 @@ def complete_from_dry_run(body: dict = Body(...)) -> dict:
     report_language = requested_language or normalize_report_language(
         payload.get("report_language")
     )
-    requested_model = (
-        body.get("llm_model")
-        if "llm_model" in body
-        else payload.get("model")
-    )
     try:
-        selected_llm_model = llm_catalog_mod.resolve_event_llm_deployment(
-            requested_model
-        )
+        selection = resolve_model("analysis", body.get("analysis_model"))
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
     if not payload.get("windows"):
         raise HTTPException(400, "没有可继续理解的 dry-run windows")
 
@@ -127,25 +129,49 @@ def complete_from_dry_run(body: dict = Body(...)) -> dict:
             frames,
             w.get("identity_context") or "",
             objective=objective,
-            language=report_language,
+            model=selection.deployment,
             scene_context=w.get("scene_context") or None,
             object_context=w.get("object_context") or None,
-            model=selected_llm_model,
+            language=report_language,
         )
 
     payload["dry_run"] = False
-    payload["model"] = selected_llm_model
+    payload["model"] = selection.model
+    payload["llm_selection"] = selection.public_dict()
     payload["report_language"] = resolve_report_language(report_language)
     if settings.event_overall_summary:
         try:
-            payload["overall"] = summarize_event_windows(
-                payload["windows"],
-                language=report_language,
-                model=selected_llm_model,
-            ) or None
+            payload["overall"] = (
+                summarize_event_windows(
+                    payload["windows"],
+                    model=selection.deployment,
+                    language=report_language,
+                )
+                or None
+            )
         except Exception as exc:  # 总结失败不影响逐窗事件结果
             payload["overall"] = {"error": str(exc)}
+    if payload.get("run_id"):
+        persist_run_snapshot(payload)
     return payload
+
+
+@router.post("/runs/{run_id}/chat")
+def chat_with_run(run_id: str, body: RunChatRequest) -> dict:
+    question = body.question.strip()
+    if not question:
+        raise HTTPException(400, "问题不能为空")
+    try:
+        selection = resolve_model("chat", body.model, prompt=question)
+        return chat_about_run(run_id, question, selection)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"大模型问答失败：{exc}") from exc
 
 
 @router.post("/understand")
@@ -161,6 +187,7 @@ async def understand(
     with_ocr: bool = Form(False),
     with_objects: bool = Form(False),
     dry_run: bool = Form(False),
+    analysis_model: str | None = Form(None),
     # ---- 本次请求覆盖的可插拔开关（设置面板传来；留空=用默认，仅本次生效不持久）----
     face_rec_backend: str | None = Form(None),   # arcface | adaface
     face_superres: str | None = Form(None),      # off | registered backend
@@ -176,7 +203,6 @@ async def understand(
     max_window_seconds: float | None = Form(None),
     stitch_thresh: float | None = Form(None),
     language: str | None = Form(None),
-    llm_model: str | None = Form(None),
 ) -> dict:
     """对"样片或上传视频"跑端到端事件理解，返回事件窗时间线。
 
@@ -196,19 +222,23 @@ async def understand(
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
-    try:
+        report_language = normalize_report_language(language)
+        try:
         selected_reid_backend = reid_mod.validate_backend(
             reid_backend if reid_backend is not None else settings.reid_backend
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    report_language = normalize_report_language(language)
     try:
-        selected_llm_model = llm_catalog_mod.resolve_event_llm_deployment(
-            llm_model
+        analysis_selection = resolve_model(
+            "analysis",
+            analysis_model,
+            require_deployment=not dry_run,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(503, str(exc)) from exc
 
     run_id = uuid.uuid4().hex[:12]
     run_dir = OUT_DIR / run_id
@@ -250,6 +280,7 @@ async def understand(
             "reid_consistency_ratio": reid_consistency_ratio,
             "reid_top1_margin": reid_top1_margin,
             "track_backend": (track_backend or None),
+            "event_llm_deployment": analysis_selection.deployment,
         }
         try:
             with settings.override(**overrides):
@@ -272,7 +303,8 @@ async def understand(
                     "reid_consistency_ratio": settings.reid_consistency_ratio,
                     "reid_top1_margin": settings.reid_top1_margin,
                     "track_backend": settings.track_backend,
-                    "llm_model": selected_llm_model,
+                    "analysis_model_requested": analysis_selection.requested,
+                    "analysis_model_selected": analysis_selection.selected,
                 }
                 payload = await run_in_threadpool(
                     analyze_event_stream,
@@ -292,7 +324,7 @@ async def understand(
                     include_keyframe_images=True,
                     session_id=f"event-monitor-{run_id}",
                     report_language=report_language,
-                    llm_model=selected_llm_model,
+                    llm_model=analysis_selection.deployment,
                 )
         except EventAnalysisRunError as exc:
             timing = exc.body_reid_timing
@@ -314,6 +346,8 @@ async def understand(
                 reid_mod.reset_backend()
 
     payload["run_id"] = run_id
+    payload["model"] = analysis_selection.model
+    payload["llm_selection"] = analysis_selection.public_dict()
     payload["report_language"] = resolve_report_language(
         payload.get("report_language") or report_language
     )
@@ -326,4 +360,5 @@ async def understand(
         or timing.get("device")
     )
     payload["config_used"] = config_used
+    persist_run_snapshot(payload)
     return payload

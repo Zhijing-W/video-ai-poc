@@ -25,7 +25,7 @@ export function collectAnalysisRequest() {
   formData.append("with_objects", $("withObjects").checked ? "true" : "false");
   formData.append("dry_run", dryRun ? "true" : "false");
   formData.append("language", reportLanguage());
-  appendIfValue(formData, "llm_model", getSelectedAiModel());
+  appendIfValue(formData, "analysis_model", getAnalysisModelValue());
   appendIfValue(formData, "face_rec_backend", $("faceRecBackend").value);
   appendIfValue(formData, "face_superres", $("faceSuperres").value);
   if (isCodeFormerSelected()) {
@@ -42,51 +42,51 @@ export function collectAnalysisRequest() {
   appendIfValue(formData, "max_window_seconds", $("maxWindowSeconds").value);
   appendIfValue(formData, "stitch_thresh", $("stitchThresh").value);
 
-  return { file, sample, dryRun, objective, formData };
+  return { file, sample, dryRun, objective, analysisModel: getAnalysisModelValue(), formData };
 }
 
 export function getObjectiveValue() {
   return $("objective").value.trim();
 }
 
-export function getSelectedAiModel() {
-  const select = $("aiModel");
-  return select ? select.value : "";
+export function getAnalysisModelValue() {
+  return $("analysisModel")?.value || "auto";
 }
 
-export function renderAiModels(catalog = {}) {
-  const select = $("aiModel");
-  const hint = $("aiModelHint");
+export function getChatModelValue() {
+  return $("chatModel")?.value || "auto";
+}
+
+function replaceModelOptions(select, options, defaultAlias) {
   if (!select) return;
-
-  const models = Array.isArray(catalog.models) ? catalog.models : [];
-  const configuredDefault = catalog.default || "";
+  const available = (options || []).filter((option) => option.available !== false);
   select.replaceChildren();
-
-  if (!models.length) {
-    select.add(new Option(t("panel.ai_unavailable"), ""));
-    select.disabled = true;
-    if (hint) {
-      hint.textContent = catalog.warning || t("panel.ai_hint");
-      hint.classList.toggle("warn", Boolean(catalog.warning));
-    }
-    return;
-  }
-
-  models.forEach((item) => {
-    const deployment = item.deployment || "";
-    const isDefault = deployment === configuredDefault || item.default === true;
-    const suffix = isDefault ? ` (${t("panel.ai_default_suffix")})` : "";
-    select.add(new Option(`${item.label || deployment}${suffix}`, isDefault ? "" : deployment));
+  available.forEach((option) => {
+    const item = new Option(option.label || option.alias, option.alias);
+    item.title = option.description || "";
+    select.add(item);
   });
-  select.value = "";
-  select.dataset.defaultModel = configuredDefault;
-  select.disabled = false;
+  select.value = available.some((option) => option.alias === defaultAlias)
+    ? defaultAlias
+    : (available[0]?.alias || "auto");
+  select.disabled = !available.length;
+}
+
+export function renderLlmModels(catalog = {}) {
+  replaceModelOptions($("analysisModel"), catalog.analysis, catalog.defaults?.analysis);
+  replaceModelOptions($("chatModel"), catalog.chat, catalog.defaults?.chat);
+  const badge = $("llmAuthBadge");
+  if (badge) {
+    badge.textContent = catalog.auth === "managed_identity"
+      ? t("panel.auth_managed_identity")
+      : t("panel.auth_api_key");
+    badge.className = `em-model-auth ${catalog.auth === "managed_identity" ? "managed" : ""}`;
+  }
+  const hint = $("llmModelHint");
   if (hint) {
-    hint.textContent = catalog.warning
-      ? t("panel.ai_catalog_warning")
-      : t("panel.ai_hint");
-    hint.classList.toggle("warn", Boolean(catalog.warning));
+    hint.textContent = catalog.analysis?.length
+      ? t("panel.routing_hint")
+      : t("panel.routing_unavailable");
   }
 }
 

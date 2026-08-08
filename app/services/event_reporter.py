@@ -95,6 +95,17 @@ def _create_with_retry(client, **kwargs):
             time.sleep(wait)
 
 
+def _usage_dict(response) -> dict:
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return {}
+    return {
+        "prompt_tokens": getattr(usage, "prompt_tokens", None),
+        "completion_tokens": getattr(usage, "completion_tokens", None),
+        "total_tokens": getattr(usage, "total_tokens", None),
+    }
+
+
 def understand_event(
     frames: list[dict],
     identity: str | list[dict] | None = None,
@@ -175,6 +186,7 @@ def understand_event(
 
     deployment = model or settings.event_llm_deployment or settings.azure_openai_deployment
     client = get_client()
+    started = time.perf_counter()
     resp = _create_with_retry(
         client,
         model=deployment,
@@ -191,6 +203,8 @@ def understand_event(
     result.setdefault("alert_level", "normal")
     result["_model"] = deployment
     result["_frames"] = len(frames)
+    result["_latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
+    result["_usage"] = _usage_dict(resp)
     return result
 
 
@@ -282,6 +296,7 @@ def summarize_event_windows(
 
     deployment = model or settings.event_llm_deployment or settings.azure_openai_deployment
     client = get_client()
+    started = time.perf_counter()
     resp = _create_with_retry(
         client,
         model=deployment,
@@ -298,6 +313,8 @@ def summarize_event_windows(
     result.setdefault("overall_alert_level", "normal")
     result["_model"] = deployment
     result["_windows"] = len(ev_windows)
+    result["_latency_ms"] = round((time.perf_counter() - started) * 1000, 1)
+    result["_usage"] = _usage_dict(resp)
     return result
 
 

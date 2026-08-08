@@ -4,8 +4,8 @@ import { startProgress, finishProgress } from "./progress.js";
 import { renderResult, setStatus } from "./render.js";
 import {
   getObjectiveValue,
-  getSelectedAiModel,
-} from "./settings.js?v=20260807-ai-model-selector";
+  getAnalysisModelValue,
+} from "./settings.js?v=20260808-foundry-routing";
 import { getKeyframe, getLastPayload } from "./state.js";
 import { boxesHtml } from "./timeline.js";
 import { $, baseName } from "./utils.js";
@@ -81,7 +81,7 @@ export async function sendDryRunToLlm() {
       payload,
       getObjectiveValue(),
       reportLanguage(),
-      getSelectedAiModel()
+      getAnalysisModelValue()
     );
     finishProgress(true);
     renderResult(data);

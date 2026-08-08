@@ -176,13 +176,17 @@
         <span class="em-dryrun-hint">{{ ui.panel.dry_run_hint }}</span>
       </label>
 
-      <section class="em-ai-module" aria-labelledby="aiModuleTitle">
-        <div id="aiModuleTitle" class="em-ai-title">{{ ui.panel.ai_title }}</div>
-        <label class="em-label" for="aiModel">{{ ui.panel.ai_label }}</label>
-        <select id="aiModel" class="em-input" disabled>
-          <option value="">{{ ui.panel.ai_loading }}</option>
+      <section class="em-model-card" aria-labelledby="aiModuleTitle">
+        <div id="aiModuleTitle" class="em-model-title">{{ ui.panel.ai_title }} <span id="llmAuthBadge" class="em-model-auth">{{ ui.panel.ai_loading }}</span></div>
+        <label class="em-label" for="analysisModel">{{ ui.panel.analysis_model_label }}</label>
+        <select id="analysisModel" class="em-input" disabled>
+          <option value="auto">{{ ui.panel.ai_loading }}</option>
         </select>
-        <div id="aiModelHint" class="em-ai-hint">{{ ui.panel.ai_hint }}</div>
+        <label class="em-label" for="chatModel" style="margin-top:8px">{{ ui.panel.chat_model_label }}</label>
+        <select id="chatModel" class="em-input" disabled>
+          <option value="auto">{{ ui.panel.ai_loading }}</option>
+        </select>
+        <div id="llmModelHint" class="em-ai-hint">{{ ui.panel.routing_hint }}</div>
       </section>
 
       <button id="btnRun" class="em-btn em-btn-cta"><span class="em-btn-ico">▶</span> {{ ui.panel.run_button }}</button>
@@ -216,6 +220,14 @@
         <button id="btnToggleJson" class="em-tool-btn">{{ ui.results.toggle_json_show }}</button>
         <span class="em-tool-hint">{{ ui.results.tools_hint }}</span>
       </div>
+      <section id="chatPanel" class="em-chat" hidden>
+        <div class="em-chat-head"><div><b>{{ ui.chat.title }}</b><span id="chatModelStatus">{{ ui.chat.waiting }}</span></div></div>
+        <div id="chatMessages" class="em-chat-messages"></div>
+        <div class="em-chat-compose">
+          <textarea id="chatQuestion" rows="2" maxlength="2000" placeholder="{{ ui.chat.placeholder }}"></textarea>
+          <button id="btnChatSend" class="em-btn" type="button">{{ ui.chat.send }}</button>
+        </div>
+      </section>
       <pre id="jsonView" class="em-json" hidden></pre>
       <div id="overall" class="em-overall" hidden></div>
       <div id="tracks" class="em-tracks"></div>
@@ -245,6 +257,6 @@
   <script>
     globalThis.__EVENT_MONITOR_I18N__ = {{ ui_bundle | tojson }};
   </script>
-  <script type="module" src="/static/js/event-monitor/main.js?v=20260807-ai-model-selector"></script>
+  <script type="module" src="/static/js/event-monitor/main.js?v=20260808-foundry-routing"></script>
 </body>
 </html>

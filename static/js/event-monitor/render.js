@@ -51,6 +51,9 @@ export function prepareForRun() {
   $("reidDiagnostics").hidden = true;
   $("timings").hidden = true;
   $("resultTools").hidden = true;
+  $("chatPanel").hidden = true;
+  $("chatMessages").innerHTML = "";
+  $("chatPanel").dataset.runId = "";
   $("timeline").innerHTML = "";
   $("tracks").innerHTML = "";
   $("meta").innerHTML = "";
@@ -255,6 +258,17 @@ export function renderResult(data) {
   $("jsonView").hidden = true;
   $("btnToggleJson").textContent = t("results.toggle_json_show");
   $("btnSendLlm").hidden = !data.dry_run;
+  const chatPanel = $("chatPanel");
+  if (data.run_id) {
+    if (chatPanel.dataset.runId !== data.run_id) $("chatMessages").innerHTML = "";
+    chatPanel.dataset.runId = data.run_id;
+    chatPanel.hidden = false;
+    const selection = data.llm_selection || {};
+    $("chatModelStatus").textContent =
+      `${selection.requested || "auto"} → ${selection.model || data.model || t("chat.waiting")}`;
+  } else {
+    chatPanel.hidden = true;
+  }
 
   renderOverall(data.overall);
   renderMeta(data);

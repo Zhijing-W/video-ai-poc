@@ -141,6 +141,50 @@
   line-height: 1.45;
 }
 .em-ai-hint.warn { color: var(--warn); }
+.em-model-card {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid rgba(200,112,60,.35);
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(200,112,60,.08), rgba(81,121,154,.06));
+}
+.em-model-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 9px;
+  color: var(--fg);
+  font-size: .78rem;
+  font-weight: 700;
+}
+.em-model-auth {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--panel2);
+  color: var(--muted);
+  font-size: .6rem;
+  font-weight: 600;
+}
+.em-model-auth.managed { background: rgba(90,138,74,.16); color: var(--ok); }
+.em-chat {
+  margin: 12px 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.em-chat-head { padding: 11px 14px; border-bottom: 1px solid var(--line); color: var(--fg); font-size: .78rem; }
+.em-chat-head span { margin-left: 8px; color: var(--muted); font-size: .66rem; font-weight: 400; }
+.em-chat-messages { max-height: 300px; overflow-y: auto; padding: 12px 14px 4px; }
+.em-chat-message { margin-bottom: 10px; }
+.em-chat-role { color: var(--muted); font-size: .62rem; font-weight: 700; text-transform: uppercase; }
+.em-chat-text { margin-top: 3px; padding: 9px 11px; border-radius: 9px; background: var(--panel2); color: var(--fg); font-size: .76rem; line-height: 1.55; white-space: pre-wrap; }
+.em-chat-message.user .em-chat-text { background: rgba(200,112,60,.12); }
+.em-chat-meta { margin-top: 3px; color: var(--muted); font-family: var(--mono); font-size: .6rem; }
+.em-chat-compose { display: flex; gap: 8px; padding: 10px 14px 14px; }
+.em-chat-compose textarea { flex: 1; resize: vertical; min-height: 46px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel2); color: var(--fg); font: inherit; font-size: .74rem; }
+.em-chat-compose .em-btn { width: auto; min-width: 72px; margin: 0; }
 
 /* ---------- 主按钮 CTA 强化 ---------- */
 .em-btn-cta {

@@ -2,12 +2,13 @@ import { downloadJson, openLightbox, closeLightbox, sendDryRunToLlm, toggleJson 
 import { clockLocale, t } from "./i18n.js";
 import {
   health,
-  listAiModels,
+  listLlmModels,
   listReidBackends,
   listSamples,
   listSuperresBackends,
   runAnalysis,
-} from "./api.js?v=20260807-ai-model-selector";
+} from "./api.js?v=20260808-foundry-routing";
+import { wireChat } from "./chat.js?v=20260808-foundry-routing";
 import { finishProgress, startProgress } from "./progress.js";
 import {
   prepareForRun,
@@ -16,17 +17,17 @@ import {
   setBackendIndicator,
   setStatus,
   showRunFailure,
-} from "./render.js?v=20260807-ai-model-selector";
+} from "./render.js?v=20260808-foundry-routing";
 import {
   closeSettings,
   collectAnalysisRequest,
   openSettings,
   renderReidBackends,
-  renderAiModels,
+  renderLlmModels,
   renderSuperresBackends,
   wireDropzone,
   wireSuperresSettings,
-} from "./settings.js?v=20260807-ai-model-selector";
+} from "./settings.js?v=20260808-foundry-routing";
 import { $ } from "./utils.js";
 
 function tickClock() {
@@ -57,11 +58,11 @@ async function loadReidOptions() {
   }
 }
 
-async function loadAiModelOptions() {
+async function loadLlmOptions() {
   try {
-    renderAiModels(await listAiModels());
+    renderLlmModels(await listLlmModels());
   } catch (_) {
-    renderAiModels();
+    renderLlmModels();
   }
 }
 
@@ -141,9 +142,10 @@ tickClock();
 setInterval(tickClock, 1000);
 wireDropzone();
 wireSuperresSettings();
+wireChat();
 bindEvents();
 checkBackend();
 loadSampleOptions();
 loadSuperresOptions();
 loadReidOptions();
-loadAiModelOptions();
+loadLlmOptions();
