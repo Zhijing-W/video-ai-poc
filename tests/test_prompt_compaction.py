@@ -167,6 +167,27 @@ def test_long_recording_is_bounded_deterministic_and_keeps_every_window_summary(
     assert len(presence_block.splitlines()) - 1 <= 5
 
 
+def test_minimum_global_budget_keeps_all_fifty_window_citations() -> None:
+    windows = [_window(index) for index in range(1, 51)]
+    prompt = compact_evidence(
+        windows,
+        max_chars=4_096,
+        max_table_rows=120,
+        max_table_chars=6_000,
+    )
+
+    assert len(prompt) <= 4_096
+    assert "[WINDOW_MIN_UNTRUSTED]" in prompt
+    assert "[WINDOW_SUMMARY_UNTRUSTED]" not in prompt
+    assert "\ntrue\tultra\t" in prompt
+    assert "Minimal index/time/summary citations for every window were retained" in prompt
+    assert prompt.count("Subject #7 carries a backpack.") == len(windows)
+    for window in windows:
+        wid = window["window_index"]
+        start, end = window["time_range"]
+        assert f"\n{wid}\t{start}~{end}\t" in prompt
+
+
 def test_reporter_paths_send_compact_evidence(monkeypatch) -> None:
     calls: list[dict] = []
     response = SimpleNamespace(

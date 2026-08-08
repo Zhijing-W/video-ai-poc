@@ -81,8 +81,8 @@ def _protected_summary_table(
     rows: list[tuple[Any, ...]],
     *,
     max_chars: int,
-) -> tuple[str, int]:
-    """Keep every window's minimal time/summary citation, shortening cells if needed."""
+) -> tuple[str, str]:
+    """Keep every window's time/summary citation or reject an impossible budget."""
     columns = ("wid", "start", "end", "alert", "summary", "notification", "subjects")
     for cell_limit in (256, 128, 64, 32, 16, 8):
         text, dropped = _budgeted_table(
@@ -94,18 +94,30 @@ def _protected_summary_table(
             cell_limit=cell_limit,
         )
         if not dropped:
-            return text, 0
-    # Settings enforce a practical global floor. This fallback still guarantees the
-    # caller's configured output bound for pathological external snapshots.
-    text, dropped = _budgeted_table(
-        "WINDOW_SUMMARY_UNTRUSTED",
-        columns,
-        rows,
-        max_rows=len(rows),
-        max_chars=max_chars,
-        cell_limit=8,
+            return text, "full"
+
+    # The normal table is intentionally verbose.  At the lowest valid global
+    # budget, use one compact row per window before considering any optional table.
+    # Its columns retain the invariant: stable window index, time citation, summary.
+    ultra_rows = [
+        (window_id, f"{start}~{end}", summary)
+        for window_id, start, end, _alert, summary, _notification, _subjects in rows
+    ]
+    for cell_limit in (128, 64, 48, 32, 24, 16, 8):
+        text, dropped = _budgeted_table(
+            "WINDOW_MIN_UNTRUSTED",
+            ("wid", "time", "summary"),
+            ultra_rows,
+            max_rows=len(ultra_rows),
+            max_chars=max_chars,
+            cell_limit=cell_limit,
+        )
+        if not dropped:
+            return text, "ultra"
+    raise ValueError(
+        "EVENT_EVIDENCE_MAX_CHARS is too small to retain every window's "
+        "minimal index/time/summary citation; increase it or reduce the run size."
     )
-    return text, dropped
 
 
 def _truncation_table(
@@ -113,22 +125,30 @@ def _truncation_table(
     truncated: bool,
     dropped_rows: int,
     truncated_tables: list[str],
+    summary_mode: str,
     max_chars: int,
     max_table_rows: int,
     max_table_chars: int,
 ) -> str:
-    notice = (
-        "Evidence was truncated after preserving every window's time/summary citation; "
-        "remaining rows are deterministic priority evidence."
-        if truncated
-        else "No evidence rows were truncated."
-    )
+    if summary_mode == "ultra":
+        notice = (
+            "Minimal index/time/summary citations for every window were retained in "
+            "WINDOW_MIN_UNTRUSTED; richer evidence was truncated by budget."
+        )
+    elif truncated:
+        notice = (
+            "Evidence was truncated after preserving every window's time/summary citation; "
+            "remaining rows are deterministic priority evidence."
+        )
+    else:
+        notice = "No evidence rows were truncated."
     return _table(
         "TRUNCATION",
-        ("truncated", "dropped_rows", "tables", "global_chars", "table_rows", "table_chars", "notice"),
+        ("truncated", "summary_mode", "dropped_rows", "tables", "global_chars", "table_rows", "table_chars", "notice"),
         [
             (
                 truncated,
+                summary_mode,
                 dropped_rows,
                 ",".join(truncated_tables),
                 max_chars,
@@ -392,7 +412,7 @@ def compact_evidence(
     prefix = f"{PROTOCOL_VERSION}\n{_UNTRUSTED_NOTICE}"
     metadata_reserve = 768
     protected_budget = max(1, max_chars - len(prefix) - metadata_reserve)
-    protected_summary, protected_dropped = _protected_summary_table(
+    protected_summary, summary_mode = _protected_summary_table(
         summary_rows,
         max_chars=protected_budget,
     )
@@ -459,10 +479,8 @@ def compact_evidence(
         )
 
     rendered_tables = [protected_summary]
-    dropped_rows = protected_dropped
-    truncated_tables: list[str] = (
-        ["WINDOW_SUMMARY_UNTRUSTED"] if protected_dropped else []
-    )
+    dropped_rows = 0
+    truncated_tables: list[str] = []
     for name, columns, rows in candidates:
         used = len(prefix) + len("\n\n".join(rendered_tables)) + (2 * len(rendered_tables))
         remaining = max_chars - metadata_reserve - used
@@ -488,11 +506,12 @@ def compact_evidence(
             dropped_rows += dropped
             truncated_tables.append(name)
 
-    truncated = bool(dropped_rows or truncated_tables)
+    truncated = bool(dropped_rows or truncated_tables or summary_mode == "ultra")
     metadata = _truncation_table(
         truncated=truncated,
         dropped_rows=dropped_rows,
         truncated_tables=truncated_tables,
+        summary_mode=summary_mode,
         max_chars=max_chars,
         max_table_rows=max_table_rows,
         max_table_chars=max_table_chars,

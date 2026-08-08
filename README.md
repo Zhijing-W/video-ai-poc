@@ -60,7 +60,9 @@ image inputs and are never copied into text prompts.
 each nonessential table. When a long recording is trimmed, the `TRUNCATION` table
 reports the limits and omitted rows. Every window retains a time-range and summary
 citation before deterministic priority evidence (events, subjects, objects, OCR,
-and spatial data) is added.
+and spatial data) is added. At the configured lower bound, this invariant uses the
+ultra-compact `WINDOW_MIN_UNTRUSTED` table; an impossibly small direct caller budget
+is rejected rather than claiming that dropped citations were preserved.
 
 ### Requirements
 
