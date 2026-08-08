@@ -1,4 +1,5 @@
 import { getLastPayload, registerKeyframe } from "./state.js";
+import { labelLevel, t } from "./i18n.js";
 import { esc, subjectHue } from "./utils.js";
 
 function boxesForFrame(groundingFrame) {
@@ -50,10 +51,16 @@ function renderGrounding(grounding) {
       const sample = objects
         .slice(0, 4)
         .map((object) => `${esc(object.label)} c=${esc(JSON.stringify(object.center_norm || []))}`)
-        .join("；");
+        .join(" · ");
       return (
-        `<div class="em-event"><span class="et">frame ${esc(frame.frame_index)} @ ${esc(frame.timestamp)}</span>` +
-        `<span class="ea">${objects.length} objects${sample ? ` · ${sample}` : ""}</span></div>`
+        `<div class="em-event"><span class="et">${esc(t("timeline.frame_row", {
+          frame: frame.frame_index,
+          timestamp: frame.timestamp,
+        }))}</span>` +
+        `<span class="ea">${esc(t("timeline.objects_suffix", {
+          count: objects.length,
+          sample: sample ? t("timeline.objects_sample", { sample }) : "",
+        }))}</span></div>`
       );
     })
     .join("");
@@ -63,11 +70,14 @@ function renderGrounding(grounding) {
     .map(
       (trajectory) =>
         `<div class="em-event"><span class="es">${esc(trajectory.label)}</span>` +
-        `<span class="ea">${esc(trajectory.direction)} · path ${esc(JSON.stringify(trajectory.path_sample || []))}</span></div>`
+        `<span class="ea">${esc(t("timeline.trajectory_row", {
+          direction: trajectory.direction,
+          path: JSON.stringify(trajectory.path_sample || []),
+        }))}</span></div>`
     )
     .join("");
 
-  return `<details class="em-aux"><summary>📍 空间 grounding：关键帧坐标 + 轨迹摘要</summary>${frameRows}${trajectoryRows}</details>`;
+  return `<details class="em-aux"><summary>${esc(t("timeline.grounding_summary"))}</summary>${frameRows}${trajectoryRows}</details>`;
 }
 
 function renderWindow(windowData) {
@@ -77,14 +87,17 @@ function renderWindow(windowData) {
   const frames = (windowData.keyframes || [])
     .map((keyframe, index) => {
       const boxes = boxesForFrame(groundingFrames[index]);
-      const caption = `关键帧 · ${keyframe.timestamp}${boxes.length ? ` · ${boxes.length} 个目标` : ""}`;
+      const caption = t("timeline.keyframe_caption", {
+        timestamp: keyframe.timestamp,
+        objects: boxes.length ? t("timeline.keyframe_objects", { count: boxes.length }) : "",
+      });
       const keyframeIndex = registerKeyframe({
         image: keyframe.image,
         boxes,
         caption,
       });
       return (
-        `<div class="em-frame" data-kf="${keyframeIndex}" title="点击放大">` +
+        `<div class="em-frame" data-kf="${keyframeIndex}" title="${esc(t("timeline.click_to_zoom"))}">` +
         `<img src="${keyframe.image}" loading="lazy"/>` +
         `<div class="em-boxes">${boxesHtml(boxes)}</div>` +
         `<span class="em-frame-ts">${esc(keyframe.timestamp)}</span></div>`
@@ -94,21 +107,25 @@ function renderWindow(windowData) {
 
   const people = (windowData.people || [])
     .map((person) => {
-      const label = person.subject_id != null ? `主体#${person.subject_id}` : `track ${person.track_id}`;
+      const label = person.subject_id != null
+        ? t("timeline.person_subject", { id: person.subject_id })
+        : t("timeline.person_track", { id: person.track_id });
       const hue = subjectHue(person.subject_id);
       const thumb = thumbForTrack(person);
       const avatar = thumb ? `<img class="em-pavatar" src="${thumb}" loading="lazy"/>` : "";
       const cues = [];
-      if (person.reid && person.reid.score != null) cues.push(`人形ReID ${(+person.reid.score).toFixed(2)}`);
+      if (person.reid && person.reid.score != null) cues.push(t("timeline.person_body_score", { score: (+person.reid.score).toFixed(2) }));
       const faceUsable =
         person.face &&
         person.face.observed !== false &&
         person.face.eligibility !== "none" &&
         person.face.match_ready;
-      cues.push(faceUsable ? `人脸${person.face.match_source === "superres" ? "超分恢复" : "可用"}` : "无可用脸→人形为准");
-      if (person.reused) cues.push("♻回头客");
-      if (person.local_subject) cues.push("本视频本地subject");
-      if (person.subject_conflict_split) cues.push("时间冲突已拆分");
+      cues.push(faceUsable
+        ? t(person.face.match_source === "superres" ? "timeline.person_face_superres" : "timeline.person_face_ready")
+        : t("timeline.person_face_missing"));
+      if (person.reused) cues.push(t("timeline.person_return"));
+      if (person.local_subject) cues.push(t("timeline.person_local"));
+      if (person.subject_conflict_split) cues.push(t("timeline.person_split"));
       return (
         `<div class="em-person" style="--hue:${hue}">${avatar}` +
         `<span class="pl">${esc(label)}</span> <span class="pc">${esc(cues.join(" · "))}</span></div>`
@@ -117,10 +134,10 @@ function renderWindow(windowData) {
     .join("");
 
   const scene = windowData.scene_context
-    ? `<details class="em-aux"><summary>🔤 场景文字 OCR</summary><pre>${esc(windowData.scene_context)}</pre></details>`
+    ? `<details class="em-aux"><summary>${esc(t("timeline.scene_summary"))}</summary><pre>${esc(windowData.scene_context)}</pre></details>`
     : "";
   const objects = windowData.object_context
-    ? `<details class="em-aux"><summary>📦 物体 / 包裹</summary><pre>${esc(windowData.object_context)}</pre></details>`
+    ? `<details class="em-aux"><summary>${esc(t("timeline.objects_summary"))}</summary><pre>${esc(windowData.object_context)}</pre></details>`
     : "";
   const grounding = renderGrounding(windowData.spatial_grounding);
 
@@ -146,7 +163,7 @@ function renderWindow(windowData) {
       grounding;
   } else {
     body =
-      '<div class="em-summary" style="color:var(--muted)">（dry-run：未调用 LLM。以下为将喂给模型的关键帧与身份。）</div>' +
+      `<div class="em-summary" style="color:var(--muted)">${esc(t("results.dry_run_summary"))}</div>` +
       (frames ? `<div class="em-frames">${frames}</div>` : "") +
       scene +
       objects +
@@ -156,9 +173,15 @@ function renderWindow(windowData) {
   return (
     `<div class="em-window ${esc(level)}">` +
     `<div class="em-window-head">` +
-    `<span class="em-time">⏱ ${esc(windowData.time_range[0])} ~ ${esc(windowData.time_range[1])}</span>` +
-    `<span class="em-badge ${esc(level)}">${esc(level)}</span>` +
-    `<span class="em-time">${windowData.frame_count || 0} 帧 → ${(windowData.keyframe_indices || []).length} 关键帧</span>` +
+    `<span class="em-time">${esc(t("timeline.window_head_time", {
+      start: windowData.time_range[0],
+      end: windowData.time_range[1],
+    }))}</span>` +
+    `<span class="em-badge ${esc(level)}">${esc(labelLevel(level))}</span>` +
+    `<span class="em-time">${esc(t("timeline.window_head_counts", {
+      frames: windowData.frame_count || 0,
+      keyframes: (windowData.keyframe_indices || []).length,
+    }))}</span>` +
     "</div>" +
     body +
     (people ? `<div class="em-people">${people}</div>` : "") +

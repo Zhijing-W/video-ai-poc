@@ -25,11 +25,11 @@ YOLO 检测权重；`--include-optional-yolo` 同时准备姿态和分割权重�
 | `detection/yolo/yolov8m-seg.pt` | 步态剪影分割 |
 | `superres/*` | GFPGAN、CodeFormer、Real-ESRGAN |
 | `face/insightface` | buffalo_l 检测、关键点与 ArcFace |
-| `reid/osnet` | 默认 OSNet-AIN |
+| `reid/osnet` | 轻量 OSNet-AIN 备选 |
 | `reid/resnet50` | ImageNet 兜底特征 |
 | `reid/clipreid` | 固定官方源码、CLIP 基础权重、MSMT17 checkpoint |
 | `reid/siglip2/model` | 固定 Hugging Face 模型快照 |
-| `reid/differ` | 固定官方源码与 LTCC checkpoint |
+| `reid/differ` | 精度优先默认；固定官方源码与 LTCC checkpoint |
 
 ## 按需准备
 
@@ -57,9 +57,9 @@ YOLO 检测权重；`--include-optional-yolo` 同时准备姿态和分割权重�
 
 | 后端 | 官方来源与权重 | 产品定位 |
 |---|---|---|
-| CLIP-ReID | [Syliz517/CLIP-ReID](https://github.com/Syliz517/CLIP-ReID)，源码固定到 `eb1898b72c882875f478bebfc6d41644eece0a5d`，使用官方 MSMT17 ViT-B/16 checkpoint | 标准跨摄像头 ReID；当前官方实现要求 CUDA |
+| CLIP-ReID | [Syliz517/CLIP-ReID](https://github.com/Syliz517/CLIP-ReID)，源码固定到 `eb1898b72c882875f478bebfc6d41644eece0a5d`，使用官方 MSMT17 ViT-B/16 checkpoint | 平衡/延迟敏感选项；当前官方实现要求 CUDA |
 | SigLIP2 | [MarketaJu/siglip2-person-description-reid](https://huggingface.co/MarketaJu/siglip2-person-description-reid)，revision `196e5d6` | 衣着/描述语义特征，作为实验性补充，不替代标准身份 ReID |
-| DIFFER | [xliangp/DIFFER](https://github.com/xliangp/DIFFER)，源码固定到 `67acb5d3658d103b4412c8c99f93ee8f085802fe`，使用官方 LTCC `eva02_l_bio_best.pth` | 面向换衣 ReID，方向最匹配但模型最重 |
+| DIFFER | [xliangp/DIFFER](https://github.com/xliangp/DIFFER)，源码固定到 `67acb5d3658d103b4412c8c99f93ee8f085802fe`，使用官方 LTCC `eva02_l_bio_best.pth` | 当前冻结协议下的精度优先产品默认；模型最重，生产建议使用 GPU |
 
 运行 `python scripts\download_models.py --reid` 会从上述官方来源准备源码、基础
 权重和微调 checkpoint。失败项会汇总报错，已成功项不会重复下载，可在网络恢复后直接重跑。

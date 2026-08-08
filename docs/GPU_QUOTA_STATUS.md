@@ -103,17 +103,17 @@ pwsh infra\add-gpu-pool.ps1 `
 
 ### Step 5：build GPU 镜像 & 打开开关（10 分钟）
 ```powershell
-# build GPU 镜像
-az acr build `
-    --registry <ACR_NAME> `
-    --image video-poc-gpu:latest `
-    --file Dockerfile.gpu .
+# build GPU 镜像（工作流负责解析 GPU_BASE_IMAGE 和依赖缓存）
+$BRANCH = git branch --show-current
+$TAG = git rev-parse HEAD
+gh workflow run "Build GPU image" --ref $BRANCH
+gh run watch
 
 # helm 打开 gpu.enabled
 helm upgrade video-poc charts\video-poc -n video-poc `
     --set gpu.enabled=true `
     --set gpu.image.repository=<ACR_LOGIN>/video-poc-gpu `
-    --set gpu.image.tag=latest `
+    --set gpu.image.tag=$TAG `
     --reuse-values
 ```
 

@@ -69,9 +69,8 @@
 
 /* 主体记忆（认人结果）摘要 */
 .em-tracks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  display: block;
+  width: 100%;
   margin-bottom: 14px;
 }
 .em-chip {

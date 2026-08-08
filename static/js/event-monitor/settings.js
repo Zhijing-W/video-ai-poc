@@ -1,3 +1,4 @@
+import { reportLanguage, t, uiLocale } from "./i18n.js";
 import { $ } from "./utils.js";
 
 function appendIfValue(formData, key, value) {
@@ -23,6 +24,8 @@ export function collectAnalysisRequest() {
   formData.append("with_ocr", $("withOcr").checked ? "true" : "false");
   formData.append("with_objects", $("withObjects").checked ? "true" : "false");
   formData.append("dry_run", dryRun ? "true" : "false");
+  formData.append("language", reportLanguage());
+  appendIfValue(formData, "llm_model", getSelectedAiModel());
   appendIfValue(formData, "face_rec_backend", $("faceRecBackend").value);
   appendIfValue(formData, "face_superres", $("faceSuperres").value);
   if (isCodeFormerSelected()) {
@@ -46,6 +49,47 @@ export function getObjectiveValue() {
   return $("objective").value.trim();
 }
 
+export function getSelectedAiModel() {
+  const select = $("aiModel");
+  return select ? select.value : "";
+}
+
+export function renderAiModels(catalog = {}) {
+  const select = $("aiModel");
+  const hint = $("aiModelHint");
+  if (!select) return;
+
+  const models = Array.isArray(catalog.models) ? catalog.models : [];
+  const configuredDefault = catalog.default || "";
+  select.replaceChildren();
+
+  if (!models.length) {
+    select.add(new Option(t("panel.ai_unavailable"), ""));
+    select.disabled = true;
+    if (hint) {
+      hint.textContent = catalog.warning || t("panel.ai_hint");
+      hint.classList.toggle("warn", Boolean(catalog.warning));
+    }
+    return;
+  }
+
+  models.forEach((item) => {
+    const deployment = item.deployment || "";
+    const isDefault = deployment === configuredDefault || item.default === true;
+    const suffix = isDefault ? ` (${t("panel.ai_default_suffix")})` : "";
+    select.add(new Option(`${item.label || deployment}${suffix}`, isDefault ? "" : deployment));
+  });
+  select.value = "";
+  select.dataset.defaultModel = configuredDefault;
+  select.disabled = false;
+  if (hint) {
+    hint.textContent = catalog.warning
+      ? t("panel.ai_catalog_warning")
+      : t("panel.ai_hint");
+    hint.classList.toggle("warn", Boolean(catalog.warning));
+  }
+}
+
 function isCodeFormerSelected() {
   const select = $("faceSuperres");
   return select.value === "codeformer"
@@ -63,7 +107,7 @@ export function renderSuperresBackends(catalog = {}) {
   const names = Array.isArray(catalog.backends) ? catalog.backends : [];
   const allowed = [...new Set(["off", "gfpgan", "codeformer", "realesrgan_x2plus", ...names])];
   const labels = {
-    off: "关闭",
+    off: t("settings.face_superres_off"),
     gfpgan: "GFP-GAN",
     codeformer: "CodeFormer",
     realesrgan_x2plus: "Real-ESRGAN x2plus",
@@ -71,8 +115,13 @@ export function renderSuperresBackends(catalog = {}) {
   const defaultBackend = catalog.default || "off";
   select.dataset.defaultBackend = defaultBackend;
   select.replaceChildren();
-  select.add(new Option(`默认（${labels[defaultBackend] || defaultBackend}）`, ""));
-  allowed.forEach((name) => select.add(new Option(labels[name] || name, name)));
+  const defaultLabel = uiLocale() === "en"
+    ? `${labels[defaultBackend] || defaultBackend} (default)`
+    : `${labels[defaultBackend] || defaultBackend}（默认）`;
+  select.add(new Option(defaultLabel, ""));
+  allowed
+    .filter((name) => name !== defaultBackend)
+    .forEach((name) => select.add(new Option(labels[name] || name, name)));
 
   const fidelity = catalog.metadata?.codeformer?.fidelity_default;
   const input = $("faceCodeformerFidelity");
@@ -83,12 +132,13 @@ export function renderSuperresBackends(catalog = {}) {
 export function renderReidBackends(catalog = {}) {
   const select = $("reidBackend");
   if (!select) return;
-  const names = Array.isArray(catalog.backends) ? catalog.backends : [];
-  const productBackends = ["osnet", "clipreid", "siglip2", "differ"];
+  const catalogLoaded = Array.isArray(catalog.backends);
+  const names = catalogLoaded ? catalog.backends : [];
+  const productBackends = ["differ", "clipreid", "siglip2", "osnet"];
   const registered = new Set(names);
-  const allowed = names.length
+  const allowed = catalogLoaded
     ? productBackends.filter((name) => registered.has(name))
-    : productBackends;
+    : [];
   const fallbackLabels = {
     osnet: "OSNet-AIN MSMT17",
     clipreid: "CLIP-ReID ViT-B/16",
@@ -97,12 +147,24 @@ export function renderReidBackends(catalog = {}) {
   };
   const metadata = catalog.metadata || {};
   const labelFor = (name) => metadata[name]?.label || fallbackLabels[name] || name;
+  const configuredDefault = allowed.includes(catalog.default) ? catalog.default : "";
   select.replaceChildren();
-  allowed.forEach((name) => {
-    const label = name === "osnet" ? `${labelFor(name)}（默认）` : labelFor(name);
-    select.add(new Option(label, name));
-  });
-  select.value = allowed.includes("osnet") ? "osnet" : (allowed[0] || "");
+  const defaultLabel = configuredDefault
+    ? `${labelFor(configuredDefault)}${
+      uiLocale() === "en" ? " (default · accuracy first)" : "（默认 · 精度优先）"
+    }`
+    : (
+      catalogLoaded
+        ? (uiLocale() === "en" ? "Use server default" : "使用服务端默认")
+        : (uiLocale() === "en" ? "Use server default (backend catalog unavailable)" : "使用服务端默认（后端目录不可用）")
+    );
+  select.add(new Option(defaultLabel, ""));
+  allowed
+    .filter((name) => name !== configuredDefault)
+    .forEach((name) => select.add(new Option(labelFor(name), name)));
+  select.value = "";
+  select.dataset.defaultBackend = configuredDefault;
+  select.disabled = !catalogLoaded;
 }
 
 export function wireSuperresSettings() {
@@ -131,7 +193,7 @@ export function setDropFile(name) {
     return;
   }
 
-  if (main) main.textContent = "拖拽视频到此，或点击选择";
+  if (main) main.textContent = t("panel.drop_main");
   if (zone) zone.classList.remove("has-file");
 }
 

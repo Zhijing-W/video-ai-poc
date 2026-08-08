@@ -47,7 +47,8 @@ az aks nodepool add `
 
 Write-Host "`n✓ GPU pool 已加。接下来：" -ForegroundColor Green
 Write-Host "  1) build GPU 镜像：" -ForegroundColor Gray
-Write-Host "     az acr build -r <acrName> -t video-poc-gpu:latest -f Dockerfile.gpu ." -ForegroundColor Gray
+Write-Host "     gh workflow run `"Build GPU image`" --ref <branch-or-main>" -ForegroundColor Gray
+Write-Host "     使用该提交 SHA 作为 gpu.image.tag；工作流会解析并复用依赖镜像。" -ForegroundColor Gray
 Write-Host "  2) 打开 helm gpu 开关：" -ForegroundColor Gray
 Write-Host "     helm upgrade video-poc charts\video-poc -n video-poc \``
      --set gpu.enabled=true --set gpu.image.repository=<acr>/video-poc-gpu \``

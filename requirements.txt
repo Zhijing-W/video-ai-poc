@@ -35,8 +35,8 @@ faiss-cpu
 torchvision
 
 # Phase 4：ReID 升级为真·行人重识别 OSNet（域泛化）。
-# boxmot：提供 OSNet/OSNet-AIN 等预训练 ReID（默认 osnet_ain_x1_0_msmt17，512 维，权重由准备脚本下载）；
-#   同时带入 lapx（替代 lap）。比通用 resnet50 强一个量级，REID_BACKEND=auto 会优先选 osnet。
+# boxmot：提供 OSNet/OSNet-AIN 等预训练 ReID（OSNet 档使用 osnet_ain_x1_0_msmt17，512 维）；
+#   同时带入 lapx（替代 lap）。显式 REID_BACKEND=auto 仍按 osnet→resnet50→coarse 回退。
 boxmot>=16.0.11,<17
 
 # Pluggable person ReID backends.

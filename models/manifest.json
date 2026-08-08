@@ -5,6 +5,11 @@
       "name": "detection/yolo/yolov8m.pt",
       "provider": "ultralytics",
       "environment": "YOLO_MODEL"
+    },
+    {
+      "name": "reid/differ/eva02_l_bio_best.pth + training config + official source",
+      "provider": "xliangp/DIFFER",
+      "environment": "REID_DIFFER_WEIGHTS"
     }
   ],
   "optional": [
@@ -47,11 +52,6 @@
       "name": "reid/siglip2/model",
       "provider": "MarketaJu/siglip2-person-description-reid",
       "environment": "REID_SIGLIP2_MODEL"
-    },
-    {
-      "name": "reid/differ/eva02_l_bio_best.pth + training config + official source",
-      "provider": "xliangp/DIFFER",
-      "environment": "REID_DIFFER_WEIGHTS"
     }
   ]
 }

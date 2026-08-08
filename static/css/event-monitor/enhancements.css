@@ -71,16 +71,27 @@
 .em-cfgchip .warn { color: var(--alert); }
 
 /* ---------- 身份画廊 ---------- */
-.em-gallery-head { font-size: .82rem; font-weight: 700; color: var(--fg); margin-bottom: 8px; }
+.em-gallery-panel { display: block; width: 100%; }
+.em-gallery-head {
+  display: block;
+  width: 100%;
+  font-size: .82rem;
+  font-weight: 700;
+  color: var(--fg);
+  margin-bottom: 8px;
+}
 .em-gallery {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+  width: 100%;
 }
 .em-subcard {
-  display: flex;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: start;
   gap: 10px;
-  padding: 10px;
+  padding: 9px 10px;
   border: 1px solid var(--line);
   border-left: 4px solid hsl(var(--hue) 70% 55%);
   border-radius: 10px;
@@ -89,8 +100,8 @@
 }
 .em-avatar {
   flex: 0 0 auto;
-  width: 52px;
-  height: 68px;
+  width: 44px;
+  height: 58px;
   border-radius: 8px;
   overflow: hidden;
   background: var(--panel2);
@@ -196,4 +207,12 @@
   color: #eee;
   font-family: var(--mono);
   font-size: .8rem;
+}
+
+@media (max-width: 600px) {
+  .em-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 420px) {
+  .em-gallery { grid-template-columns: 1fr; }
 }

@@ -1,7 +1,11 @@
 import { completeDryRun } from "./api.js";
+import { reportLanguage, t } from "./i18n.js";
 import { startProgress, finishProgress } from "./progress.js";
 import { renderResult, setStatus } from "./render.js";
-import { getObjectiveValue } from "./settings.js?v=20260730-reid-models";
+import {
+  getObjectiveValue,
+  getSelectedAiModel,
+} from "./settings.js?v=20260807-ai-model-selector";
 import { getKeyframe, getLastPayload } from "./state.js";
 import { boxesHtml } from "./timeline.js";
 import { $, baseName } from "./utils.js";
@@ -40,12 +44,12 @@ export function toggleJson() {
   if (element.hidden) {
     element.textContent = JSON.stringify(cleanedPayload(), null, 2);
     element.hidden = false;
-    $("btnToggleJson").textContent = "收起 JSON";
+    $("btnToggleJson").textContent = t("results.toggle_json_hide");
     return;
   }
 
   element.hidden = true;
-  $("btnToggleJson").textContent = "查看原始 JSON";
+  $("btnToggleJson").textContent = t("results.toggle_json_show");
 }
 
 export function openLightbox(index) {
@@ -70,16 +74,23 @@ export async function sendDryRunToLlm() {
   $("btnSendLlm").disabled = true;
   const startedAt = Date.now();
   startProgress(false);
-  setStatus("⏳ 正在复用 dry-run 的关键帧和身份上下文调用大模型…");
+  setStatus(t("status.reusing_dry_run"));
 
   try {
-    const data = await completeDryRun(payload, getObjectiveValue());
+    const data = await completeDryRun(
+      payload,
+      getObjectiveValue(),
+      reportLanguage(),
+      getSelectedAiModel()
+    );
     finishProgress(true);
     renderResult(data);
-    setStatus(`✓ 大模型事件理解完成，用时 ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
+    setStatus(t("status.llm_completed", {
+      seconds: ((Date.now() - startedAt) / 1000).toFixed(1),
+    }));
   } catch (error) {
     finishProgress(false);
-    setStatus("✗ 调用大模型失败：" + error.message, true);
+    setStatus(t("status.llm_failed", { message: error.message }), true);
   } finally {
     $("btnSendLlm").disabled = false;
   }

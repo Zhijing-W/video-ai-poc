@@ -131,7 +131,7 @@ def register(register_backend, settings) -> None:
         embed,
         dim=1280,
         label="CLIP-ReID ViT-B/16",
-        description="官方MSMT17 ViT-CLIP-ReID，不依赖产品摄像头编号。",
+        description="平衡精度与延迟的MSMT17 ViT-CLIP-ReID，不依赖产品摄像头编号。",
         requires_cuda=True,
         experimental=True,
         replace=True,

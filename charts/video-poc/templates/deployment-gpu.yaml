@@ -38,6 +38,8 @@ spec:
           value: cuda
         - name: REID_DEVICE
           value: cuda
+        - name: REID_BACKEND
+          value: "{{ .Values.config.reidBackend }}"
         - name: GAIT_DEVICE
           value: cuda
         - name: FACE_REC_BACKEND
@@ -46,6 +48,8 @@ spec:
           value: "off"
         - name: OCR_ENABLED
           value: "false"           # OCR 让 CPU pod 干，GPU pod 只做人脸/步态/ReID
+        - name: MODEL_ROOT
+          value: /models
         - name: INSIGHTFACE_HOME
           value: /models/insightface
         - name: TORCH_HOME

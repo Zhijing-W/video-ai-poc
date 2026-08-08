@@ -1,6 +1,12 @@
 async function readError(response) {
   const error = await response.json().catch(() => ({}));
-  throw new Error(error.detail || `HTTP ${response.status}`);
+  const detail = error.detail;
+  const failure = new Error(
+    (detail && typeof detail === "object" ? detail.message : detail) ||
+      `HTTP ${response.status}`
+  );
+  if (detail && typeof detail === "object") failure.detail = detail;
+  throw failure;
 }
 
 export async function listSamples() {
@@ -21,6 +27,12 @@ export async function listReidBackends() {
   return response.json();
 }
 
+export async function listAiModels() {
+  const response = await fetch("/api/event-monitor/llm-models");
+  if (!response.ok) await readError(response);
+  return response.json();
+}
+
 export async function runAnalysis(formData) {
   const response = await fetch("/api/event-monitor/understand", {
     method: "POST",
@@ -30,13 +42,15 @@ export async function runAnalysis(formData) {
   return JSON.parse(await response.text());
 }
 
-export async function completeDryRun(payload, objective) {
+export async function completeDryRun(payload, objective, language, llmModel) {
   const response = await fetch("/api/event-monitor/complete", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       payload,
       objective: objective || null,
+      language: language || null,
+      llm_model: llmModel || null,
     }),
   });
   if (!response.ok) await readError(response);

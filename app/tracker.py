@@ -89,7 +89,12 @@ class _AppReIDEncoder:
                 feats.append(np.zeros(dim, dtype=np.float32))
                 continue
             crop = Image.fromarray(img[y1:y2, x1:x2][:, :, ::-1])
-            feats.append(np.asarray(reid_mod.embed(crop), dtype=np.float32).reshape(-1))
+            feats.append(
+                np.asarray(
+                    reid_mod.embed(crop, purpose="tracking"),
+                    dtype=np.float32,
+                ).reshape(-1)
+            )
         return feats
 
 

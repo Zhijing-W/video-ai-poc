@@ -20,8 +20,10 @@ from starlette.concurrency import run_in_threadpool
 from .. import body_reid as reid_mod
 from .. import face as face_mod
 from ..core.config import ALLOWED_VIDEO_SUFFIXES, DATA_DIR, OUTPUT_DIR, settings
-from ..event_analysis_pipeline import analyze_event_stream
+from ..event_analysis_pipeline import EventAnalysisRunError, analyze_event_stream
+from ..event_monitor_i18n import normalize_report_language, resolve_report_language
 from ..services.event_reporter import summarize_event_windows, understand_event
+from ..services import llm_catalog as llm_catalog_mod
 
 router = APIRouter(prefix="/api/event-monitor", tags=["event-monitor"])
 
@@ -30,7 +32,18 @@ OUT_DIR = OUTPUT_DIR / "event-monitor"
 _RUN_LOCK = asyncio.Lock()
 _STARTUP_FACE_SUPERRES = settings.face_superres
 _STARTUP_CODEFORMER_FIDELITY = settings.face_codeformer_fidelity
-_STARTUP_REID_BACKEND = settings.reid_backend
+_STARTUP_REID_BACKEND = reid_mod.validate_backend(settings.reid_backend)
+_INLINE_IMAGE_PREFIXES = (
+    "data:image/jpeg;base64,",
+    "data:image/png;base64,",
+    "data:image/webp;base64,",
+)
+
+
+def _inline_keyframe_image(value: object) -> str:
+    if not isinstance(value, str) or not value.startswith(_INLINE_IMAGE_PREFIXES):
+        raise HTTPException(400, "dry-run 关键帧必须是内联 image data URI")
+    return value
 
 
 @router.get("/samples")
@@ -69,11 +82,31 @@ def list_reid_backends() -> dict:
     }
 
 
+@router.get("/llm-models")
+def list_llm_models() -> dict:
+    return llm_catalog_mod.event_llm_catalog()
+
+
 @router.post("/complete")
 def complete_from_dry_run(body: dict = Body(...)) -> dict:
     """把已有 dry-run 结果继续送进 LLM，不重新跑抽帧/检测/跟踪/ReID。"""
     payload = deepcopy(body.get("payload") or {})
     objective = body.get("objective") or None
+    requested_language = normalize_report_language(body.get("language"))
+    report_language = requested_language or normalize_report_language(
+        payload.get("report_language")
+    )
+    requested_model = (
+        body.get("llm_model")
+        if "llm_model" in body
+        else payload.get("model")
+    )
+    try:
+        selected_llm_model = llm_catalog_mod.resolve_event_llm_deployment(
+            requested_model
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     if not payload.get("windows"):
         raise HTTPException(400, "没有可继续理解的 dry-run windows")
 
@@ -84,17 +117,32 @@ def complete_from_dry_run(body: dict = Body(...)) -> dict:
         if not keyframes:
             raise HTTPException(400, "dry-run 结果里没有关键帧图片，请重新跑一次 dry-run")
         frames = [
-            {"image": k.get("image"), "timestamp": k.get("timestamp")}
+            {
+                "image": _inline_keyframe_image(k.get("image")),
+                "timestamp": k.get("timestamp"),
+            }
             for k in keyframes
-            if k.get("image")
         ]
-        w["event"] = understand_event(frames, w.get("identity_context") or "", objective=objective)
+        w["event"] = understand_event(
+            frames,
+            w.get("identity_context") or "",
+            objective=objective,
+            language=report_language,
+            scene_context=w.get("scene_context") or None,
+            object_context=w.get("object_context") or None,
+            model=selected_llm_model,
+        )
 
     payload["dry_run"] = False
-    payload["model"] = settings.event_llm_deployment or settings.azure_openai_deployment
+    payload["model"] = selected_llm_model
+    payload["report_language"] = resolve_report_language(report_language)
     if settings.event_overall_summary:
         try:
-            payload["overall"] = summarize_event_windows(payload["windows"]) or None
+            payload["overall"] = summarize_event_windows(
+                payload["windows"],
+                language=report_language,
+                model=selected_llm_model,
+            ) or None
         except Exception as exc:  # 总结失败不影响逐窗事件结果
             payload["overall"] = {"error": str(exc)}
     return payload
@@ -127,6 +175,8 @@ async def understand(
     track_backend: str | None = Form(None),      # bytetrack | botsort | botsort_reid
     max_window_seconds: float | None = Form(None),
     stitch_thresh: float | None = Form(None),
+    language: str | None = Form(None),
+    llm_model: str | None = Form(None),
 ) -> dict:
     """对"样片或上传视频"跑端到端事件理解，返回事件窗时间线。
 
@@ -149,6 +199,13 @@ async def understand(
     try:
         selected_reid_backend = reid_mod.validate_backend(
             reid_backend if reid_backend is not None else settings.reid_backend
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    report_language = normalize_report_language(language)
+    try:
+        selected_llm_model = llm_catalog_mod.resolve_event_llm_deployment(
+            llm_model
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
@@ -215,6 +272,7 @@ async def understand(
                     "reid_consistency_ratio": settings.reid_consistency_ratio,
                     "reid_top1_margin": settings.reid_top1_margin,
                     "track_backend": settings.track_backend,
+                    "llm_model": selected_llm_model,
                 }
                 payload = await run_in_threadpool(
                     analyze_event_stream,
@@ -233,7 +291,22 @@ async def understand(
                     stitch_thresh=stitch_thresh,
                     include_keyframe_images=True,
                     session_id=f"event-monitor-{run_id}",
+                    report_language=report_language,
+                    llm_model=selected_llm_model,
                 )
+        except EventAnalysisRunError as exc:
+            timing = exc.body_reid_timing
+            error_config = dict(config_used)
+            error_config["reid_backend_effective"] = timing.get("backend")
+            error_config["reid_device"] = timing.get("device")
+            raise HTTPException(
+                500,
+                detail={
+                    "message": f"事件理解失败：{exc}",
+                    "body_reid_timing": timing,
+                    "config_used": error_config,
+                },
+            ) from exc
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(500, f"事件理解失败：{exc}") from exc
         finally:
@@ -241,5 +314,16 @@ async def understand(
                 reid_mod.reset_backend()
 
     payload["run_id"] = run_id
+    payload["report_language"] = resolve_report_language(
+        payload.get("report_language") or report_language
+    )
+    timing = payload.get("body_reid_timing") or {}
+    config_used["reid_backend_effective"] = (
+        payload.get("reid_backend") or timing.get("backend")
+    )
+    config_used["reid_device"] = (
+        (payload.get("runtime") or {}).get("reid_device")
+        or timing.get("device")
+    )
     payload["config_used"] = config_used
     return payload

@@ -18,7 +18,8 @@ COPY --chown=appuser:appuser licenses   ./licenses
 
 USER appuser
 
-ENV MODEL_ROOT=/models
+ENV MODEL_ROOT=/models \
+    REID_BACKEND=differ
 
 EXPOSE 8000
 

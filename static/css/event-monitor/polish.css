@@ -3,11 +3,39 @@
    ======================================================== */
 
 /* ---------- 顶栏品牌 + 服务状态 ---------- */
-.brand { align-items: center; }
+.topbar { flex-wrap: wrap; }
+.brand { align-items: center; min-width: 0; }
 .logo { font-size: 1.15rem; }
 .brand-text { display: flex; flex-direction: column; line-height: 1.15; }
 .brand-title { font-weight: 700; font-size: 1.02rem; color: var(--fg); }
 .brand-sub { font-weight: 400; font-size: .68rem; color: var(--muted); }
+.em-langswitch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel2);
+}
+.em-langpill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: .72rem;
+  font-weight: 600;
+}
+.em-langpill:hover { color: var(--accent); }
+.em-langpill.active {
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+}
 
 .em-svc {
   display: inline-flex;
@@ -89,6 +117,31 @@
   line-height: 1.4;
 }
 
+/* ---------- AI 分析模型 ---------- */
+.em-ai-module {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid rgba(200,112,60,.3);
+  border-radius: 12px;
+  background:
+    linear-gradient(145deg, rgba(200,112,60,.08), rgba(125,87,194,.08)),
+    var(--panel);
+  box-shadow: var(--shadow);
+}
+.em-ai-title {
+  margin-bottom: 9px;
+  color: var(--fg);
+  font-size: .82rem;
+  font-weight: 700;
+}
+.em-ai-hint {
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: .64rem;
+  line-height: 1.45;
+}
+.em-ai-hint.warn { color: var(--warn); }
+
 /* ---------- 主按钮 CTA 强化 ---------- */
 .em-btn-cta {
   display: flex;
@@ -125,6 +178,28 @@
 .em-note-hint { color: var(--muted); font-style: italic; }
 
 /* ---------- 实测各阶段耗时（demo 讲解用条形图）---------- */
+.em-reid-diagnostics {
+  margin: 0 0 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--fg);
+  font-size: .74rem;
+}
+.em-reid-head { font-weight: 700; margin-bottom: 5px; }
+.em-reid-head span, .em-reid-breakdown { color: var(--muted); font-weight: 400; }
+.em-reid-values b { color: var(--accent2); }
+.em-reid-fail { color: var(--muted); white-space: nowrap; }
+.em-reid-fail.has-failures {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(181,72,47,.15);
+  color: var(--alert);
+  font-weight: 700;
+}
+.em-reid-fail.has-failures b { color: inherit; }
+.em-reid-breakdown { margin-top: 4px; font-family: var(--mono); font-size: .68rem; }
 .em-timings {
   margin: 0 0 14px;
   padding: 12px 16px;

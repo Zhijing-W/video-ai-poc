@@ -1,31 +1,10 @@
 import { renderSubjectGallery } from "./identity-gallery.js";
+import { common, labelLevel, t } from "./i18n.js";
 import { clearLastPayload, resetKeyframeRegistry, setLastPayload } from "./state.js";
 import { renderTimeline } from "./timeline.js";
 import { $, baseName, esc } from "./utils.js";
 
-const STAGE_CN = {
-  extract_frames: "视频解码与采样",
-  pipeline_setup: "模型与会话初始化",
-  object_detection: "YOLO 目标检测推理",
-  multi_object_tracking: "多目标轨迹关联（含 Tracker 外观 ReID）",
-  frame_preprocess: "帧读取、候选生成与事件分窗",
-  gait_collect: "步态样本采集（Pose + Seg）",
-  body_identity: "人形身份特征提取与检索",
-  face_identity: "人脸检测、对齐与身份检索",
-  gait_identity: "步态特征提取与检索",
-  identity_fusion: "身份融合与证据整理",
-  event_preparation: "事件上下文与关键帧准备",
-  event_understanding: "gpt-4o 多帧事件理解",
-  overall_summary: "跨事件窗整段总结",
-  other_overhead: "其他编排开销",
-  detect_track: "逐帧检测、跟踪与候选生成（旧版）",
-  reid_identify: "人形身份特征与检索（旧版）",
-  face: "人脸身份分支（旧版）",
-  gait_embed: "步态身份分支（旧版）",
-  merge_fusion_thumb: "身份融合与证据整理（旧版）",
-  windows_select: "事件上下文与关键帧准备（旧版）",
-  windows_llm: "事件准备与 gpt-4o 理解（旧版）",
-};
+const stageLabel = (key) => t(`timings.stages.${key}`);
 
 export function setStatus(message, isError = false) {
   const element = $("status");
@@ -38,7 +17,7 @@ export function renderSamples(data, failed = false) {
   const count = $("sampleCount");
 
   if (failed) {
-    select.innerHTML = '<option value="">加载样片失败</option>';
+    select.innerHTML = `<option value="">${esc(t("samples.load_failed"))}</option>`;
     if (count) count.textContent = "";
     return;
   }
@@ -52,15 +31,15 @@ export function renderSamples(data, failed = false) {
     select.appendChild(option);
   });
 
-  if (count) count.textContent = samples.length ? `${samples.length} 个` : "";
-  if (!samples.length) select.innerHTML = '<option value="">（data/samples 下没有样片）</option>';
+  if (count) count.textContent = samples.length ? t("samples.count", { count: samples.length }) : "";
+  if (!samples.length) select.innerHTML = `<option value="">${esc(t("samples.empty"))}</option>`;
 }
 
 export function setBackendIndicator(online) {
   const element = $("backendStatus");
   if (!element) return;
   element.className = `em-svc ${online ? "online" : "offline"}`;
-  element.lastChild.textContent = online ? "服务在线" : "服务离线";
+  element.lastChild.textContent = online ? t("service.online") : t("service.offline");
 }
 
 export function prepareForRun() {
@@ -69,6 +48,7 @@ export function prepareForRun() {
   $("empty").style.display = "none";
   $("overall").hidden = true;
   $("cfgSummary").hidden = true;
+  $("reidDiagnostics").hidden = true;
   $("timings").hidden = true;
   $("resultTools").hidden = true;
   $("timeline").innerHTML = "";
@@ -78,54 +58,80 @@ export function prepareForRun() {
   $("jsonView").textContent = "";
 }
 
-export function showRunFailure(message) {
+export function showRunFailure(message, detail = null) {
   $("empty").style.display = "block";
-  $("empty").textContent = "处理失败：" + message;
+  $("empty").textContent = t("results.failure_prefix", { message });
+  if (detail?.body_reid_timing) {
+    renderReidDiagnostics({
+      body_reid_timing: detail.body_reid_timing,
+      config_used: detail.config_used || {},
+    });
+  }
 }
 
 function renderMeta(data) {
   const configUsed = data.config_used || {};
   const withBody = configUsed.with_body ?? data.with_body ?? true;
+  const dimText = data.reid_dim ? esc(t("results.meta_dim", { dim: data.reid_dim })) : "";
   const reidText = withBody
-    ? `人形 ReID <b>${esc(data.reid_backend || configUsed.reid_backend || "unknown")}</b>` +
-      `${data.reid_dim ? `(${data.reid_dim}d)` : ""}`
-    : "人形 ReID <b>off</b>";
+    ? t("results.meta_body_reid", {
+      backend: esc(data.reid_backend || configUsed.reid_backend || t("results.meta_unknown")),
+      dim: dimText,
+    })
+    : t("results.meta_body_reid_off");
   $("meta").innerHTML =
-    `视频 <b>${esc(baseName(data.video))}</b> · ${data.frames_total} 帧 @ ${data.fps}fps · ` +
-    `${(data.windows || []).length} 个事件窗 · Tracker <b>${esc(data.tracker_backend || configUsed.track_backend || "botsort_reid")}</b> · ` +
+    `${t("results.meta_video")} <b>${esc(baseName(data.video))}</b> · ${data.frames_total} @ ${data.fps}fps · ` +
+    `${t("results.meta_windows", { count: (data.windows || []).length })} · ${t("results.meta_tracker", {
+      tracker: esc(data.tracker_backend || configUsed.track_backend || "botsort_reid"),
+    })} · ` +
     `${reidText} · ` +
-    `模型 <b>${esc(data.model)}</b>${data.dry_run ? " · <b>dry-run</b>" : ""} · ${data.elapsed_seconds}s`;
+    `${t("results.meta_model", { model: esc(data.model) })}${data.dry_run ? ` · <b>${t("results.meta_dry_run")}</b>` : ""} · ${t("results.meta_elapsed", { seconds: data.elapsed_seconds })}`;
 }
 
 function renderConfigSummary(data) {
   const configUsed = data.config_used || {};
   const chips = [];
-  const on = (enabled) => (enabled ? "on" : "off");
+  const on = (enabled) => (enabled ? common("on") : common("off"));
   const withBody = configUsed.with_body ?? data.with_body ?? true;
+  const bodyMode = configUsed.reid_consistency_enabled
+    ? t("results.config_body_mode_topk", { topk: configUsed.reid_decision_top_k })
+    : t("results.config_body_mode_top1");
+  const faceDetail = configUsed.with_face
+    ? t("results.config_face_detail", {
+      backend: esc(configUsed.face_rec_backend || "arcface"),
+      superres: configUsed.face_superres && configUsed.face_superres !== "off" ? t("results.config_face_superres") : "",
+      cue3d: configUsed.face_3d_cue ? t("results.config_face_3d") : "",
+    })
+    : "";
 
   chips.push(
-    `人形 <b>${on(withBody)}</b>` +
-      (withBody
-        ? `（${esc(data.reid_backend || configUsed.reid_backend || "auto")}` +
-          `${configUsed.reid_consistency_enabled ? `，top-${configUsed.reid_decision_top_k} 一致性` : "，top-1"}）`
-        : "")
+    t("results.config_body", {
+      state: on(withBody),
+      detail: withBody
+        ? t("results.config_body_detail", {
+          backend: esc(data.reid_backend || configUsed.reid_backend || "auto"),
+          mode: bodyMode,
+        })
+        : "",
+    })
   );
   chips.push(
-    `人脸 <b>${on(configUsed.with_face)}</b>` +
-      (configUsed.with_face
-        ? `（${esc(configUsed.face_rec_backend || "arcface")}` +
-          `${configUsed.face_superres && configUsed.face_superres !== "off" ? "+超分" : ""}` +
-          `${configUsed.face_3d_cue ? "+3D" : ""}）`
-        : "")
+    t("results.config_face", {
+      state: on(configUsed.with_face),
+      detail: configUsed.with_face ? faceDetail : "",
+    })
   );
-  chips.push(`步态 <b>${on(configUsed.with_gait)}</b>`);
-  chips.push(`OCR <b>${configUsed.with_ocr ? esc(data.ocr_backend || "on") : "off"}</b>`);
-  chips.push(`物体 <b>${on(configUsed.with_objects)}</b>`);
-  if (data.gait_error) chips.push(`<span class="warn">步态告警: ${esc(data.gait_error)}</span>`);
-  if (data.ocr_error) chips.push(`<span class="warn">OCR告警: ${esc(data.ocr_error)}</span>`);
+  chips.push(t("results.config_gait", { state: on(configUsed.with_gait) }));
+  chips.push(t("results.config_ocr", { state: configUsed.with_ocr ? esc(data.ocr_backend || common("on")) : common("off") }));
+  chips.push(t("results.config_objects", { state: on(configUsed.with_objects) }));
+  chips.push(t("results.config_ai", {
+    model: esc(data.model || configUsed.llm_model || common("unknown")),
+  }));
+  if (data.gait_error) chips.push(`<span class="warn">${esc(t("results.config_warn_gait", { message: data.gait_error }))}</span>`);
+  if (data.ocr_error) chips.push(`<span class="warn">${esc(t("results.config_warn_ocr", { message: data.ocr_error }))}</span>`);
 
   $("cfgSummary").hidden = false;
-  $("cfgSummary").innerHTML = `本次生效： ${chips.map((chip) => `<span class="em-cfgchip">${chip}</span>`).join(" ")}`;
+  $("cfgSummary").innerHTML = `${t("results.config_title")} ${chips.map((chip) => `<span class="em-cfgchip">${chip}</span>`).join(" ")}`;
 }
 
 function renderTimings(data) {
@@ -153,7 +159,7 @@ function renderTimings(data) {
       const share = total > 0 ? ((row.value / total) * 100).toFixed(0) : "0";
       return (
         `<div class="em-tbar ${index === 0 ? "top" : ""}">` +
-        `<span class="em-tbar-label">${esc(STAGE_CN[row.key] || row.key)}</span>` +
+        `<span class="em-tbar-label">${esc(stageLabel(row.key) || row.key)}</span>` +
         `<span class="em-tbar-track"><span class="em-tbar-fill" style="width:${pct.toFixed(1)}%"></span></span>` +
         `<span class="em-tbar-val">${formatDuration(row.value)} · ${share}%</span></div>`
       );
@@ -162,8 +168,56 @@ function renderTimings(data) {
 
   $("timings").hidden = false;
   $("timings").innerHTML =
-    `<div class="em-timings-head">⏱ 服务端实测耗时（按耗时降序）` +
-    `<span class="tot">总 ${esc(data.elapsed_seconds)}s</span></div>${bars}`;
+    `<div class="em-timings-head">${esc(t("results.timings_title"))}` +
+    `<span class="tot">${esc(t("results.timings_total", { seconds: data.elapsed_seconds }))}</span></div>${bars}`;
+}
+
+export function renderReidDiagnostics(data) {
+  const element = $("reidDiagnostics");
+  const timing = data.body_reid_timing;
+  const withBody = data.config_used?.with_body ?? data.with_body ?? true;
+  const calls = Number(timing?.call_count) || 0;
+  const failedCalls = Number(timing?.failed_call_count) || 0;
+  if (!timing || (!withBody && calls === 0 && failedCalls === 0)) {
+    element.hidden = true;
+    element.innerHTML = "";
+    return;
+  }
+
+  const formatMs = (value) =>
+    Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)}ms` : "—";
+  const purposeLabels = {
+    tracking: t("results.reid_purpose_tracking"),
+    identity_gallery: t("results.reid_purpose_identity_gallery"),
+    face_consistency: t("results.reid_purpose_face_consistency"),
+    unspecified: t("results.reid_purpose_unspecified"),
+  };
+  const breakdown = Object.entries(timing.by_purpose || {})
+    .filter(([, value]) => Number(value?.call_count) > 0)
+    .map(
+      ([purpose, value]) =>
+        `${purposeLabels[purpose] || purpose} ${value.call_count}/${formatMs(value.total_ms)}`
+    )
+    .join(" · ");
+  const backend = timing.backend || data.reid_backend || common("unknown");
+  const device = timing.device || data.runtime?.reid_device || common("unknown");
+  const values = calls
+    ? t("results.reid_calls", {
+      calls,
+      total: formatMs(timing.total_ms),
+      mean: formatMs(timing.mean_ms),
+      p95: formatMs(timing.p95_ms),
+    })
+    : t("results.reid_zero");
+  const failures =
+    `<span class="em-reid-fail ${failedCalls ? "has-failures" : ""}">` +
+    `${t("results.reid_failures", { count: failedCalls })}</span>`;
+
+  element.hidden = false;
+  element.innerHTML =
+    `<div class="em-reid-head">${esc(t("results.reid_title"))} <span>${esc(t("results.reid_subtitle"))}</span></div>` +
+    `<div class="em-reid-values"><b>${esc(backend)}</b> · ${esc(device)} · ${values} · ${failures}</div>` +
+    (breakdown ? `<div class="em-reid-breakdown">${esc(breakdown)}</div>` : "");
 }
 
 function renderOverall(overall) {
@@ -187,10 +241,10 @@ function renderOverall(overall) {
   element.hidden = false;
   element.className = `em-overall ${level}`;
   element.innerHTML =
-    `<div class="em-window-head"><span class="em-otitle">📋 整段事件总结（跨窗整合）</span>` +
-    `<span class="em-badge ${esc(level)}">${esc(level)}</span></div>` +
+    `<div class="em-window-head"><span class="em-otitle">${esc(t("results.overall_title"))}</span>` +
+    `<span class="em-badge ${esc(level)}">${esc(labelLevel(level))}</span></div>` +
     `<div class="em-summary">${esc(overall.overall_summary)}</div>` +
-    (overall.notification ? `<div class="em-notify">🔔 ${esc(overall.notification)}</div>` : "") +
+    (overall.notification ? `<div class="em-notify">${esc(t("results.overall_notification_prefix"))} ${esc(overall.notification)}</div>` : "") +
     (story ? `<div class="em-events">${story}</div>` : "") +
     (subjects ? `<ul class="em-subjects">${subjects}</ul>` : "");
 }
@@ -199,12 +253,13 @@ export function renderResult(data) {
   setLastPayload(data);
   $("resultTools").hidden = false;
   $("jsonView").hidden = true;
-  $("btnToggleJson").textContent = "查看原始 JSON";
+  $("btnToggleJson").textContent = t("results.toggle_json_show");
   $("btnSendLlm").hidden = !data.dry_run;
 
   renderOverall(data.overall);
   renderMeta(data);
   renderConfigSummary(data);
+  renderReidDiagnostics(data);
   renderTimings(data);
   $("tracks").innerHTML = renderSubjectGallery(data);
 
