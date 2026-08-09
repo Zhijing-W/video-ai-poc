@@ -78,7 +78,10 @@ def _track_consistency(
     if crop is None:
         return False, None, "person_crop_unavailable"
     try:
-        candidate_embedding = np.asarray(reid_mod.embed(crop), dtype=np.float32).reshape(-1)
+        candidate_embedding = np.asarray(
+            reid_mod.embed(crop, purpose="face_consistency"),
+            dtype=np.float32,
+        ).reshape(-1)
         reference = np.asarray(body_embedding, dtype=np.float32).reshape(-1)
         denom = float(np.linalg.norm(candidate_embedding) * np.linalg.norm(reference))
         score = float(np.dot(candidate_embedding, reference) / denom) if denom > 0 else -1.0

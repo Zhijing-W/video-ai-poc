@@ -75,8 +75,9 @@ jobs:
               printf '%s' "$output"
               return 0
             fi
-            if [[ "$output" == *"repository "* &&
-                  "$output" == *" is not found."* ]]; then
+            if [[ "$output" == *"RepositoryNotFound"* ||
+                  "$output" == *"does not exist"* ||
+                  ( "$output" == *"repository "* && "$output" == *" is not found."* ) ]]; then
               return 0
             fi
             printf '%s\n' "$output" >&2

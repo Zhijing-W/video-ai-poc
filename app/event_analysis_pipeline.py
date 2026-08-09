@@ -71,6 +71,31 @@ from .utils.image_utils import image_to_data_uri, seconds_to_timestamp
 from .video_processor import Frame, extract_frames
 
 
+class EventAnalysisRunError(RuntimeError):
+    """Fatal analysis error carrying run-scoped diagnostics."""
+
+    def __init__(self, message: str, *, body_reid_timing: dict) -> None:
+        super().__init__(message)
+        self.body_reid_timing = body_reid_timing
+
+
+def _snapshot_reid_telemetry(
+    collector,
+    *,
+    backend: str | None = None,
+    device: str | None = None,
+    resolve_loaded_backend: bool = False,
+) -> dict:
+    snapshot = collector.snapshot(backend=backend, device=device)
+    if resolve_loaded_backend and snapshot["backend"] is None:
+        try:
+            snapshot["backend"] = reid_mod.active_backend()
+            snapshot["device"] = reid_mod.active_device()
+        except Exception:
+            pass
+    return snapshot
+
+
 def _signature(img: Image.Image, size: int = 16) -> np.ndarray:
     """整帧灰度缩略指纹（size×size），仅供 keyframe 去重用（不定义事件）。"""
     g = img.convert("L").resize((size, size))
@@ -152,6 +177,9 @@ def analyze_event_stream(
     max_window_seconds: float | None = None,
     stitch_thresh: float | None = None,
     overall_summary: bool | None = None,
+    report_language: str | None = None,
+    llm_model: str | None = None,
+    llm_model_name: str | None = None,
 ) -> dict:
     """对一段视频做"身份感知·多帧事件理解"的完整端到端处理。"""
     video_path = Path(video_path)
@@ -186,13 +214,40 @@ def analyze_event_stream(
             max_window_seconds=max_window_seconds,
             stitch_thresh=stitch_thresh,
             overall_summary=overall_summary,
+            report_language=report_language,
+            llm_model=llm_model,
+            llm_model_name=llm_model_name,
             stage_timings=stage_timings,
             t_start=t_start,
         ),
     )
-    for frame in frames:
-        session.process_frame(frame)
-    return session.finish()
+    with reid_mod.telemetry_context() as reid_telemetry:
+        try:
+            for frame in frames:
+                session.process_frame(frame)
+            result = session.finish()
+        except Exception as exc:
+            timing = _snapshot_reid_telemetry(
+                reid_telemetry,
+                resolve_loaded_backend=with_body,
+            )
+            raise EventAnalysisRunError(
+                str(exc),
+                body_reid_timing=timing,
+            ) from exc
+        result["body_reid_timing"] = _snapshot_reid_telemetry(
+            reid_telemetry,
+            backend=result.get("reid_backend"),
+            device=(result.get("runtime") or {}).get("reid_device"),
+        )
+        if (
+            result["body_reid_timing"]["call_count"]
+            or result["body_reid_timing"]["failed_call_count"]
+        ):
+            result.setdefault("runtime", {})["reid_device"] = result[
+                "body_reid_timing"
+            ]["device"]
+        return result
 
 
 def _finish_session(
@@ -215,6 +270,9 @@ def _finish_session(
     max_window_seconds: float | None,
     stitch_thresh: float | None,
     overall_summary: bool | None,
+    report_language: str | None,
+    llm_model: str | None,
+    llm_model_name: str | None,
     stage_timings: dict[str, float],
     t_start: float,
 ) -> dict:
@@ -452,6 +510,10 @@ def _finish_session(
                         t.setdefault("sil_seq", []).append(best["mask"])
             except Exception as exc:  # 步态采集失败不致命
                 gait_collect_error = str(exc)
+        if gait_collect_error and not any(
+            track.get("pose_seq") for track in tracks.values()
+        ):
+            gait_use = False
         _record("gait_collect", gait_collect_started)
 
     # ---- 认人：每条 track 用最佳 crop 提指纹、查/登记主体记忆库 → 身份 ----
@@ -470,7 +532,7 @@ def _finish_session(
         crop = body_best.get("crop") or t.get("best_crop")
         if with_body and crop is not None:
             try:
-                vec = reid_mod.embed(crop)
+                vec = reid_mod.embed(crop, purpose="identity_gallery")
                 track_emb[tid] = np.asarray(vec, dtype=np.float32).reshape(-1)
                 qa = reid_mod.assess_quality(crop)
                 res = gallery_mod.with_gallery_locked(
@@ -620,6 +682,7 @@ def _finish_session(
 
         # ---- LANE D：场景文字 OCR —— 在该窗关键帧上读时间戳/车牌/单号，汇成 scene_context ----
         scene_context = ""
+        ocr_evidence: list[dict] = []
         if ocr_use:
             per_frame = []
             for i in sel:
@@ -632,14 +695,21 @@ def _finish_session(
                     "timestamp": metas[i].timestamp if 0 <= i < len(metas) else None,
                     "texts": ocr_cache[i],
                 })
-            scene_context = ocr_mod.format_scene_context(per_frame)
+            ocr_evidence = per_frame
+            scene_context = ocr_mod.format_scene_context(
+                per_frame,
+                language=report_language,
+            )
 
         # ---- LANE D：物体/包裹 —— 汇总窗内非人物体轨迹 → object_context（场景级，含 logo 提示）----
         object_list: list[dict] = []
         object_context = ""
         if obj_use:
             object_list = _build_object_context(object_tracks, win_idx, metas, img_w, img_h)
-            object_context = _format_object_context(object_list)
+            object_context = _format_object_context(
+                object_list,
+                language=report_language,
+            )
 
         window_out = {
             "window_index": w,
@@ -654,6 +724,7 @@ def _finish_session(
         }
         if scene_context:
             window_out["scene_context"] = scene_context
+            window_out["ocr_evidence"] = ocr_evidence
         if object_context:
             window_out["object_context"] = object_context
             window_out["objects"] = object_list
@@ -666,8 +737,15 @@ def _finish_session(
             event_prepare_seconds += time.perf_counter() - event_prepare_started
             event_understanding_started = time.perf_counter()
             window_out["event"] = understand_event(
-                kf, identity_text, objective=objective,
-                scene_context=scene_context or None, object_context=object_context or None,
+                kf,
+                identity_text,
+                objective=objective,
+                scene_context=scene_context or None,
+                object_context=object_context or None,
+                language=report_language,
+                model=llm_model,
+                model_name=llm_model_name,
+                window=window_out,
             )
             event_understanding_seconds += time.perf_counter() - event_understanding_started
         else:
@@ -683,7 +761,12 @@ def _finish_session(
     if run_llm and do_overall and out_windows:
         overall_started = time.perf_counter()
         try:
-            overall = summarize_event_windows(out_windows) or None
+            overall = summarize_event_windows(
+                out_windows,
+                language=report_language,
+                model=llm_model,
+                model_name=llm_model_name,
+            ) or None
         except Exception as exc:  # 总结失败不致命：逐窗结果仍在
             overall = {"error": str(exc)}
         _record("overall_summary", overall_started)
@@ -699,6 +782,8 @@ def _finish_session(
         if seconds > 0.0
     }
 
+    effective_reid_backend = reid_mod.active_backend() if with_body else None
+    effective_reid_device = reid_mod.active_device() if with_body else None
     return {
         "video": str(video_path),
         "fps": fps,
@@ -707,23 +792,30 @@ def _finish_session(
         "session_id": session_id,
         "evidence_schema_version": 2,
         "tracker_backend": tracker_mod.active_backend(),
-        "reid_backend": reid_mod.active_backend() if with_body else None,
+        "reid_backend": effective_reid_backend,
         "reid_dim": dim,
         "with_body": with_body,
         "with_face": with_face,
         "with_gait": gait_use,
         "with_ocr": ocr_use,
         "with_objects": obj_use,
-        "gait_error": (gait_mod.load_error() if (with_gait and not gait_use) else gait_collect_error),
+        "gait_error": gait_collect_error
+        or (gait_mod.load_error() if (with_gait and not gait_use) else None),
         "ocr_backend": (ocr_mod.active_backend() if ocr_use else None),
         "ocr_error": (ocr_mod.load_error() if ocr_use else None),
         "object_classes": (sorted(obj_classes) if obj_use else None),
         "runtime": {
             "execution": "server",
             "detector_device": detector_mod.active_device() or "unknown",
+            "reid_device": effective_reid_device,
         },
-        "model": settings.event_llm_deployment or settings.azure_openai_deployment,
+        "model": (
+            llm_model
+            or settings.event_llm_deployment
+            or settings.azure_openai_deployment
+        ),
         "dry_run": not run_llm,
+        "report_language": report_language or "zh-CN",
         "elapsed_seconds": round(elapsed_seconds, 3),
         "stage_timings": stage_timings,
         "tracks": {str(tid): identities[tid] for tid in identities},
@@ -731,4 +823,4 @@ def _finish_session(
         "overall": overall,
     }
 
-__all__ = ["analyze_event_stream"]
+__all__ = ["EventAnalysisRunError", "analyze_event_stream"]

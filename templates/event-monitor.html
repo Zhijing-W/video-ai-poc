@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="{{ ui.page.html_lang }}">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>事件监控台 · 身份感知多帧事件理解</title>
+  <title>{{ ui.page.document_title }}</title>
   <link rel="stylesheet" href="/static/css/variables.css" />
   <link rel="stylesheet" href="/static/css/layout.css" />
   <link rel="stylesheet" href="/static/css/components.css" />
@@ -14,181 +14,212 @@
     <div class="brand">
       <span class="logo">◉</span>
       <span class="brand-text">
-        <span class="brand-title">事件监控台</span>
-        <span class="brand-sub">身份感知 · 多帧事件理解</span>
+        <span class="brand-title">{{ ui.topbar.brand_title }}</span>
+        <span class="brand-sub">{{ ui.topbar.brand_subtitle }}</span>
       </span>
     </div>
-    <span id="backendStatus" class="em-svc" title="后端服务状态"><span class="dot"></span>连接中…</span>
-    <button id="btnSettings" class="em-gear" title="设置">⚙️ 设置</button>
+    <span id="backendStatus" class="em-svc" title="{{ ui.topbar.service_status_title }}"><span class="dot"></span>{{ ui.topbar.service_connecting }}</span>
+    <nav class="em-langswitch" aria-label="{{ ui.topbar.language_switch_label }}">
+      <a
+        href="/event-monitor"
+        class="em-langpill{% if ui_bundle.locale == 'en' %} active{% endif %}"
+        lang="en"
+        title="{{ ui.nav.english_name }}"
+      >{{ ui.nav.english_short }}</a>
+      <a
+        href="/event-monitor/zh"
+        class="em-langpill{% if ui_bundle.locale == 'zh-CN' %} active{% endif %}"
+        lang="zh-CN"
+        title="{{ ui.nav.chinese_name }}"
+      >{{ ui.nav.chinese_short }}</a>
+    </nav>
+    <button id="btnSettings" class="em-gear" title="{{ ui.topbar.settings_title }}">{{ ui.topbar.settings_button }}</button>
     <div class="clock" id="clock">--:--:--</div>
   </div>
 
-  <!-- ===== 设置抽屉（独立分页，可持续扩展可插拔开关）===== -->
   <div id="settingsOverlay" class="em-overlay" hidden></div>
   <aside id="settingsDrawer" class="em-drawer" hidden>
     <div class="em-drawer-head">
-      <h3>⚙️ 设置 <span class="em-once">本次生效（不持久）</span></h3>
-      <button id="btnCloseSettings" class="em-x">✕</button>
+      <h3>{{ ui.settings.drawer_title }} <span class="em-once">{{ ui.settings.once }}</span></h3>
+      <button id="btnCloseSettings" class="em-x" title="{{ ui.results.lightbox_close_title }}">✕</button>
     </div>
     <div class="em-drawer-body">
-
       <div class="em-group">
-        <div class="em-group-title">🧍 身份提供器（人物三路）</div>
-        <label class="em-check"><input type="checkbox" id="withBody" checked /> 人形 ReID 分支 <span class="em-cost fast">默认开启</span></label>
-        <label class="em-check"><input type="checkbox" id="withFace" /> 人脸分支 <span class="em-cost">较慢</span></label>
-        <label class="em-check"><input type="checkbox" id="withGait" /> 步态分支 SkeletonGait++ <span class="em-cost slow">最慢</span></label>
-        <div class="em-hint">三路均只在勾选时参与最终 subject_id；默认仅开启人形。Tracker 的外观 ReID 只负责临时 track_id，不受此开关影响。</div>
+        <div class="em-group-title">{{ ui.settings.identity_group_title }}</div>
+        <label class="em-check"><input type="checkbox" id="withBody" checked /> {{ ui.settings.with_body_label }} <span class="em-cost fast">{{ ui.settings.with_body_cost }}</span></label>
+        <label class="em-check"><input type="checkbox" id="withFace" /> {{ ui.settings.with_face_label }} <span class="em-cost">{{ ui.settings.with_face_cost }}</span></label>
+        <label class="em-check"><input type="checkbox" id="withGait" /> {{ ui.settings.with_gait_label }} <span class="em-cost slow">{{ ui.settings.with_gait_cost }}</span></label>
+        <div class="em-hint">{{ ui.settings.identity_hint }}</div>
       </div>
 
       <div class="em-group">
-        <div class="em-group-title">🔤 场景提供器（LANE D · 不代表身份）</div>
-        <label class="em-check"><input type="checkbox" id="withOcr" /> 场景文字 OCR（时间戳/车牌/单号）<span class="em-cost">按关键帧 · 少量</span></label>
-        <label class="em-check"><input type="checkbox" id="withObjects" /> 物体/包裹检测（行李/车辆+轨迹；含品牌/logo 提示）<span class="em-cost fast">≈0 · 复用检测</span></label>
-        <div class="em-hint">读画面文字/物体汇成 scene/object_context，与人物身份并列喂 LLM；不进 subject_id。</div>
+        <div class="em-group-title">{{ ui.settings.scene_group_title }}</div>
+        <label class="em-check"><input type="checkbox" id="withOcr" /> {{ ui.settings.with_ocr_label }} <span class="em-cost">{{ ui.settings.with_ocr_cost }}</span></label>
+        <label class="em-check"><input type="checkbox" id="withObjects" /> {{ ui.settings.with_objects_label }} <span class="em-cost fast">{{ ui.settings.with_objects_cost }}</span></label>
+        <div class="em-hint">{{ ui.settings.scene_hint }}</div>
       </div>
 
       <div class="em-group">
-        <div class="em-group-title">🎯 多目标跟踪（track_id）</div>
-        <label class="em-label">Tracker 后端</label>
+        <div class="em-group-title">{{ ui.settings.tracker_group_title }}</div>
+        <label class="em-label">{{ ui.settings.tracker_label }}</label>
         <select id="trackBackend" class="em-input">
-          <option value="">默认（BoT-SORT + ReID）</option>
-          <option value="botsort_reid">BoT-SORT + ReID（推荐，遮挡/交叉更稳）</option>
-          <option value="botsort">BoT-SORT（无外观 ReID）</option>
-          <option value="bytetrack">ByteTrack（快速 baseline）</option>
+          <option value="">{{ ui.settings.tracker_default }}</option>
+          <option value="botsort">{{ ui.settings.tracker_botsort }}</option>
+          <option value="bytetrack">{{ ui.settings.tracker_bytetrack }}</option>
         </select>
-        <div class="em-hint">track_id 是临时轨迹编号；最终身份仍由人脸/人形/步态合成 subject_id。</div>
+        <div class="em-hint">{{ ui.settings.tracker_hint }}</div>
       </div>
 
       <div class="em-group">
-        <div class="em-group-title">😶 人脸 · 攻糊脸武器</div>
-        <label class="em-label">识别后端</label>
+        <div class="em-group-title">{{ ui.settings.face_group_title }}</div>
+        <label class="em-label">{{ ui.settings.face_rec_label }}</label>
         <select id="faceRecBackend" class="em-input">
-          <option value="">默认（ArcFace）</option>
-          <option value="adaface">AdaFace（低清更强）</option>
-          <option value="arcface">ArcFace</option>
+          <option value="">{{ ui.settings.face_rec_default }}</option>
+          <option value="adaface">{{ ui.settings.face_rec_adaface }}</option>
         </select>
-        <label class="em-label" style="margin-top:8px">人脸超分</label>
+        <label class="em-label" style="margin-top:8px">{{ ui.settings.face_superres_label }}</label>
         <select id="faceSuperres" class="em-input">
-          <option value="">默认（关闭）</option>
+          <option value="">{{ ui.settings.face_superres_default }}</option>
           <option value="gfpgan">GFP-GAN</option>
           <option value="codeformer">CodeFormer</option>
           <option value="realesrgan_x2plus">Real-ESRGAN x2plus</option>
-          <option value="off">关闭</option>
         </select>
         <div id="faceCodeformerFidelityField" hidden>
-          <label class="em-label" style="margin-top:8px">CodeFormer fidelity</label>
+          <label class="em-label" style="margin-top:8px">{{ ui.settings.face_codeformer_fidelity_label }}</label>
           <input id="faceCodeformerFidelity" type="number" class="em-input" value="1.0" min="0" max="1" step="0.05" />
-          <div class="em-hint">1.0 优先保留身份；降低可增强视觉修复，但可能改变身份纹理。</div>
+          <div class="em-hint">{{ ui.settings.face_codeformer_hint }}</div>
         </div>
-        <div class="em-hint">选项来自服务端注册表；未知名称不会提交。</div>
-        <label class="em-check" style="margin-top:8px"><input type="checkbox" id="face3d" checked /> 3D-68 几何 cue</label>
+        <div class="em-hint">{{ ui.settings.face_superres_hint }}</div>
+        <label class="em-check" style="margin-top:8px"><input type="checkbox" id="face3d" checked /> {{ ui.settings.face_3d_label }}</label>
       </div>
 
       <div class="em-group">
-        <div class="em-group-title">🧥 人形 ReID</div>
-        <label class="em-label">人形 ReID 模型 <span class="em-info" title="选择本次分析用于提取人形身份特征的模型；加载失败会直接报告错误。">ⓘ</span></label>
-        <select id="reidBackend" class="em-input">
-          <option value="osnet" selected>OSNet-AIN MSMT17（默认）</option>
-          <option value="clipreid">CLIP-ReID ViT-B/16</option>
-          <option value="siglip2">SigLIP2 Person ReID</option>
-          <option value="differ">DIFFER EVA02-L</option>
+        <div class="em-group-title">{{ ui.settings.reid_group_title }}</div>
+        <label class="em-label">{{ ui.settings.reid_label }} <span class="em-info" title="{{ ui.settings.reid_label_title }}">ⓘ</span></label>
+        <select id="reidBackend" class="em-input" disabled>
+          <option value="">{{ ui.settings.reid_loading_default }}</option>
         </select>
         <div class="em-row" style="margin-top:8px">
           <div>
-            <label class="em-label">Top-K 候选 <span class="em-info" title="从 gallery 中取多少个相似候选参与决策。值越大越能做一致性检查，但会稍微增加检索和决策开销。">ⓘ</span></label>
-            <input id="reidTopK" type="number" class="em-input" placeholder="默认30" min="1" max="100" step="1" />
+            <label class="em-label">{{ ui.settings.reid_topk_label }} <span class="em-info" title="{{ ui.settings.reid_topk_title }}">ⓘ</span></label>
+            <input id="reidTopK" type="number" class="em-input" placeholder="{{ ui.settings.reid_topk_placeholder }}" min="1" max="100" step="1" />
           </div>
           <div>
-            <label class="em-label">Top-1 margin <span class="em-info" title="Top-1 与第二名分数差距太小时判为 grey，避免 top-1 噪声导致误匹配。值越大越保守。">ⓘ</span></label>
-            <input id="reidTop1Margin" type="number" class="em-input" placeholder="默认0.03" min="0" max="1" step="0.01" />
+            <label class="em-label">{{ ui.settings.reid_top1_margin_label }} <span class="em-info" title="{{ ui.settings.reid_top1_margin_title }}">ⓘ</span></label>
+            <input id="reidTop1Margin" type="number" class="em-input" placeholder="{{ ui.settings.reid_top1_margin_placeholder }}" min="0" max="1" step="0.01" />
           </div>
         </div>
         <div class="em-row" style="margin-top:8px">
           <div>
-            <label class="em-label">投票阈值 <span class="em-info" title="只有相似度高于该阈值的候选才参与 top-k 投票。阈值越高，参与投票的候选越少但更可信。">ⓘ</span></label>
-            <input id="reidVoteThresh" type="number" class="em-input" placeholder="默认0.55" min="0" max="1" step="0.05" />
+            <label class="em-label">{{ ui.settings.reid_vote_thresh_label }} <span class="em-info" title="{{ ui.settings.reid_vote_thresh_title }}">ⓘ</span></label>
+            <input id="reidVoteThresh" type="number" class="em-input" placeholder="{{ ui.settings.reid_vote_thresh_placeholder }}" min="0" max="1" step="0.05" />
           </div>
           <div>
-            <label class="em-label">一致性比例 <span class="em-info" title="Top subject 在高相似候选中的票数占比下限。低于该比例则认为候选不一致，判为 grey。">ⓘ</span></label>
-            <input id="reidConsistencyRatio" type="number" class="em-input" placeholder="默认0.5" min="0" max="1" step="0.05" />
+            <label class="em-label">{{ ui.settings.reid_consistency_ratio_label }} <span class="em-info" title="{{ ui.settings.reid_consistency_ratio_title }}">ⓘ</span></label>
+            <input id="reidConsistencyRatio" type="number" class="em-input" placeholder="{{ ui.settings.reid_consistency_ratio_placeholder }}" min="0" max="1" step="0.05" />
           </div>
         </div>
-        <label class="em-check" style="margin-top:8px"><input type="checkbox" id="reidConsistency" checked /> 开启 top-k 一致性 / 投票决策 <span class="em-info" title="开启后不只看 top-1，还会结合 top-k 候选投票、runner-up margin 和一致性比例；关闭后更接近传统 top-1 baseline。">ⓘ</span></label>
-        <div class="em-hint">用于对比 top-1 baseline vs top-k consistency，留空则使用后端默认值。</div>
+        <label class="em-check" style="margin-top:8px"><input type="checkbox" id="reidConsistency" checked /> {{ ui.settings.reid_consistency_label }} <span class="em-info" title="{{ ui.settings.reid_consistency_title }}">ⓘ</span></label>
+        <div class="em-hint">{{ ui.settings.reid_hint }}</div>
       </div>
 
       <div class="em-group">
-        <div class="em-group-title">🎞 选帧 / 分窗</div>
+        <div class="em-group-title">{{ ui.settings.framing_group_title }}</div>
         <div class="em-row">
           <div>
-            <label class="em-label">采样 fps</label>
+            <label class="em-label">{{ ui.settings.fps_label }}</label>
             <input id="fps" type="number" class="em-input" value="2" min="0.5" max="8" step="0.5" />
           </div>
           <div>
-            <label class="em-label">关键帧上限</label>
+            <label class="em-label">{{ ui.settings.max_keyframes_label }}</label>
             <input id="maxKeyframes" type="number" class="em-input" value="8" min="2" max="24" step="1" />
           </div>
         </div>
         <div class="em-row" style="margin-top:8px">
           <div>
-            <label class="em-label">窗时长上限(s)</label>
-            <input id="maxWindowSeconds" type="number" class="em-input" placeholder="默认30" min="2" step="1" />
+            <label class="em-label">{{ ui.settings.max_window_seconds_label }}</label>
+            <input id="maxWindowSeconds" type="number" class="em-input" placeholder="{{ ui.settings.max_window_seconds_placeholder }}" min="2" step="1" />
           </div>
           <div>
-            <label class="em-label">缝合阈值</label>
-            <input id="stitchThresh" type="number" class="em-input" placeholder="默认0.45" min="0" max="1" step="0.05" />
+            <label class="em-label">{{ ui.settings.stitch_thresh_label }}</label>
+            <input id="stitchThresh" type="number" class="em-input" placeholder="{{ ui.settings.stitch_thresh_placeholder }}" min="0" max="1" step="0.05" />
           </div>
         </div>
       </div>
-
     </div>
     <div class="em-drawer-foot">
-      <button id="btnApplySettings" class="em-btn">完成</button>
+      <button id="btnApplySettings" class="em-btn">{{ ui.settings.done_button }}</button>
     </div>
   </aside>
 
   <div class="em-wrap">
-    <!-- ===== 左：控制面板 ===== -->
     <aside class="em-panel">
-      <h3 class="em-heading">📹 输入源</h3>
-      <label class="em-label">选择样片 <span id="sampleCount" class="em-label-badge"></span></label>
+      <h3 class="em-heading">{{ ui.panel.input_title }}</h3>
+      <label class="em-label">{{ ui.panel.sample_label }} <span id="sampleCount" class="em-label-badge"></span></label>
       <select id="sampleSelect" class="em-input"></select>
 
-      <div class="em-or"><span>或</span></div>
+      <div class="em-or"><span>{{ ui.panel.or_label }}</span></div>
 
       <label for="fileInput" id="dropZone" class="em-drop">
         <span class="em-drop-icon">⬆</span>
-        <span class="em-drop-main" id="dropMain">拖拽视频到此，或点击选择</span>
-        <span class="em-drop-sub" id="dropSub">mp4 / mov / avi / mkv</span>
+        <span class="em-drop-main" id="dropMain">{{ ui.panel.drop_main }}</span>
+        <span class="em-drop-sub" id="dropSub">{{ ui.panel.drop_sub }}</span>
         <input id="fileInput" type="file" accept="video/*" hidden />
       </label>
 
-      <label class="em-label" style="margin-top:16px">关注点（可选）</label>
-      <input id="objective" type="text" class="em-input" placeholder="如：留意陌生人闯入、拿走物品" />
+      <label class="em-label" style="margin-top:16px">{{ ui.panel.objective_label }}</label>
+      <input id="objective" type="text" class="em-input" placeholder="{{ ui.panel.objective_placeholder }}" />
 
       <label class="em-check em-dryrun" style="margin-top:12px">
         <input type="checkbox" id="dryRun" />
-        <span>Dry-run <span class="em-cost fast">更快</span></span>
-        <span class="em-dryrun-hint">只跑 CV 链路、不调 LLM，用于快速验证与省额度</span>
+        <span>{{ ui.panel.dry_run_label }} <span class="em-cost fast">{{ ui.panel.dry_run_cost }}</span></span>
+        <span class="em-dryrun-hint">{{ ui.panel.dry_run_hint }}</span>
       </label>
 
-      <button id="btnRun" class="em-btn em-btn-cta"><span class="em-btn-ico">▶</span> 分析事件</button>
+      <section class="em-model-card" aria-labelledby="aiModuleTitle">
+        <div id="aiModuleTitle" class="em-model-title">{{ ui.panel.ai_title }} <span id="llmAuthBadge" class="em-model-auth">{{ ui.panel.ai_loading }}</span></div>
+        <label id="analysisModelLabel" class="em-label">{{ ui.panel.analysis_model_label }}</label>
+        <div id="analysisModelPicker" class="em-model-picker" data-task="analysis">
+          <input id="analysisModel" type="hidden" value="auto" />
+          <button id="analysisModelTrigger" class="em-model-picker-trigger" type="button" aria-labelledby="analysisModelLabel analysisModelValue" aria-expanded="false" aria-controls="analysisModelPopover">
+            <span id="analysisModelValue">{{ ui.panel.ai_loading }}</span><span aria-hidden="true">⌄</span>
+          </button>
+          <div id="analysisModelPopover" class="em-model-popover" role="dialog" aria-label="{{ ui.panel.analysis_model_label }}" hidden>
+            <input class="em-model-search" type="search" autocomplete="off" placeholder="{{ ui.panel.model_search_placeholder }}" aria-label="{{ ui.panel.model_search_label }}" />
+            <div class="em-model-options" role="listbox"></div>
+          </div>
+        </div>
+        <label id="chatModelLabel" class="em-label" style="margin-top:8px">{{ ui.panel.chat_model_label }}</label>
+        <div id="chatModelPicker" class="em-model-picker" data-task="chat">
+          <input id="chatModel" type="hidden" value="auto" />
+          <button id="chatModelTrigger" class="em-model-picker-trigger" type="button" aria-labelledby="chatModelLabel chatModelValue" aria-expanded="false" aria-controls="chatModelPopover">
+            <span id="chatModelValue">{{ ui.panel.ai_loading }}</span><span aria-hidden="true">⌄</span>
+          </button>
+          <div id="chatModelPopover" class="em-model-popover" role="dialog" aria-label="{{ ui.panel.chat_model_label }}" hidden>
+            <input class="em-model-search" type="search" autocomplete="off" placeholder="{{ ui.panel.model_search_placeholder }}" aria-label="{{ ui.panel.model_search_label }}" />
+            <div class="em-model-options" role="listbox"></div>
+          </div>
+        </div>
+        <div id="llmModelHint" class="em-ai-hint">{{ ui.panel.routing_hint }}</div>
+        <a class="em-model-manage" href="https://ai.azure.com/" target="_blank" rel="noopener noreferrer">{{ ui.panel.manage_deployments }}</a>
+      </section>
+
+      <button id="btnRun" class="em-btn em-btn-cta"><span class="em-btn-ico">▶</span> {{ ui.panel.run_button }}</button>
       <div id="status" class="em-status"></div>
 
       <div class="em-note">
-        <b>处理流程：</b><br/>
-        ① 视频解码与采样 → ② 逐帧检测和多目标跟踪 → ③ 已勾选的身份分支
-        <span class="em-note-opt">[人形 / 人脸 / 步态]</span>
-        → ④ 身份融合 → ⑤ 事件分窗与关键帧准备 → ⑥ gpt-4o 跨帧事件理解<br/>
-        <span class="em-note-hint">运行中的同步等待条不预测后端阶段；完成后结果区展示服务端实测分项耗时。</span>
+        <b>{{ ui.panel.note_title }}</b><br/>
+        {{ ui.panel.note_body_intro }}
+        <span class="em-note-opt">{{ ui.panel.note_body_branches }}</span>
+        {{ ui.panel.note_body_outro }}<br/>
+        <span class="em-note-hint">{{ ui.panel.note_hint }}</span>
       </div>
     </aside>
 
-    <!-- ===== 右：结果 ===== -->
     <main class="em-main">
       <div id="progress" class="em-progress" hidden>
         <div class="em-progress-head">
-          <span id="progressStage" class="em-progress-stage">⏳ 处理中…</span>
+          <span id="progressStage" class="em-progress-stage">⏳ {{ ui.progress.running }}…</span>
           <span id="progressTimer" class="em-progress-timer">0.0s</span>
         </div>
         <div class="em-progress-track"><div id="progressBar" class="em-progress-bar"></div></div>
@@ -196,40 +227,82 @@
       </div>
       <div id="meta" class="em-meta"></div>
       <div id="cfgSummary" class="em-cfgsummary" hidden></div>
-      <div id="timings" class="em-timings" hidden></div>
-      <div id="resultTools" class="em-tools" hidden>
-        <button id="btnSendLlm" class="em-tool-btn" hidden>✨ 用当前 dry-run 结果调用大模型</button>
-        <button id="btnDownloadJson" class="em-tool-btn">⬇ 下载 JSON</button>
-        <button id="btnToggleJson" class="em-tool-btn">查看原始 JSON</button>
-        <span class="em-tool-hint">本地模型最终输出（含/不含 LLM 事件，取决于是否 dry-run）</span>
-      </div>
-      <pre id="jsonView" class="em-json" hidden></pre>
+      <div id="reidDiagnostics" class="em-reid-diagnostics" hidden></div>
+      <section id="timings" class="em-timings" aria-live="polite" hidden></section>
+      <section id="resultTools" class="em-result-actions" aria-labelledby="resultActionsTitle" hidden>
+        <h2 id="resultActionsTitle" class="em-result-actions-title">{{ ui.results.actions_title }}</h2>
+        <div class="em-result-utilities" aria-labelledby="resultUtilitiesTitle">
+          <h3 id="resultUtilitiesTitle">{{ ui.results.utilities_title }}</h3>
+          <div class="em-result-utility-controls">
+            <label class="em-prompt-format" for="promptFormat">{{ ui.results.prompt_format_label }}</label>
+            <select id="promptFormat" class="em-prompt-select">
+              <option value="tsv" selected>{{ ui.results.prompt_format_tsv }}</option>
+              <option value="json">{{ ui.results.prompt_format_json }}</option>
+            </select>
+            <button id="btnDownloadPrompt" class="em-tool-btn" type="button">{{ ui.results.download_prompt_button }}</button>
+            <button id="btnViewPrompt" class="em-tool-btn" type="button">{{ ui.results.view_prompt_show }}</button>
+          </div>
+          <p class="em-tool-hint">{{ ui.results.prompt_export_hint }}</p>
+          <pre id="promptView" class="em-json em-prompt-view" hidden></pre>
+        </div>
+        <div id="dryRunAction" class="em-ai-action em-ai-action-reuse" hidden>
+          <div class="em-ai-action-copy">
+            <div>
+              <div class="em-ai-action-title-row">
+                <h3>{{ ui.results.dry_run_action_title }}</h3>
+                <span class="em-ai-action-kind">{{ ui.results.dry_run_action_status }}</span>
+              </div>
+              <p>{{ ui.results.dry_run_action_description }}</p>
+            </div>
+          </div>
+          <button id="btnSendLlm" class="em-ai-action-button" type="button" hidden>{{ ui.results.send_llm_button }}</button>
+        </div>
+      </section>
+      <section id="chatPanel" class="em-chat em-evidence-chat" aria-labelledby="chatTitle" hidden>
+        <div class="em-chat-head">
+          <div>
+            <div class="em-chat-title-row">
+              <h2 id="chatTitle">{{ ui.chat.title }}</h2>
+              <span class="em-chat-kind">{{ ui.chat.kind }}</span>
+            </div>
+            <p id="chatEvidenceMeta" class="em-chat-evidence-meta">{{ ui.chat.evidence_scope }}</p>
+            <span id="chatModelStatus" class="em-chat-model-status" role="status" aria-live="polite">{{ ui.chat.waiting }}</span>
+          </div>
+        </div>
+        <div id="chatMessages" class="em-chat-messages"></div>
+        <div class="em-chat-compose">
+          <textarea id="chatQuestion" rows="2" maxlength="2000" aria-describedby="chatEvidenceMeta" placeholder="{{ ui.chat.placeholder }}"></textarea>
+          <button id="btnChatSend" class="em-btn" type="button">{{ ui.chat.send }}</button>
+        </div>
+      </section>
       <div id="overall" class="em-overall" hidden></div>
       <div id="tracks" class="em-tracks"></div>
       <div id="timeline" class="em-timeline"></div>
       <div id="empty" class="em-empty">
         <div class="em-empty-icon">🎬</div>
-        <div class="em-empty-title">身份感知 · 多帧事件理解</div>
-        <div class="em-empty-sub">选择左侧样片或拖拽上传视频，点击「分析事件」即可生成事件时间线。<br/>想快速看链路，先勾选 <b>Dry-run</b>（不调 LLM）。</div>
+        <div class="em-empty-title">{{ ui.results.empty_title }}</div>
+        <div class="em-empty-sub">{{ ui.results.empty_subtitle | safe }}</div>
         <div class="em-empty-tags">
-          <span class="em-empty-tag">🧍 人脸 / 人形 / 步态 三路身份</span>
-          <span class="em-empty-tag">🕐 事件窗时间线</span>
-          <span class="em-empty-tag">🔤 OCR / 物体场景理解</span>
-          <span class="em-empty-tag">🧠 gpt-4o 跨帧叙述</span>
+          <span class="em-empty-tag">{{ ui.results.empty_tag_identity }}</span>
+          <span class="em-empty-tag">{{ ui.results.empty_tag_timeline }}</span>
+          <span class="em-empty-tag">{{ ui.results.empty_tag_scene }}</span>
+          <span class="em-empty-tag">{{ ui.results.empty_tag_llm }}</span>
         </div>
       </div>
     </main>
   </div>
 
-  <!-- ===== 关键帧放大灯箱 ===== -->
   <div id="lightbox" class="em-lightbox" hidden>
-    <button id="lightboxClose" class="em-lightbox-x" title="关闭">✕</button>
+    <button id="lightboxClose" class="em-lightbox-x" title="{{ ui.results.lightbox_close_title }}">✕</button>
     <figure class="em-lightbox-fig">
       <div id="lightboxStage" class="em-lightbox-stage"></div>
       <figcaption id="lightboxCap" class="em-lightbox-cap"></figcaption>
     </figure>
   </div>
 
-  <script type="module" src="/static/js/event-monitor/main.js?v=20260730-reid-models"></script>
+  <script>
+    globalThis.__EVENT_MONITOR_I18N__ = {{ ui_bundle | tojson }};
+  </script>
+  <script type="module" src="/static/js/event-monitor/main.js?v=20260808-timing-panel-ux"></script>
 </body>
 </html>

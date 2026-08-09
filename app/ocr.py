@@ -153,7 +153,11 @@ def _quad_to_box(quad, ox: int, oy: int) -> list[int]:
 
 
 # ---------------- 按窗聚合成 scene_context ----------------
-def format_scene_context(per_frame: list[dict], max_frame_lines: int = 24) -> str:
+def format_scene_context(
+    per_frame: list[dict],
+    max_frame_lines: int = 24,
+    language: str | None = None,
+) -> str:
     """把一个事件窗内若干关键帧的 OCR 结果聚成注入 LLM 的场景文字上下文。
 
     **与空间 grounding 对齐**：逐关键帧用同样的 `frame#N @ ts` 锚点（grounding 也是这套），
@@ -198,9 +202,21 @@ def format_scene_context(per_frame: list[dict], max_frame_lines: int = 24) -> st
             if k in static_keys and k not in static_display:
                 static_display[k] = txt
 
-    lines = ["【画面文字（OCR，逐关键帧；场景级，不代表任何人的身份）】"]
+    english = (language or "").strip().lower().startswith("en")
+    lines = [
+        (
+            "[Scene text (OCR, per keyframe; scene-level, not person identity)]"
+            if english
+            else "【画面文字（OCR，逐关键帧；场景级，不代表任何人的身份）】"
+        )
+    ]
     if static_display:
-        lines.append("固定文字（贯穿多帧，如摄像头名/地点）：" + " | ".join(static_display.values()))
+        prefix = (
+            "Static text (repeated across frames, such as camera or location): "
+            if english
+            else "固定文字（贯穿多帧，如摄像头名/地点）："
+        )
+        lines.append(prefix + " | ".join(static_display.values()))
 
     # 逐帧"变化文字"（多为时间戳），用 frame#N @ ts 锚点，和 grounding 同一坐标系
     changing_lines: list[str] = []
@@ -209,16 +225,37 @@ def format_scene_context(per_frame: list[dict], max_frame_lines: int = 24) -> st
         if not changing:
             continue
         anchor = f"frame#{idx} @ {ts}" if idx is not None else (str(ts) if ts is not None else "")
-        changing_lines.append(f"- {anchor}：" + " | ".join(changing))
+        changing_lines.append(f"- {anchor}: " + " | ".join(changing))
     if changing_lines:
-        lines.append("逐帧文字（多为时间戳/动态信息，frame#与 grounding 一一对应）：")
+        lines.append(
+            (
+                "Per-frame text (usually timestamps or dynamic information; "
+                "frame# aligns with grounding):"
+            )
+            if english
+            else "逐帧文字（多为时间戳/动态信息，frame#与 grounding 一一对应）："
+        )
         lines.extend(changing_lines[:max_frame_lines])
         if len(changing_lines) > max_frame_lines:
-            lines.append(f"  ... 其余 {len(changing_lines) - max_frame_lines} 帧文字省略")
+            omitted = len(changing_lines) - max_frame_lines
+            lines.append(
+                f"  ... {omitted} additional text frames omitted"
+                if english
+                else f"  ... 其余 {omitted} 帧文字省略"
+            )
 
     lines.append(
-        "说明：以上为画面中出现的文字（时间戳/车牌/单号/摄像头名等），可据此补全事件的**时间/物件**"
-        "线索、并与同一 frame# 的人物位置对齐；请**不要**把这些文字当作人物身份，也不要据此推断『谁』。"
+        (
+            "Note: This text is scene evidence such as timestamps, license plates, "
+            "parcel IDs, or camera names. Use it to complete time/object clues and "
+            "align with people at the same frame#. Do not treat it as person identity "
+            "or use it to infer who someone is."
+        )
+        if english
+        else (
+            "说明：以上为画面中出现的文字（时间戳/车牌/单号/摄像头名等），可据此补全事件的**时间/物件**"
+            "线索、并与同一 frame# 的人物位置对齐；请**不要**把这些文字当作人物身份，也不要据此推断『谁』。"
+        )
     )
     return "\n".join(lines)
 

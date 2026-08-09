@@ -82,6 +82,7 @@ config:
     deployment: "gpt-4o"
   # 各模块 device：GPU 未启用时全 cpu；启用后由 gpu.deployment 覆盖为 cuda
   faceDevice: cpu
+  reidBackend: differ                 # 冻结协议下精度优先默认；可覆盖为 clipreid/siglip2/osnet/auto
   reidDevice: cpu
   gaitDevice: cpu
   # FIQA / 超分 / OCR 开关
