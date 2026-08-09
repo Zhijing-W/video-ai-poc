@@ -81,7 +81,11 @@ export function renderSubjectGallery(data) {
   const cards = Object.entries(subjectMap).map(([subjectId, group]) => {
     const record = group.best || {};
     const hue = subjectHue(subjectId === "?" ? null : subjectId);
-    const title = subjectId === "?" ? "未入库 · 待定身份" : `主体 #${esc(subjectId)}`;
+    const name = record.db_identity || "";
+    const title =
+      subjectId === "?"
+        ? "未入库 · 待定身份"
+        : `主体 #${esc(subjectId)}${name ? ` · ${esc(name)}` : ""}`;
     const thumb = record.thumb
       ? `<img src="${record.thumb}" alt="${esc(title)}" loading="lazy"/>`
       : '<span class="em-avatar-ph">?</span>';

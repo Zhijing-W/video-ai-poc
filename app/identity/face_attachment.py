@@ -296,6 +296,7 @@ def attach_faces(
                     lambda gallery: gallery.identify_or_enroll(
                         face_vector,
                         quality,
+                        label=identities[tid].get("db_identity"),
                         auto_enroll=can_enroll,
                         hit_thresh=settings.face_hit_thresh,
                         new_thresh=settings.face_new_thresh,
@@ -308,6 +309,7 @@ def attach_faces(
                 rec["matched"] = result.get("decision") == "hit"
                 rec["enrolled"] = result.get("enrolled")
                 rec["gallery_quality_ok"] = result.get("quality_ok")
+                rec["db_identity"] = result.get("label")
                 if result.get("subject_id") is not None:
                     rec["route_subject"] = {
                         "route": "face",

@@ -257,6 +257,26 @@ def _finish_session(
     frame_stage_started = time.perf_counter()
     detector_inference_seconds = 0.0
     tracker_association_seconds = 0.0
+    demo_names = [name.strip() for name in settings.demo_gallery_names.split(",") if name.strip()]
+    demo_name_index = 0
+
+    def _assign_demo_name(subject_id: int | None) -> str | None:
+        nonlocal demo_name_index
+        if (
+            not settings.demo_gallery_enabled
+            or subject_id is None
+            or demo_name_index >= len(demo_names)
+        ):
+            return None
+        label = demo_names[demo_name_index]
+        demo_name_index += 1
+        gallery_mod.with_gallery_locked(
+            session_id,
+            dim,
+            lambda g: g.rename_subject(int(subject_id), label),
+        )
+        return label
+
     for i, fr in enumerate(frames):
         pil = Image.open(fr.local_path).convert("RGB")
         if not img_w:
@@ -464,6 +484,10 @@ def _finish_session(
                 ident["quality_ok"] = res.get("quality_ok")
                 ident["quality_reason"] = res.get("quality_reason")
                 ident["enrolled"] = res.get("enrolled")
+                label = res.get("label")
+                if not label and res.get("decision") == "new" and res.get("enrolled"):
+                    label = _assign_demo_name(res.get("subject_id"))
+                ident["db_identity"] = label or res.get("label")
                 if res.get("subject_id") is not None:
                     ident["route_subject"] = {
                         "route": "body",
@@ -500,6 +524,14 @@ def _finish_session(
             body_consistency_enabled=with_body,
         )
         _record("face_identity", face_identity_started)
+
+    # 如果人脸路线先认出了名字，而人形路线还没拿到，则回填给 body 侧。
+    for tid, ident in identities.items():
+        if ident.get("db_identity"):
+            continue
+        face_name = (ident.get("face") or {}).get("db_identity")
+        if face_name:
+            ident["db_identity"] = face_name
 
     # ---- 步态认人：每条 track 用累积的(姿态+剪影)序列提步态向量 → 步态库 → 写 gait_cue ----
     gait_dim = None

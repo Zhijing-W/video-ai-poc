@@ -200,6 +200,108 @@ def test_attach_faces_selects_face_best_separately_from_body_best(
     assert all(call["enhance_blurry"] is False for call in detect_calls)
 
 
+def test_face_attachment_passes_existing_db_identity_into_gallery(monkeypatch, runtime_dir: Path) -> None:
+    frame0 = write_image(runtime_dir / "frame0.jpg", (30, 30, 30))
+    frames = [Frame(frame_id="0", timestamp="00:00:00", local_path=str(frame0))]
+    tracks = {
+        1: {
+            "best_idx": 0,
+            "best_box": [10, 0, 90, 150],
+            "body_best": {
+                "track_id": 1,
+                "frame_index": 0,
+                "timestamp": "00:00:00",
+                "person_bbox": [10, 0, 90, 150],
+            },
+            "face_candidates": [
+                {
+                    "track_id": 1,
+                    "frame_index": 0,
+                    "timestamp": "00:00:00",
+                    "person_bbox": [10, 0, 90, 150],
+                    "proxy_score": 10,
+                }
+            ],
+            "boxes": {0: [10, 0, 90, 150]},
+        }
+    }
+    identities = {1: {"track_id": 1, "db_identity": "Alice"}}
+
+    monkeypatch.setattr(
+        face_attachment.face_mod,
+        "detect",
+        lambda *args, **kwargs: [
+            {
+                "bbox": [35, 10, 65, 40],
+                "kps": [[42, 20], [58, 20], [50, 28], [44, 36], [56, 36]],
+                "det_score": 0.95,
+                "quality": {
+                    "category": "clear",
+                    "eligibility": "direct",
+                    "quality": 0.9,
+                    "can_match": True,
+                    "can_superres": False,
+                    "can_enroll": True,
+                },
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        face_attachment.face_mod,
+        "finalize_identity",
+        lambda *args, **kwargs: {
+            "quality": {
+                "category": "clear",
+                "eligibility": "direct",
+                "quality": 0.9,
+                "can_match": True,
+                "can_superres": False,
+                "can_enroll": True,
+            },
+            "embedding": np.asarray([1.0, 0.0], dtype=np.float32),
+            "match_ready": True,
+            "match_source": "original",
+        },
+    )
+    monkeypatch.setattr(
+        face_attachment.reid_mod,
+        "embed",
+        lambda crop: np.asarray([1.0, 0.0], dtype=np.float32),
+    )
+
+    seen_labels = []
+
+    class FakeGallery:
+        def identify_or_enroll(self, *args, **kwargs):
+            seen_labels.append(kwargs.get("label"))
+            return {
+                "subject_id": 3,
+                "score": 0.9,
+                "decision": "new",
+                "enrolled": True,
+                "quality_ok": True,
+                "label": kwargs.get("label"),
+            }
+
+    monkeypatch.setattr(face_attachment.gallery_mod, "reset_gallery", lambda session_id: True)
+    monkeypatch.setattr(
+        face_attachment.gallery_mod,
+        "with_gallery_locked",
+        lambda session_id, dim, callback: callback(FakeGallery()),
+    )
+
+    face_attachment.attach_faces(
+        frames,
+        tracks,
+        identities,
+        "test",
+        body_embeddings={1: np.asarray([1.0, 0.0], dtype=np.float32)},
+    )
+
+    assert seen_labels == ["Alice"]
+    assert identities[1]["face"]["db_identity"] == "Alice"
+
+
 def test_attach_faces_blocks_failed_cross_frame_track_provenance(
     monkeypatch,
     runtime_dir: Path,

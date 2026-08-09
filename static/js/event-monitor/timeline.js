@@ -94,7 +94,11 @@ function renderWindow(windowData) {
 
   const people = (windowData.people || [])
     .map((person) => {
-      const label = person.subject_id != null ? `主体#${person.subject_id}` : `track ${person.track_id}`;
+      const label = person.db_identity
+        ? `${person.db_identity}${person.subject_id != null ? `（主体#${person.subject_id}` + `）` : ""}`
+        : person.subject_id != null
+          ? `主体#${person.subject_id}`
+          : `track ${person.track_id}`;
       const hue = subjectHue(person.subject_id);
       const thumb = thumbForTrack(person);
       const avatar = thumb ? `<img class="em-pavatar" src="${thumb}" loading="lazy"/>` : "";

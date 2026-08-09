@@ -228,6 +228,13 @@ class SessionGallery:
             self._row_to_subject.pop(drop, None)
             self._row_vecs.pop(drop, None)
 
+    def rename_subject(self, subject_id: int, label: str | None) -> None:
+        """给已存在主体补一个稳定名字（demo seed / 客户人员库映射时用）。"""
+        subject = self._subjects.get(int(subject_id))
+        if subject is None:
+            raise KeyError(f"未知主体：{subject_id}")
+        subject.label = label
+
     # ---- 对外 API ----
     def identify(self, vec: np.ndarray, top_k: int | None = None,
                  hit_thresh: float | None = None, new_thresh: float | None = None) -> dict:
