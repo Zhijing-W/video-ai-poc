@@ -7,9 +7,6 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from .face.quality import face_gallery_quality_ok
-
-
 class GallerySeedError(ValueError):
     """Raised when a sample gallery manifest or one of its assets is invalid."""
 
@@ -165,6 +162,21 @@ def _subject_attributes(seed: GallerySeed, subject: GallerySeedSubject) -> list[
     ]
 
 
+def face_seed_quality_ok(quality: dict | None) -> tuple[bool, str | None]:
+    """Gate trusted, labeled face references without relaxing auto-enrollment."""
+    if not quality:
+        return False, "missing_face_quality"
+    if quality.get("enhanced"):
+        return False, "restored_face_not_enrollable"
+    if quality.get("eligibility") != "direct":
+        return False, "face_not_direct"
+    if quality.get("category") not in {"clear", "marginal"}:
+        return False, "face_not_matchable"
+    if not quality.get("can_match"):
+        return False, "face_not_matchable"
+    return True, None
+
+
 def seed_body_gallery(
     seed: GallerySeed,
     session_id: str,
@@ -267,7 +279,7 @@ def seed_face_gallery(
                         quality,
                         label=subject.label,
                         attributes=_subject_attributes(seed, subject),
-                        quality_gate=face_gallery_quality_ok,
+                        quality_gate=face_seed_quality_ok,
                     ),
                 )
             except Exception as exc:
@@ -298,6 +310,7 @@ __all__ = [
     "GallerySeed",
     "GallerySeedError",
     "GallerySeedSubject",
+    "face_seed_quality_ok",
     "load_gallery_seed",
     "seed_body_gallery",
     "seed_face_gallery",

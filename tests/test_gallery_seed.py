@@ -12,6 +12,7 @@ from app import event_analysis_pipeline as pipeline
 from app.identity.embedding_gallery import SessionGallery
 from app.identity.gallery_seed import (
     GallerySeedError,
+    face_seed_quality_ok,
     load_gallery_seed,
 )
 from app.video_processor import Frame
@@ -97,6 +98,29 @@ def test_load_gallery_seed_rejects_path_escape(runtime_dir: Path) -> None:
 
     with pytest.raises(GallerySeedError, match="escapes"):
         load_gallery_seed(sample)
+
+
+def test_trusted_face_seed_accepts_direct_marginal_reference() -> None:
+    accepted, reason = face_seed_quality_ok(
+        {
+            "enhanced": False,
+            "eligibility": "direct",
+            "category": "marginal",
+            "can_match": True,
+            "can_enroll": False,
+        }
+    )
+
+    assert accepted is True
+    assert reason is None
+    assert face_seed_quality_ok(
+        {
+            "enhanced": False,
+            "eligibility": "fallback",
+            "category": "marginal",
+            "can_match": True,
+        }
+    ) == (False, "face_not_direct")
 
 
 def test_explicit_labeled_enrollment_reuses_one_subject(monkeypatch) -> None:
