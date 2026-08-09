@@ -228,12 +228,105 @@ class SessionGallery:
             self._row_to_subject.pop(drop, None)
             self._row_vecs.pop(drop, None)
 
-    def rename_subject(self, subject_id: int, label: str | None) -> None:
-        """给已存在主体补一个稳定名字（demo seed / 客户人员库映射时用）。"""
+    def rename_subject(self, subject_id: int, label: str | None) -> int:
+        """Assign a stable name, merging into an existing subject with that name."""
         subject = self._subjects.get(int(subject_id))
         if subject is None:
             raise KeyError(f"未知主体：{subject_id}")
-        subject.label = label
+        normalized_label = str(label).strip() if label is not None else ""
+        if not normalized_label:
+            subject.label = None
+            return subject.subject_id
+        existing = next(
+            (
+                item
+                for item in self._subjects.values()
+                if item.label == normalized_label
+                and item.subject_id != subject.subject_id
+            ),
+            None,
+        )
+        if existing is None:
+            subject.label = normalized_label
+            return subject.subject_id
+
+        for row_id in subject.row_ids:
+            self._row_to_subject[row_id] = existing.subject_id
+        existing.row_ids.extend(subject.row_ids)
+        existing.shots += subject.shots
+        existing.hit_count += subject.hit_count
+        existing.first_seen = min(existing.first_seen, subject.first_seen)
+        existing.last_seen = max(existing.last_seen, subject.last_seen)
+        for attribute in subject.attributes:
+            if attribute not in existing.attributes:
+                existing.attributes.append(attribute)
+        while len(existing.row_ids) > settings.reid_max_shots:
+            drop = existing.row_ids.pop(0)
+            self._index.remove_ids(np.array([drop], dtype=np.int64))
+            self._row_to_subject.pop(drop, None)
+            self._row_vecs.pop(drop, None)
+        self._subjects.pop(subject.subject_id)
+        return existing.subject_id
+
+    def enroll_labeled(
+        self,
+        vec: np.ndarray,
+        quality: dict | None = None,
+        *,
+        label: str,
+        attributes: list[str] | None = None,
+        quality_gate: Callable[[dict | None], tuple[bool, str | None]] | None = None,
+    ) -> dict:
+        """Insert one trusted reference shot under an explicit gallery label."""
+        normalized_label = str(label).strip()
+        if not normalized_label:
+            raise ValueError("gallery label must not be empty")
+        accept, why = (quality_gate or quality_ok)(quality)
+        if not accept:
+            return {
+                "decision": "rejected",
+                "subject_id": None,
+                "label": normalized_label,
+                "enrolled": False,
+                "quality_ok": False,
+                "quality_reason": why,
+            }
+
+        v = self._prepare(vec)
+        subject = next(
+            (
+                item
+                for item in self._subjects.values()
+                if item.label == normalized_label
+            ),
+            None,
+        )
+        now = time.time()
+        if subject is None:
+            subject = _Subject(
+                subject_id=self._next_subject_id,
+                label=normalized_label,
+                attributes=list(attributes or []),
+                first_seen=now,
+                last_seen=now,
+            )
+            self._next_subject_id += 1
+            self._subjects[subject.subject_id] = subject
+        else:
+            subject.last_seen = now
+            for attribute in attributes or []:
+                if attribute not in subject.attributes:
+                    subject.attributes.append(attribute)
+        self._add_shot(subject, v)
+        return {
+            "decision": "seeded",
+            "subject_id": subject.subject_id,
+            "label": subject.label,
+            "enrolled": True,
+            "quality_ok": True,
+            "quality_reason": None,
+            "shots": subject.shots,
+        }
 
     # ---- 对外 API ----
     def identify(self, vec: np.ndarray, top_k: int | None = None,
@@ -309,6 +402,29 @@ class SessionGallery:
                 # 质量不过关：不建档（避免低质 crop 污染库），仅返回判定。
                 res["enrolled"] = False
                 return res
+            normalized_label = str(label).strip() if label is not None else ""
+            if normalized_label:
+                existing = next(
+                    (
+                        item
+                        for item in self._subjects.values()
+                        if item.label == normalized_label
+                    ),
+                    None,
+                )
+                if existing is not None:
+                    existing.last_seen = now
+                    for attribute in attributes or []:
+                        if attribute not in existing.attributes:
+                            existing.attributes.append(attribute)
+                    self._add_shot(existing, v)
+                    res["subject_id"] = existing.subject_id
+                    res["decision"] = "labeled"
+                    res["decision_reason"] = "trusted_label"
+                    res["enrolled"] = True
+                    res["label"] = existing.label
+                    res["shots"] = existing.shots
+                    return res
             subj = _Subject(subject_id=self._next_subject_id, label=label,
                             attributes=list(attributes or []), first_seen=now, last_seen=now)
             self._next_subject_id += 1

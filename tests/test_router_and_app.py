@@ -10,6 +10,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app import face
+from app.identity.gallery_seed import GallerySeedError
 from app.main import app
 from app.routers import event_monitor
 from app.services import event_chat, llm_models
@@ -146,6 +147,27 @@ def test_router_returns_structured_fatal_reid_telemetry(monkeypatch) -> None:
     assert detail["config_used"]["reid_device"] == "cuda:0"
     assert len(run_dirs) == 1
     shutil.rmtree(run_dirs[0], ignore_errors=True)
+
+
+def test_router_returns_bad_request_for_gallery_seed_failure(monkeypatch) -> None:
+    def fail_analysis(video_path, run_dir, **kwargs):
+        error = GallerySeedError("body image rejected")
+        raise event_monitor.EventAnalysisRunError(
+            str(error),
+            body_reid_timing={},
+        ) from error
+
+    monkeypatch.setattr(event_monitor, "analyze_event_stream", fail_analysis)
+    response = TestClient(app).post(
+        "/api/event-monitor/understand",
+        files={"file": ("clip.mp4", b"fake video bytes", "video/mp4")},
+        data={"dry_run": "true"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        "样片 gallery 建档失败：body image rejected"
+    )
 
 
 def test_fastapi_health_page_and_openapi_are_available() -> None:

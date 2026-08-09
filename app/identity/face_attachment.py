@@ -9,6 +9,7 @@ from ..core.config import settings
 from . import embedding_gallery as gallery_mod
 from .evidence_selection import face_evidence_rank, public_evidence
 from .face.quality import face_gallery_quality_ok, no_face_quality
+from .gallery_seed import GallerySeed, seed_face_gallery
 
 
 def _empty_face_record(reason: str, *, error: str | None = None) -> dict:
@@ -102,10 +103,21 @@ def attach_faces(
     body_embeddings: dict[int, np.ndarray] | None = None,
     *,
     body_consistency_enabled: bool = True,
-) -> None:
+    gallery_seed: GallerySeed | None = None,
+) -> dict | None:
     """Select and finalize face evidence independently from body-best."""
     face_sess = f"{session_id}-face"
     gallery_mod.reset_gallery(face_sess)
+    seed_stats = (
+        seed_face_gallery(
+            gallery_seed,
+            face_sess,
+            face_module=face_mod,
+            gallery_module=gallery_mod,
+        )
+        if gallery_seed is not None
+        else None
+    )
     body_embeddings = body_embeddings or {}
 
     candidates_by_tid: dict[int, list[dict]] = {}
@@ -321,6 +333,7 @@ def attach_faces(
             except Exception as exc:
                 rec["face_error"] = str(exc)
         identities[tid]["face"] = rec
+    return seed_stats
 
 
 __all__ = ["attach_faces"]

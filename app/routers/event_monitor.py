@@ -24,6 +24,7 @@ from .. import face as face_mod
 from ..core.config import ALLOWED_VIDEO_SUFFIXES, DATA_DIR, OUTPUT_DIR, settings
 from ..event_analysis_pipeline import EventAnalysisRunError, analyze_event_stream
 from ..event_monitor_i18n import normalize_report_language, resolve_report_language
+from ..identity.gallery_seed import GallerySeedError, load_gallery_seed
 from ..services.event_chat import (
     chat_about_run,
     export_run_prompt,
@@ -66,7 +67,17 @@ def list_samples() -> dict:
     if SAMPLES_DIR.exists():
         for p in sorted(SAMPLES_DIR.iterdir()):
             if p.suffix.lower() in ALLOWED_VIDEO_SUFFIXES:
-                items.append({"name": p.name, "size_mb": round(p.stat().st_size / 1e6, 1)})
+                item = {
+                    "name": p.name,
+                    "size_mb": round(p.stat().st_size / 1e6, 1),
+                }
+                try:
+                    seed = load_gallery_seed(p)
+                    if seed is not None:
+                        item["gallery_seed"] = seed.public_dict()
+                except GallerySeedError as exc:
+                    item["gallery_seed_error"] = str(exc)
+                items.append(item)
     return {"samples": items}
 
 
@@ -289,6 +300,7 @@ async def understand(
     run_dir.mkdir(parents=True, exist_ok=True)
 
     # 解析视频来源：上传优先，否则用样片名。
+    gallery_seed = None
     if file is not None and file.filename:
         suffix = Path(file.filename).suffix.lower()
         if suffix not in ALLOWED_VIDEO_SUFFIXES:
@@ -300,6 +312,10 @@ async def understand(
         video_path = SAMPLES_DIR / Path(sample).name
         if not video_path.exists():
             raise HTTPException(404, f"样片不存在：{sample}")
+        try:
+            gallery_seed = load_gallery_seed(video_path)
+        except GallerySeedError as exc:
+            raise HTTPException(400, f"样片 gallery manifest 无效：{exc}") from exc
     else:
         raise HTTPException(400, "请选择样片或上传视频")
 
@@ -349,6 +365,11 @@ async def understand(
                     "track_backend": settings.track_backend,
                     "analysis_model_requested": analysis_selection.requested,
                     "analysis_model_selected": analysis_selection.selected,
+                    "gallery_seed": (
+                        gallery_seed.public_dict()
+                        if gallery_seed is not None
+                        else None
+                    ),
                 }
                 payload = await run_in_threadpool(
                     analyze_event_stream,
@@ -370,8 +391,14 @@ async def understand(
                     report_language=report_language,
                     llm_model=analysis_selection.deployment,
                     llm_model_name=analysis_selection.model,
+                    gallery_seed=gallery_seed,
                 )
         except EventAnalysisRunError as exc:
+            if isinstance(exc.__cause__, GallerySeedError):
+                raise HTTPException(
+                    400,
+                    f"样片 gallery 建档失败：{exc.__cause__}",
+                ) from exc
             timing = exc.body_reid_timing
             error_config = dict(config_used)
             error_config["reid_backend_effective"] = timing.get("backend")

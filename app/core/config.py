@@ -343,10 +343,6 @@ class Settings:
     event_stitch_thresh: float = float(_get("EVENT_STITCH_THRESH", "0.45"))
     # 低质 track 无法入长期 gallery 时，只铸"本视频本地 subject"；人群远景里外观相似，阈值必须更保守。
     event_local_stitch_thresh: float = float(_get("EVENT_LOCAL_STITCH_THRESH", "0.82"))
-    # Demo gallery seed：允许把前 N 个新主体自动命名，便于录制演示时先热 gallery 再跑未知人。
-    demo_gallery_enabled: bool = _get("DEMO_GALLERY_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
-    demo_gallery_names: str = _get("DEMO_GALLERY_NAMES", "")
-
     # 三路身份融合（Phase 4 · A 汇聚）：人脸 + 人形 ReID + 步态 按质量加权 → 一个统一身份置信度。
     # 质量自适应：清晰脸权重高、糊脸降权退人形/步态；多路一致再加成。设为各路的相对权重。
     identity_w_face: float = float(_get("IDENTITY_W_FACE", "0.5"))    # 人脸（清晰时最强）

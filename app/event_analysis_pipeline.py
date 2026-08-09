@@ -48,6 +48,7 @@ from .identity.evidence_selection import (
 from .identity.face_attachment import attach_faces
 from .identity.identity_confidence import score_identity_confidence
 from .identity.identity_context import format_identity_grounding
+from .identity.gallery_seed import GallerySeed, seed_body_gallery
 from .identity.resolution import (
     group_people,
     merge_tracks_cross_route,
@@ -156,6 +157,45 @@ _merge_tracks_cross_route = merge_tracks_cross_route
 _split_windows = split_windows
 
 
+def _backfill_body_gallery_labels(
+    identities: dict[int, dict],
+    session_id: str,
+    dim: int | None,
+) -> None:
+    for ident in identities.values():
+        if ident.get("db_identity"):
+            continue
+        face_name = (ident.get("face") or {}).get("db_identity")
+        body_subject_id = (ident.get("route_subject") or {}).get(
+            "local_subject_id"
+        )
+        if not face_name:
+            continue
+        ident["db_identity"] = face_name
+        if body_subject_id is not None and dim is not None:
+            old_subject_id = int(body_subject_id)
+            canonical_subject_id = gallery_mod.with_gallery_locked(
+                session_id,
+                dim,
+                lambda gallery: gallery.rename_subject(
+                    int(body_subject_id),
+                    face_name,
+                ),
+            )
+            for candidate in identities.values():
+                candidate_body_id = (
+                    candidate.get("route_subject") or {}
+                ).get("local_subject_id")
+                if candidate_body_id != old_subject_id:
+                    continue
+                candidate["subject_id"] = canonical_subject_id
+                candidate["route_subject"][
+                    "local_subject_id"
+                ] = canonical_subject_id
+                if not candidate.get("db_identity"):
+                    candidate["db_identity"] = face_name
+
+
 # ---------------- 主编排 ----------------
 def analyze_event_stream(
     video_path: str | Path,
@@ -180,6 +220,7 @@ def analyze_event_stream(
     report_language: str | None = None,
     llm_model: str | None = None,
     llm_model_name: str | None = None,
+    gallery_seed: GallerySeed | None = None,
 ) -> dict:
     """对一段视频做"身份感知·多帧事件理解"的完整端到端处理。"""
     video_path = Path(video_path)
@@ -217,6 +258,7 @@ def analyze_event_stream(
             report_language=report_language,
             llm_model=llm_model,
             llm_model_name=llm_model_name,
+            gallery_seed=gallery_seed,
             stage_timings=stage_timings,
             t_start=t_start,
         ),
@@ -273,6 +315,7 @@ def _finish_session(
     report_language: str | None,
     llm_model: str | None,
     llm_model_name: str | None,
+    gallery_seed: GallerySeed | None,
     stage_timings: dict[str, float],
     t_start: float,
 ) -> dict:
@@ -292,6 +335,17 @@ def _finish_session(
         detector_mod.prepare()
     dim = reid_mod.embed_dim() if with_body else None
     _record("pipeline_setup", setup_started)
+    body_seed_stats = None
+    if gallery_seed is not None and with_body:
+        seed_started = time.perf_counter()
+        body_seed_stats = seed_body_gallery(
+            gallery_seed,
+            session_id,
+            dim,
+            reid_module=reid_mod,
+            gallery_module=gallery_mod,
+        )
+        _record("gallery_seed", seed_started)
 
     # 逐帧累积的语义元数据 + 每条 track 的最佳 crop（给认人用）
     metas: list[FrameMeta] = []
@@ -315,28 +369,9 @@ def _finish_session(
     frame_stage_started = time.perf_counter()
     detector_inference_seconds = 0.0
     tracker_association_seconds = 0.0
-    demo_names = [name.strip() for name in settings.demo_gallery_names.split(",") if name.strip()]
-    demo_name_index = 0
-
-    def _assign_demo_name(subject_id: int | None) -> str | None:
-        nonlocal demo_name_index
-        if (
-            not settings.demo_gallery_enabled
-            or subject_id is None
-            or demo_name_index >= len(demo_names)
-        ):
-            return None
-        label = demo_names[demo_name_index]
-        demo_name_index += 1
-        gallery_mod.with_gallery_locked(
-            session_id,
-            dim,
-            lambda g: g.rename_subject(int(subject_id), label),
-        )
-        return label
-
     for i, fr in enumerate(frames):
-        pil = Image.open(fr.local_path).convert("RGB")
+        with Image.open(fr.local_path) as source_image:
+            pil = source_image.convert("RGB")
         if not img_w:
             img_w, img_h = pil.size
         raw = Path(fr.local_path).read_bytes()
@@ -546,10 +581,7 @@ def _finish_session(
                 ident["quality_ok"] = res.get("quality_ok")
                 ident["quality_reason"] = res.get("quality_reason")
                 ident["enrolled"] = res.get("enrolled")
-                label = res.get("label")
-                if not label and res.get("decision") == "new" and res.get("enrolled"):
-                    label = _assign_demo_name(res.get("subject_id"))
-                ident["db_identity"] = label or res.get("label")
+                ident["db_identity"] = res.get("label")
                 if res.get("subject_id") is not None:
                     ident["route_subject"] = {
                         "route": "body",
@@ -575,25 +607,26 @@ def _finish_session(
         _record("body_identity", body_identity_started)
 
     # ---- 可选人脸分支：每条 track 独立选择有界 face-best，不再复用 body-best ----
+    face_seed_stats = None
     if with_face:
         face_identity_started = time.perf_counter()
-        _attach_faces(
+        face_kwargs = {
+            "body_embeddings": track_emb,
+            "body_consistency_enabled": with_body,
+        }
+        if gallery_seed is not None:
+            face_kwargs["gallery_seed"] = gallery_seed
+        face_seed_stats = _attach_faces(
             frames,
             tracks,
             identities,
             session_id,
-            body_embeddings=track_emb,
-            body_consistency_enabled=with_body,
+            **face_kwargs,
         )
         _record("face_identity", face_identity_started)
 
-    # 如果人脸路线先认出了名字，而人形路线还没拿到，则回填给 body 侧。
-    for tid, ident in identities.items():
-        if ident.get("db_identity"):
-            continue
-        face_name = (ident.get("face") or {}).get("db_identity")
-        if face_name:
-            ident["db_identity"] = face_name
+    # 如果人脸路线先认出了名字，则同时回填当前 track 和 body gallery。
+    _backfill_body_gallery_labels(identities, session_id, dim)
 
     # ---- 步态认人：每条 track 用累积的(姿态+剪影)序列提步态向量 → 步态库 → 写 gait_cue ----
     gait_dim = None
@@ -784,6 +817,13 @@ def _finish_session(
 
     effective_reid_backend = reid_mod.active_backend() if with_body else None
     effective_reid_device = reid_mod.active_device() if with_body else None
+    gallery_seed_payload = None
+    if gallery_seed is not None:
+        gallery_seed_payload = gallery_seed.public_dict()
+        gallery_seed_payload["runtime"] = {
+            "body": body_seed_stats,
+            "face": face_seed_stats,
+        }
     return {
         "video": str(video_path),
         "fps": fps,
@@ -818,6 +858,7 @@ def _finish_session(
         "report_language": report_language or "zh-CN",
         "elapsed_seconds": round(elapsed_seconds, 3),
         "stage_timings": stage_timings,
+        "gallery_seed": gallery_seed_payload,
         "tracks": {str(tid): identities[tid] for tid in identities},
         "windows": out_windows,
         "overall": overall,

@@ -158,7 +158,12 @@ data/
 ```
 
 The UI also accepts uploaded videos, so bundled sample data is not required. See [`data/README.md`](data/README.md).
-If `data/samples/` contains a local demo clip, it will show up in `/api/event-monitor/samples` and can be used to pre-warm the gallery for recordings.
+If `data/samples/` contains a local demo clip, it will show up in `/api/event-monitor/samples`.
+An optional `<video-stem>.gallery.json` sidecar can explicitly pre-seed named body
+and face references before video frames are processed. Asset paths are relative to
+the sidecar and must remain inside `data/samples/`; gallery images never enter
+tracking, event counts, or the timeline. Use references from the same licensed
+dataset and a different camera than the continuous analysis clip.
 
 ### Configuration
 
@@ -173,8 +178,6 @@ Copy `.env.example` to `.env`. Important settings include:
 | `TRACK_BACKEND` | `bytetrack`, `botsort`, or `botsort_reid` |
 | `MODEL_ROOT` | Shared model directory outside the Git checkout |
 | `REID_BACKEND` | Default `differ` (accuracy-first); may be `auto`, `osnet`, `resnet50`, `coarse`, `clipreid`, or `siglip2` |
-| `DEMO_GALLERY_ENABLED` | Seed stable demo names onto the first new subjects in a run |
-| `DEMO_GALLERY_NAMES` | Comma-separated names used by demo gallery seeding |
 | `FACE_REC_BACKEND` | `arcface` or `adaface` |
 | `FACE_SUPERRES` | `off`, `gfpgan`, `codeformer`, or `realesrgan_x2plus` |
 | `FACE_CODEFORMER_FIDELITY` | CodeFormer identity fidelity in `[0,1]`; default `1.0` is identity-first |
