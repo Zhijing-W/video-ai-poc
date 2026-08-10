@@ -226,6 +226,7 @@ def compact_evidence(
     max_table_chars = max(1, int(max_table_chars))
     ordered = sorted((window for window in windows if isinstance(window, dict)), key=_window_sort_key)
     subject_rows: dict[str, tuple[Any, ...]] = {}
+    named_subject_rows: dict[str, tuple[Any, ...]] = {}
     subject_ids: dict[str, str] = {}
     presence_rows: list[tuple[Any, ...]] = []
 
@@ -250,6 +251,24 @@ def compact_evidence(
                     person.get("fused"),
                     _evidence_ref(person),
                     person.get("attributes"),
+                )
+            if person.get("db_identity"):
+                face = person.get("face") or {}
+                gait = person.get("gait") or {}
+                fused = person.get("fused") or {}
+                tracks = person.get("source_track_ids") or [
+                    person.get("track_id")
+                ]
+                named_subject_rows[key] = (
+                    subject_id,
+                    person.get("db_identity"),
+                    person.get("subject_id"),
+                    tracks,
+                    person.get("decision"),
+                    (person.get("reid") or {}).get("score"),
+                    face.get("match_score"),
+                    gait.get("score"),
+                    fused.get("confidence"),
                 )
             label = _subject_label(person)
             subject_ids.setdefault(label, subject_id)
@@ -409,9 +428,55 @@ def compact_evidence(
             if window.get(source) and not structural_source_available[source]:
                 legacy_rows.append((window_id, source, window[source]))
 
+    named_columns = (
+        "sid",
+        "name",
+        "subject_id",
+        "tracks",
+        "decision",
+        "body_score",
+        "face_score",
+        "gait_score",
+        "confidence",
+    )
+    named_rows = [
+        named_subject_rows[key]
+        for key in sorted(
+            named_subject_rows,
+            key=lambda item: str(named_subject_rows[item][1]),
+        )
+    ]
+    full_named_table = (
+        _table("NAMED_SUBJECT", named_columns, named_rows)
+        if named_rows
+        else ""
+    )
+    named_budget = min(
+        len(full_named_table),
+        max(0, max_chars // 3),
+    )
+    named_table, named_dropped = (
+        _budgeted_table(
+            "NAMED_SUBJECT",
+            named_columns,
+            named_rows,
+            max_rows=len(named_rows),
+            max_chars=max(1, named_budget),
+        )
+        if named_rows
+        else ("", 0)
+    )
+
     prefix = f"{PROTOCOL_VERSION}\n{_UNTRUSTED_NOTICE}"
     metadata_reserve = 768
-    protected_budget = max(1, max_chars - len(prefix) - metadata_reserve)
+    protected_budget = max(
+        1,
+        max_chars
+        - len(prefix)
+        - metadata_reserve
+        - len(named_table)
+        - (2 if named_table else 0),
+    )
     protected_summary, summary_mode = _protected_summary_table(
         summary_rows,
         max_chars=protected_budget,
@@ -488,9 +553,14 @@ def compact_evidence(
             ),
         )
 
-    rendered_tables = [protected_summary]
-    dropped_rows = 0
-    truncated_tables: list[str] = []
+    rendered_tables = [
+        protected_summary,
+        *([named_table] if named_table else []),
+    ]
+    dropped_rows = named_dropped
+    truncated_tables: list[str] = (
+        ["NAMED_SUBJECT"] if named_dropped else []
+    )
     for name, columns, rows in candidates:
         used = len(prefix) + len("\n\n".join(rendered_tables)) + (2 * len(rendered_tables))
         remaining = max_chars - metadata_reserve - used
