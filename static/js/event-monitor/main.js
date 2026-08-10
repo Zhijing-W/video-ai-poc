@@ -24,7 +24,7 @@ import {
   setBackendIndicator,
   setStatus,
   showRunFailure,
-} from "./render.js?v=20260808-timing-panel-ux";
+} from "./render.js?v=20260810-rate-decoupling";
 import {
   closeSettings,
   collectAnalysisRequest,
