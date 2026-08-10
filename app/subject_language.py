@@ -172,7 +172,83 @@ def decorate_named_subject_references(
     return decorate(payload)
 
 
+def named_subject_displays(
+    windows: list[dict],
+    language: str | None,
+) -> list[str]:
+    target_language = normalize_report_language(language)
+    if target_language not in {"en", "zh-CN"}:
+        return []
+    displays: dict[str, str] = {}
+    for window in windows:
+        for person in window.get("people") or []:
+            if not isinstance(person, dict):
+                continue
+            display = _display_name(person, target_language)
+            if display:
+                displays[_subject_key(person)] = display
+    return [
+        displays[key]
+        for key in sorted(
+            displays,
+            key=lambda item: (
+                int(item.split(":", 1)[1])
+                if item.startswith("subject:")
+                and item.split(":", 1)[1].isdigit()
+                else 10**9,
+                item,
+            ),
+        )
+    ]
+
+
+def attach_named_subject_roster(
+    payload: dict,
+    windows: list[dict],
+    language: str | None,
+    *,
+    overall: bool = False,
+) -> dict:
+    """Attach deterministic CV names so model prose cannot omit them."""
+    roster = named_subject_displays(windows, language)
+    if not roster:
+        return payload
+    target_language = normalize_report_language(language)
+    payload["named_subjects"] = roster
+    roster_text = "、".join(roster) if target_language == "zh-CN" else ", ".join(roster)
+    prefix = (
+        f"已识别建档人员：{roster_text}。"
+        if target_language == "zh-CN"
+        else f"Recognized enrolled people: {roster_text}."
+    )
+    summary_key = "overall_summary" if overall else "summary"
+    summary = str(payload.get(summary_key) or "").strip()
+    payload[summary_key] = f"{prefix}{summary}" if summary else prefix
+
+    list_key = "subjects" if overall else "subjects_involved"
+    existing = list(payload.get(list_key) or [])
+    existing_text = "\n".join(str(item) for item in existing)
+    for display in roster:
+        if display in existing_text:
+            continue
+        existing.append(
+            (
+                f"{display}：CV 已确认在本视频出现"
+                if target_language == "zh-CN" and overall
+                else (
+                    f"{display}: confirmed present by CV"
+                    if overall
+                    else display
+                )
+            )
+        )
+    payload[list_key] = existing
+    return payload
+
+
 __all__ = [
     "normalize_subject_references",
     "decorate_named_subject_references",
+    "named_subject_displays",
+    "attach_named_subject_roster",
 ]

@@ -4,6 +4,7 @@ import pytest
 
 from app.llm_client import parse_json
 from app.subject_language import (
+    attach_named_subject_roster,
     decorate_named_subject_references,
     normalize_subject_references,
 )
@@ -141,3 +142,38 @@ def test_named_decorator_does_not_rewrite_scene_s_tokens() -> None:
     )
     assert "Package S1 moved" in decorated["notification"]
     assert "subject#1" not in decorated["notification"]
+
+
+def test_named_roster_is_deterministic_cv_evidence() -> None:
+    windows = [
+        {
+            "window_index": 0,
+            "people": [
+                {
+                    "track_id": 2,
+                    "subject_id": 2,
+                    "db_identity": "Bob",
+                },
+                {
+                    "track_id": 1,
+                    "subject_id": 1,
+                    "db_identity": "Alice",
+                },
+            ],
+        }
+    ]
+
+    result = attach_named_subject_roster(
+        {"summary": "People entered.", "subjects_involved": []},
+        windows,
+        "en",
+    )
+
+    assert result["named_subjects"] == [
+        "Alice (subject#1)",
+        "Bob (subject#2)",
+    ]
+    assert result["summary"].startswith(
+        "Recognized enrolled people: Alice (subject#1), Bob (subject#2)."
+    )
+    assert result["subjects_involved"] == result["named_subjects"]

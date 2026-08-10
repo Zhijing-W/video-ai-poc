@@ -23,7 +23,10 @@ from openai import RateLimitError
 from ..core.config import settings
 from ..event_monitor_i18n import normalize_report_language, resolve_report_language
 from ..openai_client import get_client, parse_json
-from ..subject_language import decorate_named_subject_references
+from ..subject_language import (
+    attach_named_subject_roster,
+    decorate_named_subject_references,
+)
 from ..utils.image_utils import image_to_data_uri
 from ..identity.identity_context import format_identity_grounding
 from .prompt_compaction import compact_evidence, compact_window_evidence
@@ -231,6 +234,11 @@ def understand_event(
         [window] if isinstance(window, dict) else [],
         report_language,
     )
+    result = attach_named_subject_roster(
+        result,
+        [window] if isinstance(window, dict) else [],
+        report_language,
+    )
     result.setdefault("events", [])
     result.setdefault("alert_level", "normal")
     result["_model"] = deployment
@@ -330,6 +338,12 @@ def summarize_event_windows(
         result,
         ev_windows,
         report_language,
+    )
+    result = attach_named_subject_roster(
+        result,
+        ev_windows,
+        report_language,
+        overall=True,
     )
     result.setdefault("story", [])
     result.setdefault("overall_alert_level", "normal")

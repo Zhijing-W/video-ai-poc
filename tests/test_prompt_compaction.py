@@ -407,11 +407,16 @@ def test_reporter_decorates_named_subjects_in_window_and_overall(
         "subject": "Alice (主体#7)",
         "action": "Alice (主体#7) leaves",
     }
-    assert per_window["summary"] == "S1 leaves"
+    assert per_window["summary"] == (
+        "已识别建档人员：Alice (主体#7)。S1 leaves"
+    )
     assert overall["story"][0] == {
         "subject": "Alice (主体#7)",
         "action": "S1 waits",
     }
+    assert overall["overall_summary"].startswith(
+        "已识别建档人员：Alice (主体#7)。"
+    )
     assert overall["subjects"] == ["Alice (主体#7): observed"]
 
 
