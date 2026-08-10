@@ -24,7 +24,7 @@ import {
   setBackendIndicator,
   setStatus,
   showRunFailure,
-} from "./render.js?v=20260810-rate-decoupling";
+} from "./render.js?v=20260810-gallery-events";
 import {
   closeSettings,
   collectAnalysisRequest,
