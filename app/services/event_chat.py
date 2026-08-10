@@ -32,6 +32,8 @@ CHAT_SYSTEM = (
     "NAMED_SUBJECT 表是本次快照中已出现且有稳定姓名的主体最高优先级清单；"
     "回答姓名问题时必须读取该表，不得只根据 SUBJECT 表前几行推断；"
     "若 TRUNCATION 指出 NAMED_SUBJECT 被截断，必须明确说明姓名清单可能不完整。"
+    "若 TRUNCATION 的 tables 字段不包含 NAMED_SUBJECT，则姓名清单完整，"
+    "不得声称仍可能遗漏其他已命名人员。"
     "严格输出 JSON："
     '{"answer":"回答","evidence":[{"window_index":1,"time_range":["开始","结束"],'
     '"reason":"引用原因"}],"limitations":"证据限制"}。'
