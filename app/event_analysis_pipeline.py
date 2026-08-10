@@ -56,6 +56,7 @@ from .identity.resolution import (
     person_record,
     split_subject_time_conflicts,
     stitch_orphans,
+    stitch_to_named_subjects,
 )
 from .keyframe import FrameMeta, select_keyframes
 from .pipeline.object_context import build_object_context, format_object_context
@@ -162,6 +163,7 @@ _attach_faces = attach_faces
 _person_record = person_record
 _group_people = group_people
 _stitch_orphans = stitch_orphans
+_stitch_to_named_subjects = stitch_to_named_subjects
 _split_subject_time_conflicts = split_subject_time_conflicts
 _merge_tracks_cross_route = merge_tracks_cross_route
 _split_windows = split_windows
@@ -726,7 +728,10 @@ def _finish_session(
                     lambda g: g.identify_or_enroll(
                         vec,
                         qa,
-                        auto_enroll=ident["enrollment_eligible"],
+                        auto_enroll=bool(
+                            ident["enrollment_eligible"]
+                            and settings.identity_auto_enroll_unknown
+                        ),
                     ),
                 )
                 ident["subject_id"] = res.get("subject_id")
@@ -782,6 +787,13 @@ def _finish_session(
 
     # 如果人脸路线先认出了名字，则同时回填当前 track 和 body gallery。
     _backfill_body_gallery_labels(identities, session_id, dim)
+    if with_body and thr and thr > 0:
+        _stitch_to_named_subjects(
+            tracks,
+            identities,
+            track_emb,
+            thr,
+        )
 
     # ---- 步态认人：每条 track 用累积的(姿态+剪影)序列提步态向量 → 步态库 → 写 gait_cue ----
     gait_dim = None

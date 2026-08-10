@@ -245,6 +245,72 @@ def test_fastapi_health_page_and_openapi_are_available() -> None:
     assert "/api/event-monitor/runs/{run_id}/prompt" in openapi.text
 
 
+def test_sample_catalog_includes_valid_provenance(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    video = tmp_path / "courier.mp4"
+    video.write_bytes(b"video")
+    video.with_suffix(".provenance.json").write_text(
+        json.dumps(
+            {
+                "title": "Courier demo",
+                "license": "CC BY-SA 4.0",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(event_monitor, "SAMPLES_DIR", tmp_path)
+
+    response = TestClient(app).get("/api/event-monitor/samples")
+
+    assert response.status_code == 200
+    assert response.json()["samples"] == [
+        {
+            "name": "courier.mp4",
+            "size_mb": 0.0,
+            "provenance": {
+                "title": "Courier demo",
+                "license": "CC BY-SA 4.0",
+            },
+        }
+    ]
+
+
+def test_gallery_presentation_downloads(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    contact_sheet = tmp_path / "gallery_people_contact_sheet.png"
+    archive = tmp_path / "gallery_people_ppt_assets.zip"
+    contact_sheet.write_bytes(b"png")
+    archive.write_bytes(b"zip")
+    monkeypatch.setattr(
+        event_monitor,
+        "GALLERY_PRESENTATION_DIR",
+        tmp_path,
+    )
+    client = TestClient(app)
+
+    contact_response = client.get(
+        "/api/event-monitor/gallery-presentation/contact-sheet"
+    )
+    archive_response = client.get(
+        "/api/event-monitor/gallery-presentation/archive"
+    )
+
+    assert contact_response.status_code == 200
+    assert contact_response.content == b"png"
+    assert "gallery_people_contact_sheet.png" in contact_response.headers[
+        "content-disposition"
+    ]
+    assert archive_response.status_code == 200
+    assert archive_response.content == b"zip"
+    assert "gallery_people_ppt_assets.zip" in archive_response.headers[
+        "content-disposition"
+    ]
+
+
 def test_run_prompt_export_is_run_scoped_safe_and_uses_canonical_serializer(
     monkeypatch, tmp_path
 ) -> None:

@@ -125,6 +125,14 @@ def stitch_orphans(
     members: dict[int, list[np.ndarray]] = {}
     member_tids: dict[int, list[int]] = {}
     for tid, idn in identities.items():
+        if (
+            not idn.get("db_identity")
+            and not (
+                settings.identity_merge_unnamed_tracks
+                or settings.identity_auto_enroll_unknown
+            )
+        ):
+            continue
         sid = idn.get("subject_id")
         if sid is not None and tid in track_emb:
             members.setdefault(sid, []).append(track_emb[tid])
@@ -168,6 +176,19 @@ def stitch_orphans(
     clusters: list[dict] = []
     for tid in remaining:
         v = _norm(track_emb[tid])
+        if not (
+            settings.identity_merge_unnamed_tracks
+            or settings.identity_auto_enroll_unknown
+        ):
+            clusters.append(
+                {
+                    "tids": [tid],
+                    "vecs": [track_emb[tid]],
+                    "scores": [],
+                    "rep": v,
+                }
+            )
+            continue
         best_cluster, best_sim = None, -1.0
         for cluster in clusters:
             if any(_overlap(tid, mt) for mt in cluster["tids"]):
@@ -179,9 +200,18 @@ def stitch_orphans(
             best_cluster["tids"].append(tid)
             best_cluster["vecs"].append(track_emb[tid])
             best_cluster["scores"].append(best_sim)
-            best_cluster["rep"] = _norm(np.mean(best_cluster["vecs"], axis=0))
+            best_cluster["rep"] = _norm(
+                np.mean(best_cluster["vecs"], axis=0)
+            )
         else:
-            clusters.append({"tids": [tid], "vecs": [track_emb[tid]], "scores": [], "rep": v})
+            clusters.append(
+                {
+                    "tids": [tid],
+                    "vecs": [track_emb[tid]],
+                    "scores": [],
+                    "rep": v,
+                }
+            )
 
     existing = [idn.get("subject_id") for idn in identities.values() if idn.get("subject_id") is not None]
     next_sid = (max(existing) + 1) if existing else 1
@@ -201,6 +231,97 @@ def stitch_orphans(
                 idn["stitch_score"] = best_sim
                 if idn.get("score") is None:
                     idn["score"] = best_sim
+
+
+def stitch_to_named_subjects(
+    tracks: dict[int, dict],
+    identities: dict[int, dict],
+    track_emb: dict[int, np.ndarray],
+    thresh: float,
+) -> None:
+    """Absorb unnamed fragments only into already trusted named subjects."""
+
+    def _norm(value: np.ndarray) -> np.ndarray:
+        norm = float(np.linalg.norm(value))
+        return value / norm if norm > 0 else value
+
+    def _overlap(a: int, b: int) -> bool:
+        return not (
+            tracks[a]["last"] < tracks[b]["first"]
+            or tracks[b]["last"] < tracks[a]["first"]
+        )
+
+    named_members: dict[int, list[int]] = {}
+    named_vectors: dict[int, list[np.ndarray]] = {}
+    labels: dict[int, str] = {}
+    for tid, identity in identities.items():
+        subject_id = identity.get("subject_id")
+        label = identity.get("db_identity")
+        if (
+            subject_id is None
+            or not label
+            or tid not in track_emb
+        ):
+            continue
+        subject_id = int(subject_id)
+        named_members.setdefault(subject_id, []).append(tid)
+        named_vectors.setdefault(subject_id, []).append(track_emb[tid])
+        labels[subject_id] = str(label)
+    representatives = {
+        subject_id: _norm(np.mean(vectors, axis=0))
+        for subject_id, vectors in named_vectors.items()
+    }
+    if not representatives:
+        return
+
+    normal_threshold = max(float(thresh), settings.reid_hit_thresh)
+    candidates = [
+        tid
+        for tid, identity in identities.items()
+        if (
+            not identity.get("db_identity")
+            and tid in track_emb
+        )
+    ]
+    candidates.sort(key=lambda tid: tracks[tid]["first"])
+    for tid in candidates:
+        identity = identities[tid]
+        vector = _norm(track_emb[tid])
+        best_subject = None
+        best_score = -1.0
+        for subject_id, representative in representatives.items():
+            if any(
+                _overlap(tid, member)
+                for member in named_members[subject_id]
+            ):
+                continue
+            score = float(np.dot(vector, representative))
+            if score > best_score:
+                best_subject = subject_id
+                best_score = score
+        threshold = (
+            normal_threshold
+            if identity.get("quality_ok") is True
+            else max(
+                normal_threshold,
+                settings.reid_low_quality_hit_thresh,
+            )
+        )
+        if best_subject is None or best_score < threshold:
+            continue
+        identity["subject_id"] = best_subject
+        identity["db_identity"] = labels[best_subject]
+        identity["decision"] = "stitched_named"
+        identity["reused"] = True
+        identity["local_subject"] = False
+        identity["cross_track_merged"] = True
+        identity["stitch_score"] = round(best_score, 4)
+        named_members[best_subject].append(tid)
+        named_vectors[best_subject].append(track_emb[tid])
+        representatives[best_subject] = _norm(
+            np.mean(named_vectors[best_subject], axis=0)
+        )
+
 
 def split_subject_time_conflicts(tracks: dict[int, dict], identities: dict[int, dict]) -> None:
     """拆开不可能属于同一人的 subject：同一 subject 下的 track 时间重叠则必须分成不同主体。
@@ -359,6 +480,14 @@ def merge_tracks_cross_route(identities: dict[int, dict]) -> None:
     for route in routes:
         buckets: dict = {}
         for t in tids:
+            if (
+                not identities[t].get("db_identity")
+                and not (
+                    settings.identity_merge_unnamed_tracks
+                    or settings.identity_auto_enroll_unknown
+                )
+            ):
+                continue
             gid = _route_id(identities[t], route)
             if gid is not None:
                 buckets.setdefault(gid, []).append(t)
@@ -431,4 +560,11 @@ def merge_tracks_cross_route(identities: dict[int, dict]) -> None:
             route_subject_ids["gait"] = canonical
         idn["route_subject_ids"] = route_subject_ids
 
-__all__ = ["person_record", "group_people", "stitch_orphans", "split_subject_time_conflicts", "merge_tracks_cross_route"]
+__all__ = [
+    "person_record",
+    "group_people",
+    "stitch_orphans",
+    "stitch_to_named_subjects",
+    "split_subject_time_conflicts",
+    "merge_tracks_cross_route",
+]

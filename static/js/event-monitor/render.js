@@ -32,7 +32,8 @@ export function renderSamples(data, failed = false) {
   samples.forEach((sample) => {
     const option = document.createElement("option");
     option.value = sample.name;
-    option.textContent = `${sample.name} (${sample.size_mb} MB)`;
+    const title = sample.provenance?.title || sample.name;
+    option.textContent = `${title} (${sample.size_mb} MB)`;
     select.appendChild(option);
   });
 

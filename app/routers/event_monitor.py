@@ -10,12 +10,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 from copy import deepcopy
 from pathlib import Path
 
 from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
@@ -37,6 +38,7 @@ router = APIRouter(prefix="/api/event-monitor", tags=["event-monitor"])
 
 SAMPLES_DIR = DATA_DIR / "samples"
 OUT_DIR = OUTPUT_DIR / "event-monitor"
+GALLERY_PRESENTATION_DIR = DATA_DIR / "exports" / "gallery_ppt"
 _RUN_LOCK = asyncio.Lock()
 _STARTUP_FACE_SUPERRES = settings.face_superres
 _STARTUP_CODEFORMER_FIDELITY = settings.face_codeformer_fidelity
@@ -71,6 +73,18 @@ def list_samples() -> dict:
                     "name": p.name,
                     "size_mb": round(p.stat().st_size / 1e6, 1),
                 }
+                provenance_path = p.with_suffix(".provenance.json")
+                if provenance_path.is_file():
+                    try:
+                        provenance = json.loads(
+                            provenance_path.read_text(encoding="utf-8")
+                        )
+                        if isinstance(provenance, dict):
+                            item["provenance"] = provenance
+                    except (OSError, json.JSONDecodeError):
+                        item["provenance_error"] = (
+                            f"invalid provenance: {provenance_path.name}"
+                        )
                 try:
                     seed = load_gallery_seed(p)
                     if seed is not None:
@@ -79,6 +93,30 @@ def list_samples() -> dict:
                     item["gallery_seed_error"] = str(exc)
                 items.append(item)
     return {"samples": items}
+
+
+@router.get("/gallery-presentation/contact-sheet")
+def gallery_presentation_contact_sheet() -> FileResponse:
+    path = GALLERY_PRESENTATION_DIR / "gallery_people_contact_sheet.png"
+    if not path.is_file():
+        raise HTTPException(404, "gallery contact sheet 不存在")
+    return FileResponse(
+        path,
+        media_type="image/png",
+        filename="gallery_people_contact_sheet.png",
+    )
+
+
+@router.get("/gallery-presentation/archive")
+def gallery_presentation_archive() -> FileResponse:
+    path = GALLERY_PRESENTATION_DIR / "gallery_people_ppt_assets.zip"
+    if not path.is_file():
+        raise HTTPException(404, "gallery PPT 素材包不存在")
+    return FileResponse(
+        path,
+        media_type="application/zip",
+        filename="gallery_people_ppt_assets.zip",
+    )
 
 
 @router.get("/superres-backends")

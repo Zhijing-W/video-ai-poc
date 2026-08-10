@@ -375,6 +375,10 @@ class Settings:
     track_enroll_min_observations: int = int(
         _get("TRACK_ENROLL_MIN_OBSERVATIONS", "2")
     )
+    identity_auto_enroll_unknown: bool = _get(
+        "IDENTITY_AUTO_ENROLL_UNKNOWN",
+        "false",
+    ).strip().lower() in {"1", "true", "yes", "on"}
     track_min_quality: float = float(_get("TRACK_MIN_QUALITY", "0.0"))
 
     # 跨窗整段事件总结（Phase 4 · Step E）：所有窗逐窗理解完后，再纯文本把多窗串成一段连贯故事。
@@ -387,6 +391,10 @@ class Settings:
     event_stitch_thresh: float = float(_get("EVENT_STITCH_THRESH", "0.45"))
     # 低质 track 无法入长期 gallery 时，只铸"本视频本地 subject"；人群远景里外观相似，阈值必须更保守。
     event_local_stitch_thresh: float = float(_get("EVENT_LOCAL_STITCH_THRESH", "0.82"))
+    identity_merge_unnamed_tracks: bool = _get(
+        "IDENTITY_MERGE_UNNAMED_TRACKS",
+        "false",
+    ).strip().lower() in {"1", "true", "yes", "on"}
     # 三路身份融合（Phase 4 · A 汇聚）：人脸 + 人形 ReID + 步态 按质量加权 → 一个统一身份置信度。
     # 质量自适应：清晰脸权重高、糊脸降权退人形/步态；多路一致再加成。设为各路的相对权重。
     identity_w_face: float = float(_get("IDENTITY_W_FACE", "0.5"))    # 人脸（清晰时最强）

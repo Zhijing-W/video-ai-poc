@@ -308,6 +308,7 @@ def attach_faces(
                 can_enroll = bool(
                     quality.get("can_enroll")
                     and finalized.get("match_source") == "original"
+                    and settings.identity_auto_enroll_unknown
                     and identities[tid].get(
                         "enrollment_eligible",
                         True,

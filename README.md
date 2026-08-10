@@ -180,6 +180,8 @@ Copy `.env.example` to `.env`. Important settings include:
 | `EVENT_TRACKING_FPS` | High-rate CV/MOT cadence, independent from semantic/LLM sampling |
 | `TRACK_BUFFER_SECONDS` | Time-based lost-track retention, converted to tracker frames at runtime |
 | `TRACK_ENROLL_MIN_SECONDS` | Minimum duration for auto-enrolling a new identity; known-gallery matching remains immediate |
+| `IDENTITY_AUTO_ENROLL_UNKNOWN` | Keep `false` so only pre-registered named identities persist; enabling it also restores unnamed reuse |
+| `IDENTITY_MERGE_UNNAMED_TRACKS` | Keep `false` to prefer fragmentation over false merges for unnamed people |
 | `GAIT_SAMPLE_FPS` | Temporal sampling rate for gait inside active event windows |
 | `MODEL_ROOT` | Shared model directory outside the Git checkout |
 | `REID_BACKEND` | Default `differ` (accuracy-first); may be `auto`, `osnet`, `resnet50`, `coarse`, `clipreid`, or `siglip2` |

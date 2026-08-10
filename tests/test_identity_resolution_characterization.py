@@ -7,6 +7,7 @@ from app.identity.resolution import (
     merge_tracks_cross_route,
     split_subject_time_conflicts,
     stitch_orphans,
+    stitch_to_named_subjects,
 )
 from app.keyframe import FrameMeta
 from app.pipeline.windowing import split_windows
@@ -42,7 +43,12 @@ def test_stitch_orphans_reuses_subject_then_falls_back_to_local_subject(monkeypa
         3: {"first": 6, "last": 8},
     }
     identities = {
-        1: {"subject_id": 10, "decision": "hit", "score": 0.95},
+        1: {
+            "subject_id": 10,
+            "decision": "hit",
+            "score": 0.95,
+            "db_identity": "Alice",
+        },
         2: {"subject_id": None, "decision": None, "score": None, "quality_ok": True},
         3: {"subject_id": None, "decision": None, "score": None, "quality_ok": False},
     }
@@ -60,6 +66,53 @@ def test_stitch_orphans_reuses_subject_then_falls_back_to_local_subject(monkeypa
     assert identities[3]["local_subject"] is True
     assert identities[3]["decision"] == "local"
     assert identities[3]["subject_id"] not in {None, 10}
+
+
+def test_late_named_subject_absorbs_matching_unnamed_fragment() -> None:
+    tracks = {
+        1: {"first": 0, "last": 5},
+        2: {"first": 6, "last": 10},
+        3: {"first": 3, "last": 7},
+    }
+    identities = {
+        1: {
+            "subject_id": 7,
+            "db_identity": "Alice",
+            "decision": "hit",
+        },
+        2: {
+            "subject_id": 20,
+            "db_identity": None,
+            "decision": "local",
+            "local_subject": True,
+            "quality_ok": True,
+        },
+        3: {
+            "subject_id": 21,
+            "db_identity": None,
+            "decision": "local",
+            "local_subject": True,
+            "quality_ok": False,
+        },
+    }
+    embeddings = {
+        1: np.asarray([1.0, 0.0], dtype=np.float32),
+        2: np.asarray([0.99, 0.01], dtype=np.float32),
+        3: np.asarray([1.0, 0.0], dtype=np.float32),
+    }
+
+    stitch_to_named_subjects(
+        tracks,
+        identities,
+        embeddings,
+        thresh=0.45,
+    )
+
+    assert identities[2]["subject_id"] == 7
+    assert identities[2]["db_identity"] == "Alice"
+    assert identities[2]["decision"] == "stitched_named"
+    assert identities[3]["subject_id"] == 21
+    assert identities[3]["db_identity"] is None
 
 
 def test_split_subject_time_conflicts_breaks_overlapping_tracks() -> None:
@@ -123,6 +176,7 @@ def test_merge_tracks_cross_route_records_agreement_across_body_face_gait() -> N
     identities = {
         1: {
             "subject_id": 7,
+            "db_identity": "Alice",
             "decision": "hit",
             "route_subject": {"route": "body", "local_subject_id": 7},
             "face": {
@@ -136,6 +190,7 @@ def test_merge_tracks_cross_route_records_agreement_across_body_face_gait() -> N
         },
         2: {
             "subject_id": None,
+            "db_identity": "Alice",
             "decision": None,
             "face": {
                 "matched": True,
@@ -148,6 +203,7 @@ def test_merge_tracks_cross_route_records_agreement_across_body_face_gait() -> N
         },
         3: {
             "subject_id": 7,
+            "db_identity": "Alice",
             "decision": "hit",
             "route_subject": {"route": "body", "local_subject_id": 7},
             "gait": {
@@ -157,6 +213,7 @@ def test_merge_tracks_cross_route_records_agreement_across_body_face_gait() -> N
         },
         4: {
             "subject_id": None,
+            "db_identity": "Alice",
             "decision": None,
             "gait": {
                 "decision": "hit",
@@ -203,6 +260,64 @@ def test_merge_tracks_cross_route_joins_stable_named_fragments() -> None:
     assert identities[1]["subject_id"] == 1
     assert identities[2]["subject_id"] == 1
     assert identities[2]["cross_track_merged"] is True
+
+
+def test_merge_tracks_cross_route_keeps_unnamed_routes_separate(
+    monkeypatch,
+) -> None:
+    identities = {
+        1: {
+            "subject_id": 1,
+            "decision": "new",
+            "route_subject": {
+                "route": "body",
+                "local_subject_id": 1,
+            },
+        },
+        2: {
+            "subject_id": 2,
+            "decision": "hit",
+            "route_subject": {
+                "route": "body",
+                "local_subject_id": 1,
+            },
+        },
+    }
+
+    merge_tracks_cross_route(identities)
+
+    assert identities[1]["subject_id"] == 1
+    assert identities[2]["subject_id"] == 2
+    assert identities[1].get("merge_routes") is None
+    assert identities[2].get("cross_track_merged") is not True
+
+    monkeypatch.setattr(
+        "app.identity.resolution.settings.identity_merge_unnamed_tracks",
+        True,
+    )
+    opt_in = {
+        1: {
+            "subject_id": 1,
+            "decision": "new",
+            "route_subject": {
+                "route": "body",
+                "local_subject_id": 1,
+            },
+        },
+        2: {
+            "subject_id": 2,
+            "decision": "hit",
+            "route_subject": {
+                "route": "body",
+                "local_subject_id": 1,
+            },
+        },
+    }
+
+    merge_tracks_cross_route(opt_in)
+
+    assert opt_in[2]["subject_id"] == 1
+    assert opt_in[2]["cross_track_merged"] is True
 
 
 def test_group_people_merges_tracks_by_subject_and_keeps_best_representative() -> None:
