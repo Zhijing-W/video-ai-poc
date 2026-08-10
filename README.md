@@ -176,6 +176,7 @@ Copy `.env.example` to `.env`. Important settings include:
 | `AZURE_OPENAI_DEPLOYMENT` | Vision-capable model deployment |
 | `DATA_DIR`, `OUTPUT_DIR`, `GALLERY_DIR` | Runtime storage locations |
 | `TRACK_BACKEND` | `botsort` (default), `bytetrack`, or the more expensive `botsort_reid` |
+| `TRACK_REID_BACKEND` | Lightweight tracker-only appearance encoder (`osnet`) |
 | `EVENT_TRACKING_FPS` | High-rate CV/MOT cadence, independent from semantic/LLM sampling |
 | `TRACK_BUFFER_SECONDS` | Time-based lost-track retention, converted to tracker frames at runtime |
 | `TRACK_ENROLL_MIN_SECONDS` | Minimum duration for auto-enrolling a new identity; known-gallery matching remains immediate |

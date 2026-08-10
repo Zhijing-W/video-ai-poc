@@ -81,13 +81,24 @@ def _build_args(
 
 
 class _AppReIDEncoder:
-    """Adapter: BoT-SORT expects encoder(img, xywh_dets); reuse this project's person ReID embedding."""
+    """BoT-SORT adapter backed by a lightweight, independent OSNet model."""
+
+    def __init__(self) -> None:
+        self._model = None
+        self._model_lock = threading.Lock()
+
+    def _ensure_model(self):
+        if self._model is None:
+            with self._model_lock:
+                if self._model is None:
+                    self._model = reid_mod._load_osnet()
+        return self._model
 
     def __call__(self, img: np.ndarray, dets: np.ndarray) -> list[np.ndarray]:
         arr = np.asarray(dets)
-        dim = reid_mod.embed_dim()
         if arr.size == 0:
             return []
+        model = self._ensure_model()
         feats: list[np.ndarray] = []
         h, w = img.shape[:2]
         for det in arr:
@@ -97,12 +108,12 @@ class _AppReIDEncoder:
             x2 = min(w, int(round(cx + bw / 2)))
             y2 = min(h, int(round(cy + bh / 2)))
             if x2 <= x1 or y2 <= y1:
-                feats.append(np.zeros(dim, dtype=np.float32))
+                feats.append(np.zeros(512, dtype=np.float32))
                 continue
             crop = Image.fromarray(img[y1:y2, x1:x2][:, :, ::-1])
             feats.append(
                 np.asarray(
-                    reid_mod.embed(crop, purpose="tracking"),
+                    reid_mod._embed_osnet(model, crop),
                     dtype=np.float32,
                 ).reshape(-1)
             )
@@ -117,8 +128,14 @@ def _build_tracker(backend: str, frame_rate: float):
 
     from ultralytics.trackers.bot_sort import BOTSORT
 
-    tracker = BOTSORT(_build_args(backend, frame_rate))
+    args = _build_args(backend, frame_rate)
+    wants_reid = backend == "botsort_reid"
+    if wants_reid:
+        args.with_reid = False
+    tracker = BOTSORT(args)
     if backend == "botsort_reid":
+        tracker.args.with_reid = True
+        tracker.args.model = "app_reid"
         tracker.encoder = _AppReIDEncoder()
     return tracker
 

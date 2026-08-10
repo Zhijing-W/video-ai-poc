@@ -127,6 +127,10 @@ class Settings:
     track_gmc_method: str = _get("TRACK_GMC_METHOD", "sparseOptFlow")  # BoT-SORT 全局运动补偿：sparseOptFlow|orb|sift|ecc|none
     track_proximity_thresh: float = float(_get("TRACK_PROXIMITY_THRESH", "0.5"))  # BoT-SORT ReID 先验 IoU 门
     track_appearance_thresh: float = float(_get("TRACK_APPEARANCE_THRESH", "0.8"))  # BoT-SORT ReID 外观相似门
+    track_reid_backend: str = _get(
+        "TRACK_REID_BACKEND",
+        "osnet",
+    ).strip().lower()
     # CV/MOT 高频运行；语义 provider 和 LLM 仍使用请求里的低频采样预算。
     event_tracking_fps: float = float(_get("EVENT_TRACKING_FPS", "15"))
     event_tracking_max_frames: int = int(
@@ -470,6 +474,8 @@ class Settings:
             raise ValueError("EVENT_TRACKING_MAX_FRAMES 必须至少为 1")
         if self.track_buffer_seconds <= 0:
             raise ValueError("TRACK_BUFFER_SECONDS 必须大于 0")
+        if self.track_reid_backend != "osnet":
+            raise ValueError("TRACK_REID_BACKEND 当前仅支持 osnet")
         if self.track_enroll_min_seconds < 0:
             raise ValueError("TRACK_ENROLL_MIN_SECONDS 不能小于 0")
         if self.track_enroll_min_observations < 1:

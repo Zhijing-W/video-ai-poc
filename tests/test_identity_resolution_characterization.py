@@ -69,9 +69,37 @@ def test_split_subject_time_conflicts_breaks_overlapping_tracks() -> None:
         3: {"first": 8, "last": 10},
     }
     identities = {
-        1: {"subject_id": 1, "decision": "hit", "reused": True},
-        2: {"subject_id": 1, "decision": "hit", "reused": True},
-        3: {"subject_id": 1, "decision": "hit", "reused": True},
+        1: {
+            "subject_id": 1,
+            "decision": "hit",
+            "reused": True,
+            "score": 0.95,
+            "db_identity": "Alice",
+        },
+        2: {
+            "subject_id": 1,
+            "decision": "hit",
+            "reused": True,
+            "score": 0.7,
+            "db_identity": "Alice",
+            "face": {
+                "matched": True,
+                "match_ready": True,
+                "match_score": 0.8,
+                "face_subject_id": 4,
+                "route_subject": {
+                    "route": "face",
+                    "local_subject_id": 4,
+                },
+            },
+        },
+        3: {
+            "subject_id": 1,
+            "decision": "hit",
+            "reused": True,
+            "score": 0.9,
+            "db_identity": "Alice",
+        },
     }
 
     split_subject_time_conflicts(tracks, identities)
@@ -81,6 +109,14 @@ def test_split_subject_time_conflicts_breaks_overlapping_tracks() -> None:
     assert identities[2]["subject_id"] == 2
     assert identities[2]["decision"] == "conflict_split"
     assert identities[2]["subject_conflict_split"] is True
+    assert identities[1]["db_identity"] == "Alice"
+    assert identities[3]["db_identity"] == "Alice"
+    assert identities[2]["db_identity"] is None
+    assert identities[2]["known_identity_rejected"] == "temporal_overlap"
+    assert identities[2]["face"]["matched"] is False
+    assert identities[2]["face"]["match_ready"] is False
+    assert identities[2]["face"]["match_score"] is None
+    assert identities[2]["face"]["route_subject"] is None
 
 
 def test_merge_tracks_cross_route_records_agreement_across_body_face_gait() -> None:

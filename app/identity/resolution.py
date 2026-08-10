@@ -212,6 +212,30 @@ def split_subject_time_conflicts(tracks: dict[int, dict], identities: dict[int, 
     def _overlap(a: int, b: int) -> bool:
         return not (tracks[a]["last"] < tracks[b]["first"] or tracks[b]["last"] < tracks[a]["first"])
 
+    def _cluster_rank(cluster: list[int]) -> tuple[float, float, int]:
+        best_fused = max(
+            (
+                float((identities[tid].get("fused") or {}).get("confidence") or 0.0)
+                for tid in cluster
+            ),
+            default=0.0,
+        )
+        best_route = max(
+            (
+                max(
+                    float(identities[tid].get("score") or 0.0),
+                    float((identities[tid].get("face") or {}).get("match_score") or 0.0),
+                )
+                for tid in cluster
+            ),
+            default=0.0,
+        )
+        observations = sum(
+            int(identities[tid].get("track_observations") or 0)
+            for tid in cluster
+        )
+        return best_fused, best_route, observations
+
     by_subject: dict[int, list[int]] = {}
     for tid, ident in identities.items():
         sid = ident.get("subject_id")
@@ -236,6 +260,8 @@ def split_subject_time_conflicts(tracks: dict[int, dict], identities: dict[int, 
                 clusters.append([tid])
         if len(clusters) <= 1:
             continue
+        primary = max(clusters, key=_cluster_rank)
+        clusters = [primary, *(cluster for cluster in clusters if cluster is not primary)]
 
         for idx, cluster in enumerate(clusters):
             target_sid = sid if idx == 0 else next_sid
@@ -248,6 +274,20 @@ def split_subject_time_conflicts(tracks: dict[int, dict], identities: dict[int, 
                 ident["reused"] = False
                 if ident.get("decision") == "hit":
                     ident["decision"] = "conflict_split"
+                if idx > 0 and ident.get("db_identity"):
+                    ident["known_identity_rejected"] = "temporal_overlap"
+                    ident["db_identity"] = None
+                    ident["route_subject"] = None
+                    ident["route_subject_ids"] = {}
+                    face = ident.get("face")
+                    if isinstance(face, dict):
+                        face["db_identity"] = None
+                        face["matched"] = False
+                        face["match_ready"] = False
+                        face["match_score"] = None
+                        face["face_subject_id"] = None
+                        face["route_subject"] = None
+                        face["conflict_rejected"] = True
 
 def merge_tracks_cross_route(identities: dict[int, dict]) -> None:
     """跨 track 三路合并：人脸库 / 人形库 / 步态库 **任一路**认出同一人 → 并成一个 subject。

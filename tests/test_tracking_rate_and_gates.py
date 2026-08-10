@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
+
 from app import event_analysis_pipeline as pipeline
 from app import tracker
 from app.core import config
@@ -15,6 +17,38 @@ def test_tracker_buffer_is_time_based_across_frame_rates() -> None:
         assert tracker._build_args("botsort", 2).track_buffer == 2
         assert tracker._build_args("botsort", 15).track_buffer == 15
         assert tracker._build_args("botsort", 30).track_buffer == 30
+        reid_tracker = tracker._build_tracker("botsort_reid", 15)
+        assert reid_tracker.args.with_reid is True
+        assert reid_tracker.args.model == "app_reid"
+        assert isinstance(reid_tracker.encoder, tracker._AppReIDEncoder)
+
+
+def test_tracker_reid_encoder_uses_independent_osnet(monkeypatch) -> None:
+    model = object()
+    load_calls = []
+    embed_calls = []
+    monkeypatch.setattr(
+        tracker.reid_mod,
+        "_load_osnet",
+        lambda: load_calls.append(True) or model,
+    )
+    monkeypatch.setattr(
+        tracker.reid_mod,
+        "_embed_osnet",
+        lambda loaded, crop: embed_calls.append((loaded, crop.size))
+        or np.ones(512, dtype=np.float32),
+    )
+    encoder = tracker._AppReIDEncoder()
+
+    features = encoder(
+        np.zeros((100, 100, 3), dtype=np.uint8),
+        np.asarray([[50, 50, 20, 40]], dtype=np.float32),
+    )
+
+    assert load_calls == [True]
+    assert embed_calls == [(model, (20, 40))]
+    assert len(features) == 1
+    assert features[0].shape == (512,)
 
 
 def test_legacy_frame_settings_convert_to_seconds(monkeypatch) -> None:

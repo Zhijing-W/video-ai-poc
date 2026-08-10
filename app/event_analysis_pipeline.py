@@ -683,7 +683,10 @@ def _finish_session(
             if not present:
                 continue
             try:
-                bgr = np.asarray(Image.open(frames[i].local_path).convert("RGB"))[:, :, ::-1]
+                with Image.open(frames[i].local_path) as source_image:
+                    bgr = np.asarray(
+                        source_image.convert("RGB")
+                    )[:, :, ::-1]
                 gp = gait_mod.extract_persons(bgr)
                 for tid, pb in present:
                     best, best_iou = None, 0.30  # 至少 0.3 IoU 才认为是同一人

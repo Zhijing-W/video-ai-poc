@@ -138,7 +138,10 @@ def attach_faces(
         for frame_index, target_tids in sorted(by_frame.items()):
             if frame_index not in frame_cache:
                 try:
-                    image = Image.open(frames[frame_index].local_path).convert("RGB")
+                    with Image.open(
+                        frames[frame_index].local_path
+                    ) as source_image:
+                        image = source_image.convert("RGB")
                     faces = face_mod.detect(
                         image,
                         with_quality=True,
@@ -199,7 +202,10 @@ def attach_faces(
         frame_index = int(selected["frame_index"])
         quality = dict((selected.get("_face") or {}).get("quality") or {})
         try:
-            image = Image.open(frames[frame_index].local_path).convert("RGB")
+            with Image.open(
+                frames[frame_index].local_path
+            ) as source_image:
+                image = source_image.convert("RGB")
         except Exception as exc:
             track["face_best"] = selected
             identities[tid]["face"] = {
