@@ -10,7 +10,10 @@ from pathlib import Path
 from ..core.config import OUTPUT_DIR, settings
 from ..event_monitor_i18n import normalize_report_language, resolve_report_language
 from ..openai_client import get_client, parse_json
-from ..subject_language import normalize_subject_references
+from ..subject_language import (
+    decorate_named_subject_references,
+    normalize_subject_references,
+)
 from .llm_models import ModelSelection, chat_completion_options
 from .prompt_compaction import compact_evidence
 
@@ -258,6 +261,20 @@ def chat_about_run(
         result = parse_json(
             response.choices[0].message.content or "{}",
             language=report_language,
+        )
+        result = decorate_named_subject_references(
+            result,
+            snapshot.get("windows") or [],
+            report_language,
+            alias_narrative_fields=(
+                {"answer", "reason", "limitations"}
+                if re.search(
+                    r"(?:谁|姓名|身份|人员|who|name|identity|person)",
+                    question,
+                    re.IGNORECASE,
+                )
+                else set()
+            ),
         )
         answer = str(result.get("answer") or result.get("summary") or "").strip()
         if not answer:

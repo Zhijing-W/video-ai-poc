@@ -217,6 +217,7 @@ MESSAGES: dict[str, dict[str, Any]] = {
             "failed": "✗ Follow-up chat failed: {message}",
         },
         "samples": {
+            "select": "Select a sample…",
             "load_failed": "Failed to load samples",
             "count": "samples: {count}",
             "empty": "(No samples under data/samples)",
@@ -572,6 +573,7 @@ MESSAGES: dict[str, dict[str, Any]] = {
             "failed": "✗ 大模型问答失败：{message}",
         },
         "samples": {
+            "select": "请选择样片…",
             "load_failed": "加载样片失败",
             "count": "{count} 个",
             "empty": "（data/samples 下没有样片）",

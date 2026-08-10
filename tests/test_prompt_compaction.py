@@ -349,6 +349,72 @@ def test_reporter_normalizes_window_and_overall_subject_references(monkeypatch) 
     assert overall["subjects"] == ["subject#7: observed"]
 
 
+def test_reporter_decorates_named_subjects_in_window_and_overall(
+    monkeypatch,
+) -> None:
+    response = SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(
+                    content=json.dumps(
+                        {
+                            "events": [
+                                {
+                                    "subject": "S1",
+                                    "action": "subject#7 leaves",
+                                }
+                            ],
+                            "summary": "S1 leaves",
+                            "story": [
+                                {
+                                    "subject": "subject#7",
+                                    "action": "S1 waits",
+                                }
+                            ],
+                            "subjects": ["S1: observed"],
+                        }
+                    )
+                )
+            )
+        ],
+        usage=None,
+    )
+    monkeypatch.setattr(
+        event_reporter,
+        "get_client",
+        lambda: SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(create=lambda **kwargs: response)
+            )
+        ),
+    )
+    window = _window(1)
+    window["people"][0]["db_identity"] = "Alice"
+
+    per_window = event_reporter.understand_event(
+        [{"timestamp": "00:01:00", "image": "data:image/jpeg;base64,X"}],
+        model="unit",
+        language="zh-CN",
+        window=window,
+    )
+    overall = event_reporter.summarize_event_windows(
+        [window],
+        model="unit",
+        language="zh-CN",
+    )
+
+    assert per_window["events"][0] == {
+        "subject": "Alice (主体#7)",
+        "action": "Alice (主体#7) leaves",
+    }
+    assert per_window["summary"] == "S1 leaves"
+    assert overall["story"][0] == {
+        "subject": "Alice (主体#7)",
+        "action": "S1 waits",
+    }
+    assert overall["subjects"] == ["Alice (主体#7): observed"]
+
+
 def test_opaque_gpt5_deployment_uses_its_model_metadata(monkeypatch) -> None:
     calls: list[dict] = []
     response = SimpleNamespace(

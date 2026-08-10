@@ -305,6 +305,14 @@ def test_run_snapshot_omits_images_and_chat_persists_bounded_history(
                 "window_index": 1,
                 "time_range": ["00:00", "00:05"],
                 "event": {"summary": "主体#1 离开。"},
+                "people": [
+                    {
+                        "track_id": 1,
+                        "source_track_ids": [1],
+                        "subject_id": 1,
+                        "db_identity": "Alice",
+                    }
+                ],
                 "keyframes": [
                     {
                         "timestamp": "00:03",
@@ -328,7 +336,7 @@ def test_run_snapshot_omits_images_and_chat_persists_bounded_history(
                 message=SimpleNamespace(
                     content=json.dumps(
                         {
-                            "answer": "主体#1 在窗1的 00:03 左右离开。",
+                            "answer": "S1 在窗1的 00:03 左右离开。",
                             "evidence": [
                                 {
                                     "window_index": 1,
@@ -368,7 +376,7 @@ def test_run_snapshot_omits_images_and_chat_persists_bounded_history(
 
     result = event_chat.chat_about_run("abcdef123456", "谁离开了？", selection)
 
-    assert result["answer"].startswith("subject#1")
+    assert result["answer"].startswith("Alice (subject#1)")
     assert result["usage"]["total_tokens"] == 120
     assert result["selection"]["model"] == "gpt-4.1-mini"
     history = json.loads(

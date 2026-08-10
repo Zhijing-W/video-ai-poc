@@ -29,11 +29,21 @@ export function renderSamples(data, failed = false) {
 
   const samples = data.samples || [];
   select.innerHTML = "";
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = t("samples.select");
+  placeholder.dataset ||= {};
+  select.appendChild(placeholder);
   samples.forEach((sample) => {
     const option = document.createElement("option");
     option.value = sample.name;
     const title = sample.provenance?.title || sample.name;
     option.textContent = `${title} (${sample.size_mb} MB)`;
+    option.dataset ||= {};
+    option.dataset.objective = sample.provenance?.suggested_objective || "";
+    option.dataset.preset = JSON.stringify(
+      sample.provenance?.recommended_settings || {}
+    );
     select.appendChild(option);
   });
 

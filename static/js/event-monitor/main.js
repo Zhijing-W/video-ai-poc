@@ -24,17 +24,18 @@ import {
   setBackendIndicator,
   setStatus,
   showRunFailure,
-} from "./render.js?v=20260810-gallery-events";
+} from "./render.js?v=20260810-sample-presets";
 import {
   closeSettings,
   collectAnalysisRequest,
+  applySelectedSamplePreset,
   openSettings,
   renderReidBackends,
   renderLlmModels,
   renderSuperresBackends,
   wireDropzone,
   wireSuperresSettings,
-} from "./settings.js?v=20260808-foundry-routing";
+} from "./settings.js?v=20260810-sample-presets";
 import { $ } from "./utils.js";
 
 function tickClock() {
@@ -112,6 +113,7 @@ async function run() {
 
 function bindEvents() {
   $("btnRun").addEventListener("click", run);
+  $("sampleSelect").addEventListener("change", applySelectedSamplePreset);
   $("btnSendLlm").addEventListener("click", sendDryRunToLlm);
   $("btnDownloadPrompt").addEventListener("click", downloadPrompt);
   $("btnViewPrompt").addEventListener("click", viewPrompt);

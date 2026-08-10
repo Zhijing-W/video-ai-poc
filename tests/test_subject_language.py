@@ -3,7 +3,10 @@ from __future__ import annotations
 import pytest
 
 from app.llm_client import parse_json
-from app.subject_language import normalize_subject_references
+from app.subject_language import (
+    decorate_named_subject_references,
+    normalize_subject_references,
+)
 
 
 @pytest.mark.parametrize(
@@ -67,3 +70,74 @@ def test_parse_json_normalizes_subject_references_after_parsing() -> None:
         "answer": "subject#12",
         "evidence": [{"reason": "subject#13"}],
     }
+
+
+def test_decorate_named_subject_references_maps_alias_subject_and_track() -> None:
+    windows = [
+        {
+            "window_index": 0,
+            "people": [
+                {
+                    "track_id": 7,
+                    "source_track_ids": [7, 9],
+                    "subject_id": 1,
+                    "db_identity": "Alice",
+                },
+                {
+                    "track_id": 8,
+                    "subject_id": 2,
+                    "db_identity": None,
+                },
+            ],
+        }
+    ]
+    payload = {
+        "subject": "S1",
+        "summary": "subject#1 与 主体#2",
+        "story": ["track#7 leaves", "Alice (主体#1) waits"],
+    }
+
+    decorated = decorate_named_subject_references(
+        payload,
+        windows,
+        "zh-CN",
+    )
+
+    assert decorated["subject"] == "Alice (主体#1)"
+    assert decorated["summary"] == "Alice (主体#1) 与 主体#2"
+    assert decorated["story"] == [
+        "Alice (主体#1) leaves",
+        "Alice (主体#1) waits",
+    ]
+
+
+def test_named_decorator_does_not_rewrite_scene_s_tokens() -> None:
+    windows = [
+        {
+            "window_index": 0,
+            "people": [
+                {
+                    "track_id": 7,
+                    "subject_id": 1,
+                    "db_identity": "Alice",
+                }
+            ],
+        }
+    ]
+
+    decorated = decorate_named_subject_references(
+        {
+            "subject": "S1",
+            "summary": "Gate S1 opens while subject#1 waits",
+            "notification": "Package S1 moved; Alice, subject#1, leaves",
+        },
+        windows,
+        "zh-CN",
+    )
+
+    assert decorated["subject"] == "Alice (主体#1)"
+    assert decorated["summary"] == (
+        "Gate S1 opens while Alice (主体#1) waits"
+    )
+    assert "Package S1 moved" in decorated["notification"]
+    assert "subject#1" not in decorated["notification"]

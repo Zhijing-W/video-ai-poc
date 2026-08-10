@@ -1,21 +1,35 @@
 import { reportLanguage, t, uiLocale } from "./i18n.js";
 import { $, esc } from "./utils.js";
 
+let samplePresetApplied = false;
+
 function appendIfValue(formData, key, value) {
   if (value) formData.append(key, value);
 }
 
+function selectedSamplePreset() {
+  const option = $("sampleSelect")?.selectedOptions?.[0];
+  try {
+    return JSON.parse(option?.dataset?.preset || "{}");
+  } catch (_) {
+    return {};
+  }
+}
+
 export function collectAnalysisRequest() {
   const file = $("fileInput").files[0];
+  if (file && samplePresetApplied) clearSamplePreset();
   const sample = $("sampleSelect").value;
   const dryRun = $("dryRun").checked;
   const objective = $("objective").value.trim();
+  const preset = file ? {} : selectedSamplePreset();
   const formData = new FormData();
 
   if (file) formData.append("file", file);
   else if (sample) formData.append("sample", sample);
 
   formData.append("fps", $("fps").value || "2");
+  appendIfValue(formData, "tracking_fps", preset.tracking_fps);
   formData.append("max_keyframes", $("maxKeyframes").value || "8");
   appendIfValue(formData, "objective", objective);
   formData.append("with_body", $("withBody").checked ? "true" : "false");
@@ -43,6 +57,62 @@ export function collectAnalysisRequest() {
   appendIfValue(formData, "stitch_thresh", $("stitchThresh").value);
 
   return { file, sample, dryRun, objective, analysisModel: getAnalysisModelValue(), formData };
+}
+
+export function applySelectedSamplePreset() {
+  const select = $("sampleSelect");
+  const option = select?.selectedOptions?.[0];
+  if (!option) return;
+  if (!option.value) {
+    samplePresetApplied = false;
+    return;
+  }
+  const fileInput = $("fileInput");
+  if (fileInput?.files?.length) {
+    fileInput.value = "";
+    setDropFile("");
+  }
+  const preset = selectedSamplePreset();
+  const checkboxes = {
+    with_body: "withBody",
+    with_face: "withFace",
+    with_gait: "withGait",
+    with_ocr: "withOcr",
+    with_objects: "withObjects",
+    dry_run: "dryRun",
+  };
+  Object.entries(checkboxes).forEach(([key, elementId]) => {
+    if (typeof preset[key] === "boolean") {
+      $(elementId).checked = preset[key];
+    }
+  });
+  const values = {
+    fps: "fps",
+    max_keyframes: "maxKeyframes",
+    track_backend: "trackBackend",
+  };
+  Object.entries(values).forEach(([key, elementId]) => {
+    if (preset[key] != null) {
+      $(elementId).value = String(preset[key]);
+    }
+  });
+  $("objective").value = option.dataset.objective || "";
+  samplePresetApplied = true;
+}
+
+export function clearSamplePreset() {
+  samplePresetApplied = false;
+  if ($("sampleSelect")) $("sampleSelect").value = "";
+  $("withBody").checked = true;
+  $("withFace").checked = false;
+  $("withGait").checked = false;
+  $("withOcr").checked = false;
+  $("withObjects").checked = false;
+  $("dryRun").checked = false;
+  $("fps").value = "2";
+  $("maxKeyframes").value = "8";
+  $("trackBackend").value = "";
+  $("objective").value = "";
 }
 
 export function getObjectiveValue() {
@@ -422,7 +492,10 @@ export function wireDropzone() {
   const input = $("fileInput");
   if (!zone || !input) return;
 
-  input.addEventListener("change", () => setDropFile(input.files[0] ? input.files[0].name : ""));
+  input.addEventListener("change", () => {
+    if (input.files[0]) clearSamplePreset();
+    setDropFile(input.files[0] ? input.files[0].name : "");
+  });
 
   ["dragenter", "dragover"].forEach((eventName) => {
     zone.addEventListener(eventName, (event) => {
@@ -442,6 +515,7 @@ export function wireDropzone() {
     const file = event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0];
     if (!file) return;
     input.files = event.dataTransfer.files;
+    clearSamplePreset();
     setDropFile(file.name);
   });
 }

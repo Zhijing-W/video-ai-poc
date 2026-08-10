@@ -23,6 +23,7 @@ from openai import RateLimitError
 from ..core.config import settings
 from ..event_monitor_i18n import normalize_report_language, resolve_report_language
 from ..openai_client import get_client, parse_json
+from ..subject_language import decorate_named_subject_references
 from ..utils.image_utils import image_to_data_uri
 from ..identity.identity_context import format_identity_grounding
 from .prompt_compaction import compact_evidence, compact_window_evidence
@@ -39,6 +40,8 @@ EVENT_SYSTEM = (
     "不能只凭身份文字臆测、更不能编造画面里没有的情节。\n"
     "请把『谁（来自身份）』和『在做什么（来自你看图）』结合起来，叙述这段时间的跨帧事件，"
     "只根据可见信息，不臆造画面之外的内容。\n"
+    "若证据表提供姓名，所有叙述必须使用『Alice (主体#1)』格式；"
+    "S1/S2 只是内部别名，禁止原样输出。\n"
     "若另外提供了【画面文字（OCR）】，那是画面里出现的**场景级文字**（如时间戳、车牌、包裹单号），"
     "可用来补全事件的**时间/物件**线索；但它**不代表任何人的身份**，不要据此推断『谁』。\n"
     "若另外提供了【画面中的物体】，那是 YOLO 检出的**场景级物体**（包裹/行李/车辆等）及其轨迹，"
@@ -153,7 +156,7 @@ def understand_event(
         "请严格输出 JSON（不要多余文字），字段：\n"
         "{\n"
         '  "events": [\n'
-        '    {"time": "事件大致时间/对应帧时间戳", "subject": "涉及的身份（如 主体#3 / 员工A123 / 未识别人物）",\n'
+        '    {"time": "事件大致时间/对应帧时间戳", "subject": "涉及的身份（有姓名时如 Alice (主体#3)，否则主体#3/未识别人物）",\n'
         '     "action": "该主体在这段时间做了什么（跨帧叙述）", "abnormal": true 或 false}\n'
         "  ],\n"
         '  "summary": "用 1-3 句话总结这段时间发生了什么",\n'
@@ -223,6 +226,11 @@ def understand_event(
         resp.choices[0].message.content or "{}",
         language=report_language,
     )
+    result = decorate_named_subject_references(
+        result,
+        [window] if isinstance(window, dict) else [],
+        report_language,
+    )
     result.setdefault("events", [])
     result.setdefault("alert_level", "normal")
     result["_model"] = deployment
@@ -242,6 +250,7 @@ WINDOW_SUMMARY_SYSTEM = (
     "（每个窗已由多模态模型理解过：时间段、涉及的人物身份、发生了什么、告警级别），"
     "以及全程出现过的【人物身份名册】。请把这些窗整合成【整段视频的一个连贯事件故事】："
     "同一身份（主体#/库内身份）在不同窗里是同一个人，按时间把他们的行为串起来；"
+    "有姓名时必须输出『Alice (主体#1)』，禁止输出内部 S1/S2 别名；"
     "只依据给定信息，不要臆造画面之外的内容。"
 )
 
@@ -250,7 +259,7 @@ WINDOW_SUMMARY_SCHEMA = (
     "{\n"
     '  "overall_summary": "用 2-4 句话总结整段视频发生了什么（贯穿各窗）",\n'
     '  "story": [\n'
-    '    {"time": "时间/时间段", "subject": "涉及身份（如 主体#1）", "action": "做了什么（跨窗连贯叙述）"}\n'
+    '    {"time": "时间/时间段", "subject": "涉及身份（有姓名时如 Alice (主体#1)，否则主体#1）", "action": "做了什么（跨窗连贯叙述）"}\n'
     "  ],\n"
     '  "subjects": ["涉及到的身份及其一句话概括，如 主体#1：闯入并翻找后离开"],\n'
     '  "overall_alert_level": "normal | attention | alert（整段最高告警级别）",\n'
@@ -316,6 +325,11 @@ def summarize_event_windows(
     result = parse_json(
         resp.choices[0].message.content or "{}",
         language=report_language,
+    )
+    result = decorate_named_subject_references(
+        result,
+        ev_windows,
+        report_language,
     )
     result.setdefault("story", [])
     result.setdefault("overall_alert_level", "normal")
