@@ -23,7 +23,6 @@ import time
 import types
 
 import numpy as np
-from PIL import Image
 
 from .config import settings
 from .detector import _predict
@@ -99,25 +98,35 @@ class _AppReIDEncoder:
         if arr.size == 0:
             return []
         model = self._ensure_model()
-        feats: list[np.ndarray] = []
         h, w = img.shape[:2]
-        for det in arr:
+        boxes = []
+        valid_indices = []
+        features = [
+            np.zeros(512, dtype=np.float32)
+            for _ in range(len(arr))
+        ]
+        for index, det in enumerate(arr):
             cx, cy, bw, bh = [float(v) for v in det[:4]]
             x1 = max(0, int(round(cx - bw / 2)))
             y1 = max(0, int(round(cy - bh / 2)))
             x2 = min(w, int(round(cx + bw / 2)))
             y2 = min(h, int(round(cy + bh / 2)))
             if x2 <= x1 or y2 <= y1:
-                feats.append(np.zeros(512, dtype=np.float32))
                 continue
-            crop = Image.fromarray(img[y1:y2, x1:x2][:, :, ::-1])
-            feats.append(
-                np.asarray(
-                    reid_mod._embed_osnet(model, crop),
+            boxes.append([x1, y1, x2, y2])
+            valid_indices.append(index)
+        if boxes:
+            batch = reid_mod._embed_osnet_boxes(
+                model,
+                img,
+                np.asarray(boxes, dtype=np.float32),
+            )
+            for index, feature in zip(valid_indices, batch):
+                features[index] = np.asarray(
+                    feature,
                     dtype=np.float32,
                 ).reshape(-1)
-            )
-        return feats
+        return features
 
 
 def _build_tracker(backend: str, frame_rate: float):

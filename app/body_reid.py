@@ -262,14 +262,29 @@ def _load_osnet():
 
 def _embed_osnet(model, crop) -> np.ndarray:
     """对一张人像 crop 提 OSNet 512 维 ReID 指纹（boxmot 已做 L2 归一化）。"""
-    backend = model["backend"]
     bgr = np.asarray(crop.convert("RGB"))[:, :, ::-1]  # PIL RGB → BGR（boxmot/cv2 约定）
     height, width = bgr.shape[:2]
     box = np.asarray([[0, 0, width, height]], dtype=np.float32)
-    feats = backend.get_features(box, bgr)
-    feat = np.asarray(feats[0], dtype=np.float32).reshape(-1)
-    n = float(np.linalg.norm(feat))
-    return feat / n if n > 0 else feat
+    return _embed_osnet_boxes(model, bgr, box)[0]
+
+
+def _embed_osnet_boxes(
+    model,
+    bgr: np.ndarray,
+    boxes: np.ndarray,
+) -> np.ndarray:
+    """Batch OSNet embeddings for xyxy person boxes in one BGR frame."""
+    features = np.asarray(
+        model["backend"].get_features(
+            np.asarray(boxes, dtype=np.float32),
+            bgr,
+        ),
+        dtype=np.float32,
+    )
+    if features.ndim == 1:
+        features = features.reshape(1, -1)
+    norms = np.linalg.norm(features, axis=1, keepdims=True)
+    return features / np.maximum(norms, 1e-12)
 
 
 def _normalize_backend_name(value: str | None = None) -> str:

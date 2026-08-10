@@ -34,9 +34,11 @@ def test_tracker_reid_encoder_uses_independent_osnet(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         tracker.reid_mod,
-        "_embed_osnet",
-        lambda loaded, crop: embed_calls.append((loaded, crop.size))
-        or np.ones(512, dtype=np.float32),
+        "_embed_osnet_boxes",
+        lambda loaded, image, boxes: embed_calls.append(
+            (loaded, image.shape, boxes.tolist())
+        )
+        or np.ones((len(boxes), 512), dtype=np.float32),
     )
     encoder = tracker._AppReIDEncoder()
 
@@ -46,7 +48,13 @@ def test_tracker_reid_encoder_uses_independent_osnet(monkeypatch) -> None:
     )
 
     assert load_calls == [True]
-    assert embed_calls == [(model, (20, 40))]
+    assert embed_calls == [
+        (
+            model,
+            (100, 100, 3),
+            [[40.0, 30.0, 60.0, 70.0]],
+        )
+    ]
     assert len(features) == 1
     assert features[0].shape == (512,)
 
