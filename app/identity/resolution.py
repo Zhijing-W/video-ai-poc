@@ -124,6 +124,7 @@ def stitch_orphans(
     # 各主体的成员向量（来自已分配 subject_id 的 track）
     members: dict[int, list[np.ndarray]] = {}
     member_tids: dict[int, list[int]] = {}
+    member_labels: dict[int, str] = {}
     for tid, idn in identities.items():
         if (
             not idn.get("db_identity")
@@ -137,6 +138,8 @@ def stitch_orphans(
         if sid is not None and tid in track_emb:
             members.setdefault(sid, []).append(track_emb[tid])
             member_tids.setdefault(sid, []).append(tid)
+            if idn.get("db_identity"):
+                member_labels[sid] = str(idn["db_identity"])
     reps: dict[int, np.ndarray] = {sid: _norm(np.mean(vs, axis=0)) for sid, vs in members.items()}
 
     # 孤立 track：按首次出现时间顺序缝合
@@ -147,7 +150,15 @@ def stitch_orphans(
     for tid in orphans:
         v = _norm(track_emb[tid])
         best_sid, best_sim = None, -1.0
-        hit_thresh = thresh if identities[tid].get("quality_ok") else max(thresh, settings.event_local_stitch_thresh)
+        base_thresh = max(thresh, settings.reid_hit_thresh)
+        hit_thresh = (
+            base_thresh
+            if identities[tid].get("quality_ok")
+            else max(
+                base_thresh,
+                settings.reid_low_quality_hit_thresh,
+            )
+        )
         for sid, rep in reps.items():
             if any(_overlap(tid, mt) for mt in member_tids.get(sid, [])):
                 continue
@@ -157,6 +168,7 @@ def stitch_orphans(
         if best_sid is not None and best_sim >= hit_thresh:
             idn = identities[tid]
             idn["subject_id"] = best_sid
+            idn["db_identity"] = member_labels.get(best_sid)
             idn["decision"] = "stitched"
             idn["reused"] = True
             idn["stitch_score"] = round(best_sim, 4)

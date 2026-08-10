@@ -61,6 +61,7 @@ def test_stitch_orphans_reuses_subject_then_falls_back_to_local_subject(monkeypa
     stitch_orphans(tracks, identities, track_emb, thresh=0.8)
 
     assert identities[2]["subject_id"] == 10
+    assert identities[2]["db_identity"] == "Alice"
     assert identities[2]["decision"] == "stitched"
     assert identities[2]["reused"] is True
     assert identities[3]["local_subject"] is True
