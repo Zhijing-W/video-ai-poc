@@ -176,6 +176,35 @@ def test_merge_tracks_cross_route_records_agreement_across_body_face_gait() -> N
     assert identities[4]["decision"] == "merged"
 
 
+def test_merge_tracks_cross_route_joins_stable_named_fragments() -> None:
+    identities = {
+        1: {
+            "subject_id": 1,
+            "db_identity": "Bob",
+            "decision": "hit",
+            "route_subject": {
+                "route": "body",
+                "local_subject_id": 1,
+            },
+        },
+        2: {
+            "subject_id": 10,
+            "db_identity": "Bob",
+            "decision": "local",
+            "face": {
+                "db_identity": "Bob",
+                "matched": False,
+            },
+        },
+    }
+
+    merge_tracks_cross_route(identities)
+
+    assert identities[1]["subject_id"] == 1
+    assert identities[2]["subject_id"] == 1
+    assert identities[2]["cross_track_merged"] is True
+
+
 def test_group_people_merges_tracks_by_subject_and_keeps_best_representative() -> None:
     tracks = {
         1: {

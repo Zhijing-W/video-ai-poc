@@ -344,6 +344,18 @@ def merge_tracks_cross_route(identities: dict[int, dict]) -> None:
     # 三路分别按库编号分组 → 组内两两并；记录每条 track 触发合并用到了哪几路
     routes = ("body", "face", "gait")
     route_of_edge: dict[frozenset, set] = {}
+    label_buckets: dict[str, list[int]] = {}
+    for tid in tids:
+        label = identities[tid].get("db_identity")
+        if label:
+            label_buckets.setdefault(str(label), []).append(tid)
+    for members in label_buckets.values():
+        if len(members) < 2:
+            continue
+        base = members[0]
+        for other in members[1:]:
+            union(base, other)
+
     for route in routes:
         buckets: dict = {}
         for t in tids:
