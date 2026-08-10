@@ -84,6 +84,8 @@ def _compact_payload(payload: dict) -> dict:
         "run_id": payload.get("run_id"),
         "video": Path(str(payload.get("video") or "")).name,
         "fps": payload.get("fps"),
+        "tracking_fps": payload.get("tracking_fps"),
+        "semantic_frames_total": payload.get("semantic_frames_total"),
         "frames_total": payload.get("frames_total"),
         "report_language": payload.get("report_language"),
         "config_used": payload.get("config_used"),

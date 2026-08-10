@@ -51,14 +51,25 @@ def _normalize_backend(value: str | None = None) -> str:
     return backend
 
 
-def _build_args(backend: str) -> types.SimpleNamespace:
+def _build_args(
+    backend: str,
+    frame_rate: float | None = None,
+) -> types.SimpleNamespace:
     """把 settings 里的 MOT 阈值打包成 Ultralytics tracker 需要的 args 命名空间。"""
+    effective_fps = float(
+        settings.event_tracking_fps
+        if frame_rate is None
+        else frame_rate
+    )
     return types.SimpleNamespace(
         tracker_type="bytetrack" if backend == "bytetrack" else "botsort",
         track_high_thresh=settings.track_high_thresh,
         track_low_thresh=settings.track_low_thresh,
         new_track_thresh=settings.new_track_thresh,
-        track_buffer=settings.track_buffer,
+        track_buffer=max(
+            1,
+            int(round(settings.track_buffer_seconds * effective_fps)),
+        ),
         match_thresh=settings.track_match_thresh,
         fuse_score=settings.track_fuse_score,
         gmc_method=settings.track_gmc_method,
@@ -98,27 +109,36 @@ class _AppReIDEncoder:
         return feats
 
 
-def _build_tracker(backend: str):
+def _build_tracker(backend: str, frame_rate: float):
     if backend == "bytetrack":
         from ultralytics.trackers.byte_tracker import BYTETracker
 
-        return BYTETracker(_build_args(backend))
+        return BYTETracker(_build_args(backend, frame_rate))
 
     from ultralytics.trackers.bot_sort import BOTSORT
 
-    tracker = BOTSORT(_build_args(backend))
+    tracker = BOTSORT(_build_args(backend, frame_rate))
     if backend == "botsort_reid":
         tracker.encoder = _AppReIDEncoder()
     return tracker
 
 
-def _get_entry(session_id: str) -> dict:
+def _get_entry(session_id: str, frame_rate: float) -> dict:
     """懒加载：按 session 取（或新建）一个 tracker 实例及其专属锁。"""
     backend = _normalize_backend()
     with _registry_lock:
         entry = _trackers.get(session_id)
-        if entry is None or entry.get("backend") != backend:
-            entry = {"tracker": _build_tracker(backend), "backend": backend, "lock": threading.Lock()}
+        if (
+            entry is None
+            or entry.get("backend") != backend
+            or entry.get("frame_rate") != frame_rate
+        ):
+            entry = {
+                "tracker": _build_tracker(backend, frame_rate),
+                "backend": backend,
+                "frame_rate": frame_rate,
+                "lock": threading.Lock(),
+            }
             _trackers[session_id] = entry
         return entry
 
@@ -153,7 +173,10 @@ def active_backend() -> str:
 
 
 def track_objects(
-    image: str | bytes, session_id: str = "default", conf: float | None = None
+    image: str | bytes,
+    session_id: str = "default",
+    conf: float | None = None,
+    frame_rate: float | None = None,
 ) -> dict:
     """对一帧做"检测 + 多目标跟踪"，给每个目标补上跨帧稳定的 track_id。
 
@@ -172,7 +195,12 @@ def track_objects(
           counts: {label: 数量}
           active_tracks: 当前活跃轨迹数
     """
-    entry = _get_entry(session_id)
+    effective_fps = float(
+        settings.event_tracking_fps
+        if frame_rate is None
+        else frame_rate
+    )
+    entry = _get_entry(session_id, effective_fps)
     r, img_w, img_h, infer_ms = _predict(
         image, conf=settings.track_conf if conf is None else conf
     )
@@ -211,4 +239,5 @@ def track_objects(
         "detections": detections,
         "counts": counts,
         "active_tracks": len(detections),
+        "tracking_fps": effective_fps,
     }

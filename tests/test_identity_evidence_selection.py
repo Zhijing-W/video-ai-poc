@@ -225,7 +225,13 @@ def test_face_attachment_passes_existing_db_identity_into_gallery(monkeypatch, r
             "boxes": {0: [10, 0, 90, 150]},
         }
     }
-    identities = {1: {"track_id": 1, "db_identity": "Alice"}}
+    identities = {
+        1: {
+            "track_id": 1,
+            "db_identity": "Alice",
+            "enrollment_eligible": False,
+        }
+    }
 
     monkeypatch.setattr(
         face_attachment.face_mod,
@@ -270,15 +276,17 @@ def test_face_attachment_passes_existing_db_identity_into_gallery(monkeypatch, r
     )
 
     seen_labels = []
+    seen_auto_enroll = []
 
     class FakeGallery:
         def identify_or_enroll(self, *args, **kwargs):
             seen_labels.append(kwargs.get("label"))
+            seen_auto_enroll.append(kwargs.get("auto_enroll"))
             return {
                 "subject_id": 3,
                 "score": 0.9,
-                "decision": "new",
-                "enrolled": True,
+                "decision": "hit",
+                "enrolled": False,
                 "quality_ok": True,
                 "label": kwargs.get("label"),
             }
@@ -299,7 +307,9 @@ def test_face_attachment_passes_existing_db_identity_into_gallery(monkeypatch, r
     )
 
     assert seen_labels == ["Alice"]
+    assert seen_auto_enroll == [False]
     assert identities[1]["face"]["db_identity"] == "Alice"
+    assert identities[1]["face"]["matched"] is True
 
 
 def test_attach_faces_blocks_failed_cross_frame_track_provenance(

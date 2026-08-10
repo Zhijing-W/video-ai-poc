@@ -27,6 +27,7 @@ def test_router_generates_unique_run_and_session_ids(monkeypatch) -> None:
                 "run_dir": str(run_dir),
                 "session_id": kwargs["session_id"],
                 "with_body": kwargs["with_body"],
+                "tracking_fps": kwargs["tracking_fps"],
             }
         )
         return {
@@ -71,7 +72,7 @@ def test_router_generates_unique_run_and_session_ids(monkeypatch) -> None:
         client.post(
             "/api/event-monitor/understand",
             files={"file": ("clip.mp4", b"fake video bytes", "video/mp4")},
-            data={"dry_run": "true"},
+            data={"dry_run": "true", "tracking_fps": "12"},
         )
         for _ in range(2)
     ]
@@ -87,6 +88,11 @@ def test_router_generates_unique_run_and_session_ids(monkeypatch) -> None:
     assert calls[1]["run_dir"].endswith(body2["run_id"])
     assert calls[0]["run_dir"] != calls[1]["run_dir"]
     assert all(call["with_body"] is True for call in calls)
+    assert all(call["tracking_fps"] == 12 for call in calls)
+    assert all(
+        response.json()["config_used"]["tracking_fps"] == 12
+        for response in responses
+    )
     assert all(
         response.json()["config_used"]["reid_backend"] == "differ"
         for response in responses
@@ -100,6 +106,40 @@ def test_router_generates_unique_run_and_session_ids(monkeypatch) -> None:
 
     for call in calls:
         shutil.rmtree(Path(call["run_dir"]), ignore_errors=True)
+
+
+def test_router_rejects_invalid_processing_rates() -> None:
+    client = TestClient(app)
+
+    invalid_semantic = client.post(
+        "/api/event-monitor/understand",
+        files={"file": ("clip.mp4", b"fake", "video/mp4")},
+        data={"dry_run": "true", "fps": "0.1"},
+    )
+    invalid_tracking = client.post(
+        "/api/event-monitor/understand",
+        files={"file": ("clip.mp4", b"fake", "video/mp4")},
+        data={"dry_run": "true", "tracking_fps": "31"},
+    )
+    zero_tracking = client.post(
+        "/api/event-monitor/understand",
+        files={"file": ("clip.mp4", b"fake", "video/mp4")},
+        data={"dry_run": "true", "tracking_fps": "0"},
+    )
+    tracking_below_semantic = client.post(
+        "/api/event-monitor/understand",
+        files={"file": ("clip.mp4", b"fake", "video/mp4")},
+        data={
+            "dry_run": "true",
+            "fps": "8",
+            "tracking_fps": "1",
+        },
+    )
+
+    assert invalid_semantic.status_code == 400
+    assert invalid_tracking.status_code == 400
+    assert zero_tracking.status_code == 400
+    assert tracking_below_semantic.status_code == 400
 
 
 def test_router_returns_structured_fatal_reid_telemetry(monkeypatch) -> None:

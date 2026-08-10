@@ -394,7 +394,7 @@ def test_seed_assets_do_not_enter_video_tracking(
         lambda crop, **kwargs: [1.0, 0.0, 0.0],
     )
 
-    def track_objects(raw, session_id=None):
+    def track_objects(raw, session_id=None, **kwargs):
         tracker_calls.append(raw)
         return {
             "detections": [
@@ -411,7 +411,8 @@ def test_seed_assets_do_not_enter_video_tracking(
 
     monkeypatch.setattr(pipeline.tracker_mod, "track_objects", track_objects)
     monkeypatch.setattr(pipeline.tracker_mod, "active_backend", lambda: "mock-tracker")
-    monkeypatch.setattr(pipeline.settings, "track_min_frames", 0)
+    monkeypatch.setattr(pipeline.settings, "track_enroll_min_seconds", 0)
+    monkeypatch.setattr(pipeline.settings, "track_enroll_min_observations", 1)
 
     class FakeGallery:
         seeded = False

@@ -20,13 +20,23 @@ def test_analyze_event_stream_keeps_top_level_contract_with_lightweight_mocks(mo
         Frame(frame_id="frame_002", timestamp="00:00:01", local_path=str(write_image(frame_dir / "frame_002.jpg", (96, 64, 32)))),
     ]
 
-    monkeypatch.setattr(pipeline, "extract_frames", lambda *args, **kwargs: frames)
+    extract_calls = []
+
+    def fake_extract(*args, **kwargs):
+        extract_calls.append(kwargs)
+        return frames
+
+    monkeypatch.setattr(pipeline, "extract_frames", fake_extract)
     monkeypatch.setattr(pipeline.detector_mod, "prepare", lambda: None)
     monkeypatch.setattr(pipeline.detector_mod, "active_device", lambda: "cpu")
     monkeypatch.setattr(pipeline.tracker_mod, "reset_tracker", lambda session_id: True)
     monkeypatch.setattr(pipeline.gallery_mod, "reset_gallery", lambda session_id: True)
     monkeypatch.setattr(pipeline.reid_mod, "embed_dim", lambda: 512)
-    monkeypatch.setattr(pipeline.tracker_mod, "track_objects", lambda raw, session_id=None: {"detections": []})
+    monkeypatch.setattr(
+        pipeline.tracker_mod,
+        "track_objects",
+        lambda raw, session_id=None, **kwargs: {"detections": []},
+    )
     monkeypatch.setattr(pipeline.tracker_mod, "active_backend", lambda: "mock-tracker")
     monkeypatch.setattr(pipeline.reid_mod, "active_backend", lambda: "mock-reid")
     monkeypatch.setattr(pipeline.reid_mod, "active_device", lambda: "cpu")
@@ -42,12 +52,16 @@ def test_analyze_event_stream_keeps_top_level_contract_with_lightweight_mocks(mo
         video_path="ignored.mp4",
         out_dir=runtime_dir / "analysis",
         fps=1.0,
+        tracking_fps=5.0,
         run_llm=False,
         session_id="characterize-session",
     )
 
     assert result["video"] == "ignored.mp4"
     assert result["frames_total"] == 2
+    assert result["fps"] == 1.0
+    assert result["tracking_fps"] == 5.0
+    assert extract_calls == [{"max_frames": 1800, "fps": 5.0}]
     assert result["session_id"] == "characterize-session"
     assert result["tracker_backend"] == "mock-tracker"
     assert result["reid_backend"] == "mock-reid"
@@ -98,13 +112,14 @@ def test_analyze_event_stream_can_disable_body_identity_without_blocking_other_r
     monkeypatch.setattr(pipeline, "extract_frames", lambda *args, **kwargs: frames)
     monkeypatch.setattr(pipeline.detector_mod, "prepare", lambda: None)
     monkeypatch.setattr(pipeline.detector_mod, "active_device", lambda: "cuda:0")
-    monkeypatch.setattr(pipeline.settings, "track_min_frames", 0)
+    monkeypatch.setattr(pipeline.settings, "track_enroll_min_seconds", 0)
+    monkeypatch.setattr(pipeline.settings, "track_enroll_min_observations", 1)
     monkeypatch.setattr(pipeline.tracker_mod, "reset_tracker", lambda session_id: True)
     monkeypatch.setattr(pipeline.gallery_mod, "reset_gallery", lambda session_id: True)
     monkeypatch.setattr(
         pipeline.tracker_mod,
         "track_objects",
-        lambda raw, session_id=None: {
+        lambda raw, session_id=None, **kwargs: {
             "detections": [
                 {
                     "label": "person",
@@ -218,7 +233,7 @@ def test_fatal_run_preserves_failed_reid_telemetry_without_leaking(
     monkeypatch.setattr(
         pipeline.tracker_mod,
         "track_objects",
-        lambda raw, session_id=None: pipeline.reid_mod.embed(
+        lambda raw, session_id=None, **kwargs: pipeline.reid_mod.embed(
             Image.new("RGB", (16, 32)),
             purpose="tracking",
         ),
@@ -292,7 +307,7 @@ def test_tracking_reid_telemetry_survives_disabled_identity_branch(
     monkeypatch.setattr(pipeline.tracker_mod, "reset_tracker", lambda session_id: True)
     monkeypatch.setattr(pipeline.gallery_mod, "reset_gallery", lambda session_id: True)
 
-    def track_with_reid(raw, session_id=None):
+    def track_with_reid(raw, session_id=None, **kwargs):
         pipeline.reid_mod.embed(
             Image.new("RGB", (16, 32)),
             purpose="tracking",

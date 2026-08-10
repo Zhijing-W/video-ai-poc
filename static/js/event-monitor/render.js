@@ -80,6 +80,8 @@ export function showRunFailure(message, detail = null) {
 
 function renderMeta(data) {
   const configUsed = data.config_used || {};
+  const trackingFps = data.tracking_fps || data.fps;
+  const keyframeLimit = data.max_keyframes || 8;
   const withBody = configUsed.with_body ?? data.with_body ?? true;
   const dimText = data.reid_dim ? esc(t("results.meta_dim", { dim: data.reid_dim })) : "";
   const reidText = withBody
@@ -89,7 +91,13 @@ function renderMeta(data) {
     })
     : t("results.meta_body_reid_off");
   $("meta").innerHTML =
-    `${t("results.meta_video")} <b>${esc(baseName(data.video))}</b> · ${data.frames_total} @ ${data.fps}fps · ` +
+    `${t("results.meta_video")} <b>${esc(baseName(data.video))}</b> · ${t("results.meta_rates", {
+      frames: data.frames_total,
+      tracking_fps: trackingFps,
+      semantic_frames: data.semantic_frames_total || data.frames_total,
+      semantic_fps: data.fps,
+      keyframes: keyframeLimit,
+    })} · ` +
     `${t("results.meta_windows", { count: (data.windows || []).length })} · ${t("results.meta_tracker", {
       tracker: esc(data.tracker_backend || configUsed.track_backend || "botsort_reid"),
     })} · ` +

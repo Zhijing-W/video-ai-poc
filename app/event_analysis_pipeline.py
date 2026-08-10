@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import base64
 import io
+import math
 import time
 from pathlib import Path
 
@@ -104,6 +105,15 @@ def _signature(img: Image.Image, size: int = 16) -> np.ndarray:
 
 def _ts_seconds(frame: Frame, idx: int, step: float) -> float:
     """帧的秒级时间（优先用 Frame.timestamp，回退 idx*step）。"""
+    if frame.timestamp_seconds is not None:
+        return round(float(frame.timestamp_seconds), 3)
+    try:
+        hours, minutes, seconds = (
+            float(part) for part in frame.timestamp.split(":")
+        )
+        return round(hours * 3600 + minutes * 60 + seconds, 3)
+    except (AttributeError, TypeError, ValueError):
+        pass
     return round(idx * step, 3)
 
 def _crop(img: Image.Image, box: list[float]) -> Image.Image | None:
@@ -157,6 +167,80 @@ _merge_tracks_cross_route = merge_tracks_cross_route
 _split_windows = split_windows
 
 
+def _rate_limited_indices(
+    indices: list[int],
+    source_fps: float,
+    target_fps: float,
+) -> list[int]:
+    if not indices:
+        return []
+    if target_fps >= source_fps:
+        return list(indices)
+    selected = []
+    last_bucket = None
+    for index in indices:
+        bucket = int(
+            math.floor(
+                float(index) * target_fps / source_fps + 1e-9
+            )
+        )
+        if bucket != last_bucket:
+            selected.append(index)
+            last_bucket = bucket
+    return selected
+
+
+def _tracking_frame_cap(
+    *,
+    semantic_max_frames: int | None,
+    tracking_max_frames: int | None,
+    semantic_fps: float,
+    tracking_fps: float,
+) -> int:
+    if tracking_max_frames is not None:
+        return max(1, int(tracking_max_frames))
+    if semantic_max_frames is not None:
+        return max(
+            1,
+            int(
+                math.ceil(
+                    semantic_max_frames
+                    * tracking_fps
+                    / semantic_fps
+                )
+            ),
+        )
+    return settings.event_tracking_max_frames
+
+
+def _track_enrollment_metadata(track: dict, tracking_fps: float) -> dict:
+    observations = len(track.get("boxes", {}))
+    span = max(
+        0.0,
+        (float(track.get("last", 0)) - float(track.get("first", 0)))
+        / tracking_fps,
+    )
+    observed_seconds = observations / tracking_fps
+    reasons = []
+    if observed_seconds < settings.track_enroll_min_seconds:
+        reasons.append("duration")
+    if observations < settings.track_enroll_min_observations:
+        reasons.append("observations")
+    if (
+        settings.track_min_quality
+        and float(track.get("best_q", 0.0)) < settings.track_min_quality
+    ):
+        reasons.append("quality")
+    return {
+        "track_observations": observations,
+        "track_span_seconds": round(span, 3),
+        "track_observed_seconds": round(observed_seconds, 3),
+        "track_duration_seconds": round(observed_seconds, 3),
+        "enrollment_eligible": not reasons,
+        "enrollment_reasons": reasons,
+    }
+
+
 def _backfill_body_gallery_labels(
     identities: dict[int, dict],
     session_id: str,
@@ -202,7 +286,9 @@ def analyze_event_stream(
     out_dir: str | Path,
     *,
     fps: float = 2.0,
-    max_frames: int = 300,
+    tracking_fps: float | None = None,
+    max_frames: int | None = None,
+    tracking_max_frames: int | None = None,
     session_id: str = "event-demo",
     run_llm: bool = True,
     with_body: bool = True,
@@ -226,10 +312,32 @@ def analyze_event_stream(
     video_path = Path(video_path)
     out_dir = Path(out_dir)
     frames_dir = out_dir / "frames"
+    if fps <= 0:
+        raise ValueError("fps must be greater than zero")
+    effective_tracking_fps = float(
+        settings.event_tracking_fps
+        if tracking_fps is None
+        else tracking_fps
+    )
+    if effective_tracking_fps <= 0:
+        raise ValueError("tracking_fps must be greater than zero")
+    if effective_tracking_fps < fps:
+        raise ValueError("tracking_fps must not be lower than fps")
+    tracking_cap = _tracking_frame_cap(
+        semantic_max_frames=max_frames,
+        tracking_max_frames=tracking_max_frames,
+        semantic_fps=fps,
+        tracking_fps=effective_tracking_fps,
+    )
     t_start = time.perf_counter()
     stage_timings: dict[str, float] = {}
     stage_started = time.perf_counter()
-    frames = extract_frames(video_path, frames_dir, max_frames=max_frames, fps=fps)
+    frames = extract_frames(
+        video_path,
+        frames_dir,
+        max_frames=tracking_cap,
+        fps=effective_tracking_fps,
+    )
     stage_timings["extract_frames"] = time.perf_counter() - stage_started
 
     session = EventAnalysisSession(
@@ -241,6 +349,7 @@ def analyze_event_stream(
             video_path=video_path,
             out_dir=out_dir,
             fps=fps,
+            tracking_fps=effective_tracking_fps,
             session_id=session_id,
             run_llm=run_llm,
             with_body=with_body,
@@ -298,6 +407,7 @@ def _finish_session(
     video_path: str | Path,
     out_dir: str | Path,
     fps: float,
+    tracking_fps: float,
     session_id: str,
     run_llm: bool,
     with_body: bool,
@@ -321,7 +431,7 @@ def _finish_session(
 ) -> dict:
     video_path = Path(video_path)
     out_dir = Path(out_dir)
-    step = 1.0 / float(fps)
+    step = 1.0 / float(tracking_fps)
 
     def _record(name: str, started: float) -> None:
         elapsed = time.perf_counter() - started
@@ -349,7 +459,18 @@ def _finish_session(
 
     # 逐帧累积的语义元数据 + 每条 track 的最佳 crop（给认人用）
     metas: list[FrameMeta] = []
-    quiet_frames = max(1, int(round(quiet_seconds * fps)))
+    quiet_frames = max(
+        1,
+        int(round(quiet_seconds * tracking_fps)),
+    )
+    face_candidate_min_gap_frames = max(
+        1,
+        int(
+            round(
+                settings.face_candidate_min_gap_seconds * tracking_fps
+            )
+        ),
+    )
     img_w = img_h = 0
 
     # best_* 保留为 body_best 的兼容别名；face_best 由独立候选集稀疏选择。
@@ -375,7 +496,11 @@ def _finish_session(
         if not img_w:
             img_w, img_h = pil.size
         raw = Path(fr.local_path).read_bytes()
-        res = tracker_mod.track_objects(raw, session_id=session_id)
+        res = tracker_mod.track_objects(
+            raw,
+            session_id=session_id,
+            frame_rate=tracking_fps,
+        )
         detector_inference_seconds += float(res.get("infer_ms") or 0.0) / 1000.0
         tracker_association_seconds += float(res.get("track_ms") or 0.0) / 1000.0
 
@@ -402,7 +527,8 @@ def _finish_session(
                 t = {"first": i, "last": i, "best_q": -1.0, "best_crop": None,
                      "best_idx": i, "best_box": box, "body_best": None,
                      "face_candidates": [], "face_best": None,
-                     "centers": [], "boxes": {}}
+                     "centers": [], "boxes": {},
+                     "motion_anchor": None, "motion_anchor_time": None}
                 tracks[tid] = t
                 events.append(f"new_track:{tid}")
             t["last"] = i
@@ -410,6 +536,18 @@ def _finish_session(
             cx = (box[0] + box[2]) / 2.0 / max(1, img_w)
             cy = (box[1] + box[3]) / 2.0 / max(1, img_h)
             t["centers"].append((i, (round(cx, 3), round(cy, 3))))
+            if t["motion_anchor"] is None:
+                t["motion_anchor"] = (cx, cy)
+                t["motion_anchor_time"] = timestamp
+            elif (
+                timestamp - float(t["motion_anchor_time"])
+                >= settings.event_motion_interval_seconds
+            ):
+                distance = math.dist(t["motion_anchor"], (cx, cy))
+                if distance >= settings.event_motion_min_distance:
+                    events.append(f"track_moved:{tid}")
+                    t["motion_anchor"] = (cx, cy)
+                    t["motion_anchor_time"] = timestamp
             if crop is not None and q > t["best_q"]:
                 t["best_q"], t["best_crop"], t["best_idx"], t["best_box"] = q, crop, i, box
                 t["body_best"] = {
@@ -440,7 +578,7 @@ def _finish_session(
                         "det_confidence": detection_confidence,
                     },
                     top_k=settings.face_candidate_top_k,
-                    min_gap_frames=settings.face_candidate_min_gap_frames,
+                    min_gap_frames=face_candidate_min_gap_frames,
                 )
 
         # 计数变化 = 语义事件
@@ -492,7 +630,11 @@ def _finish_session(
     # ---- 流式分窗（提前到重活之前）：先用便宜的 YOLO 占用信息切事件窗，
     #      后面最重的步态采集只在"活动窗内的帧"跑，避免全片逐帧白跑 pose/seg。----
     win_secs = settings.event_window_max_seconds if max_window_seconds is None else max_window_seconds
-    max_window_frames = int(round(win_secs * fps)) if win_secs and win_secs > 0 else None
+    max_window_frames = (
+        int(round(win_secs * tracking_fps))
+        if win_secs and win_secs > 0
+        else None
+    )
     windows = _split_windows(metas, quiet_frames, max_window_frames)
     if not windows:  # 全程无人/无活动 → 整段当一个窗，LLM 仍可描述场景
         windows = [list(range(len(metas)))]
@@ -504,16 +646,21 @@ def _finish_session(
             top_k=settings.face_candidate_top_k,
         )
 
-    # ---- Track 级门控：筛掉"太短/太低质"的 track，整条不做身份提取（省 reid/face/步态 + 防污染库）----
-    def _track_worth_identity(t: dict) -> bool:
-        n_frames = len(t.get("boxes", {}))
-        if settings.track_min_frames and n_frames < settings.track_min_frames:
-            return False
-        if settings.track_min_quality and float(t.get("best_q", 0.0)) < settings.track_min_quality:
-            return False
-        return True
-
-    skip_tracks = {tid for tid, t in tracks.items() if not _track_worth_identity(t)}
+    semantic_indices = set(
+        _rate_limited_indices(
+            list(range(len(metas))),
+            tracking_fps,
+            min(float(fps), tracking_fps),
+        )
+    )
+    semantic_indices.update(
+        meta.index for meta in metas if meta.has_event
+    )
+    semantic_indices.update(
+        int(track["best_idx"])
+        for track in tracks.values()
+        if track.get("best_idx") is not None
+    )
     frame_stage_seconds = time.perf_counter() - frame_stage_started
     stage_timings["object_detection"] = detector_inference_seconds
     stage_timings["multi_object_tracking"] = tracker_association_seconds
@@ -525,9 +672,14 @@ def _finish_session(
     # ---- 步态采集（第二遍·仅活动窗帧，且跳过被门控掉的 track）：把最重的逐帧 YOLO-Pose+Seg 只在需要处跑 ----
     if gait_use:
         gait_collect_started = time.perf_counter()
-        for i in windowed_frames:
+        provider_frames = _rate_limited_indices(
+            windowed_frames,
+            tracking_fps,
+            min(settings.gait_sample_fps, tracking_fps),
+        )
+        for i in provider_frames:
             present = [(tid, t["boxes"][i]) for tid, t in tracks.items()
-                       if i in t.get("boxes", {}) and tid not in skip_tracks]
+                       if i in t.get("boxes", {})]
             if not present:
                 continue
             try:
@@ -558,11 +710,7 @@ def _finish_session(
     for tid, t in tracks.items():
         ident = {"track_id": tid, "subject_id": None, "decision": None,
                  "score": None, "reused": False, "face": None}
-        if tid in skip_tracks:
-            # 门控：太短/太低质的 track 整条跳过身份提取（仍出现在事件里，身份留空、不入库）
-            ident["skipped"] = f"low_track(frames={len(t.get('boxes', {}))},q={float(t.get('best_q', 0.0)):.1f})"
-            identities[tid] = ident
-            continue
+        ident.update(_track_enrollment_metadata(t, tracking_fps))
         body_best = t.get("body_best") or {}
         crop = body_best.get("crop") or t.get("best_crop")
         if with_body and crop is not None:
@@ -572,7 +720,11 @@ def _finish_session(
                 qa = reid_mod.assess_quality(crop)
                 res = gallery_mod.with_gallery_locked(
                     session_id, dim,
-                    lambda g: g.identify_or_enroll(vec, qa, auto_enroll=True),
+                    lambda g: g.identify_or_enroll(
+                        vec,
+                        qa,
+                        auto_enroll=ident["enrollment_eligible"],
+                    ),
                 )
                 ident["subject_id"] = res.get("subject_id")
                 ident["decision"] = res.get("decision")
@@ -697,7 +849,10 @@ def _finish_session(
     event_understanding_seconds = 0.0
     for w, win_idx in enumerate(windows):
         event_prepare_started = time.perf_counter()
-        win_metas = [metas[i] for i in win_idx]
+        candidate_indices = [
+            i for i in win_idx if i in semantic_indices
+        ]
+        win_metas = [metas[i] for i in candidate_indices]
         sel = select_keyframes(win_metas, max_frames=max_keyframes)
         if not sel:
             sel = win_idx[: (max_keyframes or settings.keyframe_max)]
@@ -827,6 +982,9 @@ def _finish_session(
     return {
         "video": str(video_path),
         "fps": fps,
+        "tracking_fps": tracking_fps,
+        "semantic_frames_total": len(semantic_indices),
+        "max_keyframes": max_keyframes or settings.keyframe_max,
         "frames_total": len(frames),
         "img_size": [img_w, img_h],
         "session_id": session_id,
@@ -837,6 +995,11 @@ def _finish_session(
         "with_body": with_body,
         "with_face": with_face,
         "with_gait": gait_use,
+        "gait_sample_fps": (
+            min(settings.gait_sample_fps, tracking_fps)
+            if gait_use
+            else None
+        ),
         "with_ocr": ocr_use,
         "with_objects": obj_use,
         "gait_error": gait_collect_error

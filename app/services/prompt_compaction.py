@@ -465,13 +465,23 @@ def compact_evidence(
             0,
             (
                 "RUN",
-                ("run_id", "video", "fps", "frames", "language"),
+                (
+                    "run_id",
+                    "video",
+                    "semantic_fps",
+                    "tracking_fps",
+                    "cv_frames",
+                    "semantic_frames",
+                    "language",
+                ),
                 [
                     (
                         run_metadata.get("run_id"),
                         run_metadata.get("video"),
                         run_metadata.get("fps"),
+                        run_metadata.get("tracking_fps"),
                         run_metadata.get("frames_total"),
+                        run_metadata.get("semantic_frames_total"),
                         run_metadata.get("report_language"),
                     )
                 ],

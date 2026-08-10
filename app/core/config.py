@@ -43,6 +43,22 @@ def _first_env(*names: str) -> str | None:
     return None
 
 
+def _seconds_setting(
+    name: str,
+    legacy_frames_name: str,
+    default_seconds: float,
+    *,
+    legacy_reference_fps: float,
+) -> float:
+    value = _get(name)
+    if value is not None:
+        return float(value)
+    legacy_frames = _get(legacy_frames_name)
+    if legacy_frames is not None:
+        return float(legacy_frames) / legacy_reference_fps
+    return float(default_seconds)
+
+
 @dataclass
 class Settings:
     model_root: str = str(MODEL_ROOT)
@@ -95,9 +111,14 @@ class Settings:
 
     # 多目标跟踪 MOT（Phase 3 · Step 11 / Phase 4 升级）：可切换 ByteTrack / BoT-SORT / BoT-SORT+ReID。
     # 给每个目标分配跨帧稳定的 track_id，使"识别一次、整条轨迹复用"成为可能。
-    track_backend: str = _get("TRACK_BACKEND", "botsort_reid").strip().lower()  # bytetrack | botsort | botsort_reid
+    track_backend: str = _get("TRACK_BACKEND", "botsort").strip().lower()  # bytetrack | botsort | botsort_reid
     track_conf: float = float(_get("TRACK_CONF", "0.1"))            # 喂给跟踪器的低检测阈值（让 ByteTrack 用低分框做二次关联）
-    track_buffer: int = int(_get("TRACK_BUFFER", "30"))            # 轨迹丢失后保留的帧数（越大越抗短遮挡，但更易 ID 漂移）
+    track_buffer_seconds: float = _seconds_setting(
+        "TRACK_BUFFER_SECONDS",
+        "TRACK_BUFFER",
+        1.0,
+        legacy_reference_fps=30.0,
+    )
     track_high_thresh: float = float(_get("TRACK_HIGH_THRESH", "0.25"))   # 一段匹配高分阈值
     track_low_thresh: float = float(_get("TRACK_LOW_THRESH", "0.1"))      # 二段匹配低分阈值
     new_track_thresh: float = float(_get("NEW_TRACK_THRESH", "0.25"))     # 高于此分且无匹配才新建轨迹
@@ -106,6 +127,11 @@ class Settings:
     track_gmc_method: str = _get("TRACK_GMC_METHOD", "sparseOptFlow")  # BoT-SORT 全局运动补偿：sparseOptFlow|orb|sift|ecc|none
     track_proximity_thresh: float = float(_get("TRACK_PROXIMITY_THRESH", "0.5"))  # BoT-SORT ReID 先验 IoU 门
     track_appearance_thresh: float = float(_get("TRACK_APPEARANCE_THRESH", "0.8"))  # BoT-SORT ReID 外观相似门
+    # CV/MOT 高频运行；语义 provider 和 LLM 仍使用请求里的低频采样预算。
+    event_tracking_fps: float = float(_get("EVENT_TRACKING_FPS", "15"))
+    event_tracking_max_frames: int = int(
+        _get("EVENT_TRACKING_MAX_FRAMES", "1800")
+    )
 
     # 细粒度感知（Phase 3 · Step 13）：YOLO-Pose 派生躯干区取色，修 Phase 2 颜色误判。
     # 仅在画面有人时跑；不可用/几何反常自动回落到写死比例 torso（不劣于原行为）。
@@ -272,7 +298,12 @@ class Settings:
     )
     face_superres_min_size: int = face_superres_max_size  # deprecated compatibility alias
     face_candidate_top_k: int = int(_get("FACE_CANDIDATE_TOP_K", "3"))
-    face_candidate_min_gap_frames: int = int(_get("FACE_CANDIDATE_MIN_GAP_FRAMES", "2"))
+    face_candidate_min_gap_seconds: float = _seconds_setting(
+        "FACE_CANDIDATE_MIN_GAP_SECONDS",
+        "FACE_CANDIDATE_MIN_GAP_FRAMES",
+        0.5,
+        legacy_reference_fps=2.0,
+    )
     face_track_consistency_thresh: float = float(_get("FACE_TRACK_CONSISTENCY_THRESH", "0.82"))
     face_gfpgan_weights: str = _get(
         "FACE_GFPGAN_WEIGHTS",
@@ -322,16 +353,25 @@ class Settings:
     keyframe_max: int = int(_get("KEYFRAME_MAX", "24"))            # 喂 LLM 的关键帧上限
     keyframe_context: int = int(_get("KEYFRAME_CONTEXT", "1"))     # 事件前后各留几帧上下文
     keyframe_dedup_diff: float = float(_get("KEYFRAME_DEDUP_DIFF", "0.06"))  # 低于此签名差异视为"太像"去重
+    event_motion_min_distance: float = float(
+        _get("EVENT_MOTION_MIN_DISTANCE", "0.08")
+    )
+    event_motion_interval_seconds: float = float(
+        _get("EVENT_MOTION_INTERVAL_SECONDS", "1.0")
+    )
 
     # 流式事件分窗（Phase 4 · Step 24）：窗 = 一次 LLM 调用。窗按"活动段 + 时长上限"切。
     # 时长上限是给"长连续事件"准备的：超过则冲刷开新窗，否则长事件被压成单窗、关键帧严重欠采样。
     event_window_max_seconds: float = float(_get("EVENT_WINDOW_MAX_SECONDS", "30"))
 
-    # Track 级门控（认人前先筛掉不值得认的 track，整条省下 reid/face/步态，并防垃圾 track 污染库）：
-    # 存活帧数 < 此值 视为检测抖动/昙花一现的假 track；最佳质量 < 此值 视为全程太糊/太小。
-    # 二者任一不达标 → 整条 track 跳过身份提取（仍保留在事件里，只是身份留空、不入库）。设 0 关闭对应门。
-    track_min_frames: int = int(_get("TRACK_MIN_FRAMES", "3"))       # 至少出现几帧才认人
-    track_min_quality: float = float(_get("TRACK_MIN_QUALITY", "0.0"))  # 最佳帧质量下限（0=不按质量筛）
+    # 已有库匹配允许单张高质量证据；自动创建新身份要求时间、观测数和质量同时达标。
+    track_enroll_min_seconds: float = float(
+        _get("TRACK_ENROLL_MIN_SECONDS", "0.5")
+    )
+    track_enroll_min_observations: int = int(
+        _get("TRACK_ENROLL_MIN_OBSERVATIONS", "2")
+    )
+    track_min_quality: float = float(_get("TRACK_MIN_QUALITY", "0.0"))
 
     # 跨窗整段事件总结（Phase 4 · Step E）：所有窗逐窗理解完后，再纯文本把多窗串成一段连贯故事。
     # 便宜（仅文本一次调用）；dry-run 自动跳过。设 0/false 关闭。
@@ -375,6 +415,7 @@ class Settings:
         "GAIT_SEG_MODEL",
         _model_asset("detection", "yolo", "yolov8m-seg.pt"),
     )   # 剪影分割（ultralytics 实例分割）
+    gait_sample_fps: float = float(_get("GAIT_SAMPLE_FPS", "10"))
     gait_min_frames: int = int(_get("GAIT_MIN_FRAMES", "10"))        # 一条 track 至少几帧才算步态（帧太少不可靠）
     gait_device: str = _get("GAIT_DEVICE", "cpu")                    # 本地 cpu；上云改 cuda
 
@@ -421,8 +462,22 @@ class Settings:
             )
         if self.face_candidate_top_k < 1:
             raise ValueError("FACE_CANDIDATE_TOP_K 必须至少为 1")
-        if self.face_candidate_min_gap_frames < 1:
-            raise ValueError("FACE_CANDIDATE_MIN_GAP_FRAMES 必须至少为 1")
+        if self.face_candidate_min_gap_seconds < 0:
+            raise ValueError("FACE_CANDIDATE_MIN_GAP_SECONDS 不能小于 0")
+        if not 1 <= self.event_tracking_fps <= 30:
+            raise ValueError("EVENT_TRACKING_FPS 必须在 [1, 30] 范围内")
+        if self.event_tracking_max_frames < 1:
+            raise ValueError("EVENT_TRACKING_MAX_FRAMES 必须至少为 1")
+        if self.track_buffer_seconds <= 0:
+            raise ValueError("TRACK_BUFFER_SECONDS 必须大于 0")
+        if self.track_enroll_min_seconds < 0:
+            raise ValueError("TRACK_ENROLL_MIN_SECONDS 不能小于 0")
+        if self.track_enroll_min_observations < 1:
+            raise ValueError("TRACK_ENROLL_MIN_OBSERVATIONS 必须至少为 1")
+        if self.event_motion_interval_seconds <= 0:
+            raise ValueError("EVENT_MOTION_INTERVAL_SECONDS 必须大于 0")
+        if not 1 <= self.gait_sample_fps <= 30:
+            raise ValueError("GAIT_SAMPLE_FPS 必须在 [1, 30] 范围内")
         if not 0.0 <= self.face_codeformer_fidelity <= 1.0:
             raise ValueError("FACE_CODEFORMER_FIDELITY 必须在 [0, 1] 范围内")
         if self.event_evidence_max_chars < 4096:

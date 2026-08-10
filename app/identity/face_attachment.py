@@ -122,9 +122,6 @@ def attach_faces(
 
     candidates_by_tid: dict[int, list[dict]] = {}
     for tid, track in tracks.items():
-        if identities.get(tid, {}).get("skipped"):
-            identities[tid]["face"] = _empty_face_record("track_skipped")
-            continue
         candidates_by_tid[tid] = _legacy_candidates(tid, track, frames)
 
     evaluated: dict[int, list[dict]] = {tid: [] for tid in candidates_by_tid}
@@ -187,8 +184,6 @@ def attach_faces(
                 evaluated[tid].append(evidence)
 
     for tid, track in tracks.items():
-        if identities.get(tid, {}).get("skipped"):
-            continue
         options = evaluated.get(tid) or []
         if not options:
             error_rows = identities[tid].pop("face_candidate_errors", [])
@@ -304,7 +299,14 @@ def attach_faces(
         if match_ready:
             try:
                 face_vector = np.asarray(embedding, dtype=np.float32).reshape(-1)
-                can_enroll = bool(quality.get("can_enroll")) and finalized.get("match_source") == "original"
+                can_enroll = bool(
+                    quality.get("can_enroll")
+                    and finalized.get("match_source") == "original"
+                    and identities[tid].get(
+                        "enrollment_eligible",
+                        True,
+                    )
+                )
                 result = gallery_mod.with_gallery_locked(
                     face_sess,
                     face_mod.FACE_DIM,

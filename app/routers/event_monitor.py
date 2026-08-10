@@ -233,6 +233,7 @@ async def understand(
     sample: str | None = Form(None),
     file: UploadFile | None = File(None),
     fps: float = Form(2.0),
+    tracking_fps: float | None = Form(None),
     max_keyframes: int = Form(8),
     objective: str | None = Form(None),
     with_body: bool = Form(True),
@@ -263,6 +264,17 @@ async def understand(
     设置面板的模型/能力开关随本请求传入，用 settings.override 临时覆盖、仅本次生效。
     """
     requested_face_superres = face_superres or None
+    if not 0.5 <= fps <= 8:
+        raise HTTPException(400, "fps 必须在 [0.5, 8] 范围内")
+    effective_tracking_fps = float(
+        settings.event_tracking_fps
+        if tracking_fps is None
+        else tracking_fps
+    )
+    if not 1 <= effective_tracking_fps <= 30:
+        raise HTTPException(400, "tracking_fps 必须在 [1, 30] 范围内")
+    if effective_tracking_fps < fps:
+        raise HTTPException(400, "tracking_fps 不能低于语义 fps")
     if (
         face_codeformer_fidelity is not None
         and not 0.0 <= face_codeformer_fidelity <= 1.0
@@ -363,6 +375,8 @@ async def understand(
                     "reid_consistency_ratio": settings.reid_consistency_ratio,
                     "reid_top1_margin": settings.reid_top1_margin,
                     "track_backend": settings.track_backend,
+                    "tracking_fps": effective_tracking_fps,
+                    "semantic_fps": fps,
                     "analysis_model_requested": analysis_selection.requested,
                     "analysis_model_selected": analysis_selection.selected,
                     "gallery_seed": (
@@ -376,6 +390,7 @@ async def understand(
                     video_path,
                     run_dir,
                     fps=fps,
+                    tracking_fps=effective_tracking_fps,
                     run_llm=not dry_run,
                     with_body=with_body,
                     with_face=with_face,
