@@ -173,6 +173,42 @@ def test_split_subject_time_conflicts_breaks_overlapping_tracks() -> None:
     assert identities[2]["face"]["route_subject"] is None
 
 
+def test_rejected_named_cluster_assigns_unique_unknown_subjects() -> None:
+    tracks = {
+        1: {"first": 0, "last": 10},
+        2: {"first": 2, "last": 4},
+        3: {"first": 6, "last": 8},
+    }
+    identities = {
+        1: {
+            "subject_id": 1,
+            "decision": "hit",
+            "score": 0.95,
+            "db_identity": "Alice",
+        },
+        2: {
+            "subject_id": 1,
+            "decision": "hit",
+            "score": 0.7,
+            "db_identity": "Alice",
+        },
+        3: {
+            "subject_id": 1,
+            "decision": "hit",
+            "score": 0.75,
+            "db_identity": "Alice",
+        },
+    }
+
+    split_subject_time_conflicts(tracks, identities)
+
+    assert identities[1]["subject_id"] == 1
+    assert identities[1]["db_identity"] == "Alice"
+    assert identities[2]["subject_id"] != identities[3]["subject_id"]
+    assert identities[2]["db_identity"] is None
+    assert identities[3]["db_identity"] is None
+
+
 def test_merge_tracks_cross_route_records_agreement_across_body_face_gait() -> None:
     identities = {
         1: {

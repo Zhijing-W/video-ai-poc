@@ -397,30 +397,44 @@ def split_subject_time_conflicts(tracks: dict[int, dict], identities: dict[int, 
         clusters = [primary, *(cluster for cluster in clusters if cluster is not primary)]
 
         for idx, cluster in enumerate(clusters):
-            target_sid = sid if idx == 0 else next_sid
-            if idx > 0:
+            rejected_named_cluster = (
+                idx > 0
+                and any(
+                    identities[tid].get("db_identity")
+                    for tid in cluster
+                )
+            )
+            assignments = (
+                [([tid], next_sid + offset) for offset, tid in enumerate(cluster)]
+                if rejected_named_cluster
+                else [(cluster, sid if idx == 0 else next_sid)]
+            )
+            if rejected_named_cluster:
+                next_sid += len(cluster)
+            elif idx > 0:
                 next_sid += 1
-            for tid in cluster:
-                ident = identities[tid]
-                ident["subject_id"] = target_sid
-                ident["subject_conflict_split"] = True
-                ident["reused"] = False
-                if ident.get("decision") == "hit":
-                    ident["decision"] = "conflict_split"
-                if idx > 0 and ident.get("db_identity"):
-                    ident["known_identity_rejected"] = "temporal_overlap"
-                    ident["db_identity"] = None
-                    ident["route_subject"] = None
-                    ident["route_subject_ids"] = {}
-                    face = ident.get("face")
-                    if isinstance(face, dict):
-                        face["db_identity"] = None
-                        face["matched"] = False
-                        face["match_ready"] = False
-                        face["match_score"] = None
-                        face["face_subject_id"] = None
-                        face["route_subject"] = None
-                        face["conflict_rejected"] = True
+            for assigned_tracks, target_sid in assignments:
+                for tid in assigned_tracks:
+                    ident = identities[tid]
+                    ident["subject_id"] = target_sid
+                    ident["subject_conflict_split"] = True
+                    ident["reused"] = False
+                    if ident.get("decision") == "hit":
+                        ident["decision"] = "conflict_split"
+                    if idx > 0 and ident.get("db_identity"):
+                        ident["known_identity_rejected"] = "temporal_overlap"
+                        ident["db_identity"] = None
+                        ident["route_subject"] = None
+                        ident["route_subject_ids"] = {}
+                        face = ident.get("face")
+                        if isinstance(face, dict):
+                            face["db_identity"] = None
+                            face["matched"] = False
+                            face["match_ready"] = False
+                            face["match_score"] = None
+                            face["face_subject_id"] = None
+                            face["route_subject"] = None
+                            face["conflict_rejected"] = True
 
 def merge_tracks_cross_route(identities: dict[int, dict]) -> None:
     """跨 track 三路合并：人脸库 / 人形库 / 步态库 **任一路**认出同一人 → 并成一个 subject。
