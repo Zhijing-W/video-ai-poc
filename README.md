@@ -4,7 +4,7 @@ Turns surveillance videos into event timelines, alerts, and structured reports t
 
 [English](#english) | [中文](#中文)
 
-![Event Monitor logic flow](docs/phase4-logic-flow.png)
+![Event Monitor PoC architecture](docs/poc-architecture.png)
 
 ---
 
@@ -280,7 +280,7 @@ Runnable code under `experiment/` is included in CPU/GPU images; experiment data
 
 ### Experiments and documentation
 
-- [`docs/phase4-logic-flow.svg`](docs/phase4-logic-flow.svg): runtime logic flow.
+- [`docs/poc-architecture.svg`](docs/poc-architecture.svg): code-evidence PoC architecture (`phase4-logic-flow.*` kept as alias).
 - [`docs/face-quality-and-identity-fusion.md`](docs/face-quality-and-identity-fusion.md): face quality and identity aggregation.
 - [`experiment/face_blur_ablation/`](experiment/face_blur_ablation/): face-quality and multimodal identity experiments.
 - Local-only papers and licensed datasets belong under `data/external/`.
@@ -440,7 +440,7 @@ python scripts\download_models.py --include-optional-yolo
 
 ### 实验与复现说明
 
-- Phase 4 主流程图：[`docs/phase4-logic-flow.svg`](docs/phase4-logic-flow.svg)。
+- PoC 架构图（代码证据对齐）：[`docs/poc-architecture.svg`](docs/poc-architecture.svg)（`phase4-logic-flow.*` 为兼容别名）。
 - 人脸质量与身份逻辑：[`docs/face-quality-and-identity-fusion.md`](docs/face-quality-and-identity-fusion.md)。
 - 糊脸和多模态身份实验：[`experiment/face_blur_ablation/`](experiment/face_blur_ablation/)。
 - 论文和受许可约束的数据仅保存在本地 `data/external/`。

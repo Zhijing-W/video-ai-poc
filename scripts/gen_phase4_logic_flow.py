@@ -1,9 +1,15 @@
 # -*- coding: utf-8 -*-
-"""Generate the Phase 4 branching decision-tree logic-flow diagram.
+"""生成 PoC 架构图（中文可读、对齐真实流水线顺序）。
 
-Output:
-    docs/phase4-logic-flow.svg (canonical)
-    docs/phase4-logic-flow.png (preview)
+主路径（与 event_analysis_pipeline 一致）：
+  样片/上传 → 同步分析接口 → 固定帧率抽帧 → 检测跟踪
+  → 切事件时间段 → 人形/人脸/步态认人并融合
+  → 选关键帧 → 场景文字/物体（关键帧上）→ 打包 JSON
+  → 大模型理解 → 监控台展示
+
+输出：
+  docs/poc-architecture.svg / .png
+  docs/phase4-logic-flow.svg / .png（兼容旧文件名）
 """
 from __future__ import annotations
 
@@ -13,77 +19,60 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.font_manager import FontProperties
-from matplotlib.patches import FancyBboxPatch, Polygon
+from matplotlib.patches import FancyBboxPatch, Rectangle
 
 plt.rcParams["font.sans-serif"] = ["Microsoft YaHei", "SimHei", "DengXian"]
 plt.rcParams["axes.unicode_minus"] = False
+plt.rcParams["svg.fonttype"] = "path"
 
 BLUE = ("#CFE4FA", "#0078D4")
 ORANGE = ("#FFF4CE", "#F7630C")
 GREEN = ("#DFF6DD", "#107C10")
 PURPLE = ("#E8DAEF", "#5C2D91")
 TEAL = ("#C5F0F5", "#0C8599")
-GRAY = ("#E3E3E3", "#495057")
+GRAY = ("#EDEBE9", "#605E5C")
 RED = ("#FDE7E9", "#D13438")
-RESERVED = ("#F2F2F2", "#9AA0A6")
-P1 = ("#FFF4CE", "#F7630C")
-P2 = ("#E8DAEF", "#5C2D91")
-OPTIONAL = ("#E3E3E3", "#495057")
-CIRCLED_CJK_FONT_PATH = Path(r"C:\Windows\Fonts\NotoSansSC-VF.ttf")
-CIRCLED_CJK_FONT = (
-    FontProperties(fname=str(CIRCLED_CJK_FONT_PATH))
-    if CIRCLED_CJK_FONT_PATH.exists()
-    else FontProperties(family="Noto Sans SC")
-)
+AMBER = ("#FFF4CE", "#C19C00")
+MUTED = ("#F3F2F1", "#8A8886")
 
-# Wide readable canvas: preserve large text while keeping Phase 4 focused.
-FIG_W, FIG_H = 37.6, 38.0
-XMAX, YMAX = 2420, 2540
-FONT_SCALE = 2.25
-BADGE_FS = 12.5
-NODE_MIN_FS = 13.5
-NODE_TITLE_MIN_FS = 14.8
-NODE_DETAIL_MIN_FS = 11.8
-LABEL_MIN_FS = 12.5
-TITLE_FS = 26.0
-LEGEND_FS = 15.5
-PANEL_TITLE_FS = 16.0
-PANEL_BODY_FS = 13.0
-ANCHOR_FS = 13.0
+FIG_W, FIG_H = 28.0, 40.0
+XMAX, YMAX = 1800, 2580
+FONT_SCALE = 1.5
+TITLE_FS = 22.0
+SUB_FS = 12.0
+LEGEND_FS = 11.2
+PANEL_TITLE_FS = 12.5
+PANEL_BODY_FS = 10.3
+NODE_TITLE_MIN = 12.2
+NODE_DETAIL_MIN = 10.0
+LABEL_MIN = 10.2
 POINT_TO_DATA_Y = YMAX / (FIG_H * 0.97 * 72.0)
 
+BOXES: list[tuple[str, float, float, float, float]] = []
+TEXT_AREAS: list[tuple[str, list[object], float, float, float, float]] = []
 
-def scaled_font_size(fs: float, minimum: float) -> float:
+
+def scaled(fs: float, minimum: float) -> float:
     return max(fs * FONT_SCALE, minimum)
 
 
-def badge_font_size(fs: float) -> float:
-    return max(fs, BADGE_FS)
+def node_title_fs(fs: float) -> float:
+    return max(fs * FONT_SCALE * 1.05, NODE_TITLE_MIN)
 
 
-def node_title_font_size(fs: float) -> float:
-    return max(fs * FONT_SCALE * 1.08, NODE_TITLE_MIN_FS)
-
-
-def node_detail_font_size(fs: float) -> float:
-    return max(fs * FONT_SCALE * 0.82, NODE_DETAIL_MIN_FS)
+def node_detail_fs(fs: float) -> float:
+    return max(fs * FONT_SCALE * 0.82, NODE_DETAIL_MIN)
 
 
 fig, ax = plt.subplots(figsize=(FIG_W, FIG_H))
-fig.subplots_adjust(left=0.015, right=0.985, top=0.985, bottom=0.015)
+fig.subplots_adjust(left=0.02, right=0.98, top=0.985, bottom=0.015)
 ax.set_xlim(0, XMAX)
 ax.set_ylim(0, YMAX)
 ax.invert_yaxis()
 ax.axis("off")
 
-BOXES: list[tuple[str, float, float, float, float]] = []
-CONNECTORS: list[tuple[str, tuple[float, float], tuple[float, float]]] = []
-TEXT_AREAS: list[tuple[str, list[object], float, float, float, float]] = []
 
-
-def badge(cx: float, cy: float, text: str, color=ORANGE, fs: float = BADGE_FS) -> None:
-    """Small priority/status badge."""
+def badge(cx: float, cy: float, text: str, color=ORANGE, fs: float = 9.8) -> None:
     fc, ec = color
     ax.text(
         cx,
@@ -91,772 +80,369 @@ def badge(cx: float, cy: float, text: str, color=ORANGE, fs: float = BADGE_FS) -
         text,
         ha="center",
         va="center",
-        fontsize=badge_font_size(fs),
+        fontsize=max(fs, 9.8),
         fontweight="bold",
         color=ec,
         linespacing=1.05,
-        bbox=dict(boxstyle="round,pad=0.28", fc=fc, ec=ec, lw=1.35),
+        bbox=dict(boxstyle="round,pad=0.24", fc=fc, ec=ec, lw=1.15),
         zorder=7,
     )
 
 
-def node_text(
-    cx: float,
-    cy: float,
-    w: float,
-    h: float,
-    text: str,
-    fs: float,
-    *,
-    reserved: bool = False,
-    fontproperties: FontProperties | None = None,
-) -> list[object]:
-    """Draw a node title line plus smaller detail lines."""
+def node_text(cx: float, cy: float, text: str, fs: float, *, muted: bool = False) -> list[object]:
     lines = text.splitlines()
     title = lines[0] if lines else ""
     details = "\n".join(lines[1:])
-    title_fs = node_title_font_size(fs)
-    detail_fs = node_detail_font_size(fs)
-    title_color = "#4A4A4A" if reserved else "#111111"
-    detail_color = "#666666" if reserved else "#333333"
+    title_color = "#605E5C" if muted else "#111111"
+    detail_color = "#8A8886" if muted else "#333333"
+    tfs = node_title_fs(fs)
+    dfs = node_detail_fs(fs)
     if not details:
         return [
-            ax.text(
-                cx,
-                cy,
-                title,
-                ha="center",
-                va="center",
-                fontsize=title_fs,
-                fontweight="bold",
-                color=title_color,
-                fontproperties=fontproperties,
-                zorder=4,
-            )
+            ax.text(cx, cy, title, ha="center", va="center", fontsize=tfs,
+                    fontweight="bold", color=title_color, zorder=4)
         ]
-
     detail_lines = len(details.splitlines())
-    title_line_pt = title_fs * 1.08
-    gap_pt = max(2.0, detail_fs * 0.18)
-    detail_block_pt = detail_lines * detail_fs * 1.15
-    total_data_h = (title_line_pt + gap_pt + detail_block_pt) * POINT_TO_DATA_Y
-    top_y = cy - total_data_h / 2
-    detail_y = top_y + (title_line_pt + gap_pt) * POINT_TO_DATA_Y
+    title_pt = tfs * 1.08
+    gap_pt = max(2.0, dfs * 0.18)
+    detail_pt = detail_lines * dfs * 1.15
+    total_h = (title_pt + gap_pt + detail_pt) * POINT_TO_DATA_Y
+    top_y = cy - total_h / 2
+    detail_y = top_y + (title_pt + gap_pt) * POINT_TO_DATA_Y
     return [
-        ax.text(
-            cx,
-            top_y,
-            title,
-            ha="center",
-            va="top",
-            fontsize=title_fs,
-            fontweight="bold",
-            color=title_color,
-            fontproperties=fontproperties,
-            zorder=4,
-        ),
-        ax.text(
-            cx,
-            detail_y,
-            details,
-            ha="center",
-            va="top",
-            fontsize=detail_fs,
-            color=detail_color,
-            linespacing=1.15,
-            fontproperties=fontproperties,
-            zorder=4,
-        ),
+        ax.text(cx, top_y, title, ha="center", va="top", fontsize=tfs,
+                fontweight="bold", color=title_color, zorder=4),
+        ax.text(cx, detail_y, details, ha="center", va="top", fontsize=dfs,
+                color=detail_color, linespacing=1.15, zorder=4),
     ]
 
 
 def rbox(
-    cx: float,
-    cy: float,
-    w: float,
-    h: float,
-    text: str,
-    col,
-    fs: float = 7.4,
-    *,
-    lw: float = 1.8,
-    ls: str = "-",
-    reserved: bool = False,
-    badge_text: str | None = None,
-    badge_color=ORANGE,
-    name: str | None = None,
-    fontproperties: FontProperties | None = None,
-) -> None:
-    """Rounded box with title/detail text hierarchy."""
-    fc, ec = RESERVED if reserved else col
+    cx, cy, w, h, text, col, fs=7.0, *, lw=1.8, ls="-", muted=False,
+    badge_text=None, badge_color=GREEN, name=None,
+):
+    fc, ec = MUTED if muted else col
     ax.add_patch(
         FancyBboxPatch(
-            (cx - w / 2, cy - h / 2),
-            w,
-            h,
+            (cx - w / 2, cy - h / 2), w, h,
             boxstyle="round,pad=0.2,rounding_size=5.0",
-            fc=fc,
-            ec=ec,
-            lw=lw,
-            ls="--" if reserved else ls,
-            zorder=3,
+            fc=fc, ec=ec, lw=lw, ls=ls, zorder=3,
         )
     )
-    text_objs = node_text(cx, cy, w, h, text, fs, reserved=reserved, fontproperties=fontproperties)
+    text_objs = node_text(cx, cy, text, fs, muted=muted)
     if name:
         BOXES.append((name, cx, cy, w, h))
         TEXT_AREAS.append((name, text_objs, cx, cy, w, h))
     if badge_text:
-        badge(cx + w / 2 - 36, cy - h / 2 - 8, badge_text, badge_color, fs=BADGE_FS)
+        badge(cx + w / 2 - 48, cy - h / 2 + 14, badge_text, badge_color, fs=9.2)
 
 
-def reserved_box(
-    cx: float,
-    cy: float,
-    w: float,
-    h: float,
-    text: str,
-    priority: str,
-    fs: float = 6.8,
-    *,
-    name: str | None = None,
-) -> None:
-    color = P1 if priority == "P1" else P2 if priority == "P2" else OPTIONAL
-    rbox(cx, cy, w, h, text, GRAY, fs, reserved=True, badge_text=priority, badge_color=color, name=name)
-
-
-def diamond(
-    cx: float,
-    cy: float,
-    w: float,
-    h: float,
-    text: str,
-    col,
-    fs: float = 7.0,
-    *,
-    reserved: bool = False,
-    badge_text: str | None = None,
-    name: str | None = None,
-) -> None:
-    """Diamond decision node with title/detail text hierarchy."""
-    fc, ec = RESERVED if reserved else col
-    pts = [(cx, cy - h / 2), (cx + w / 2, cy), (cx, cy + h / 2), (cx - w / 2, cy)]
-    ax.add_patch(Polygon(pts, closed=True, fc=fc, ec=ec, lw=1.8, ls="--" if reserved else "-", zorder=3))
-    text_objs = node_text(cx, cy, w, h, text, fs, reserved=reserved)
-    if name:
-        BOXES.append((name, cx, cy, w, h))
-        TEXT_AREAS.append((name, text_objs, cx, cy, w, h))
-    if badge_text:
-        badge(cx + w / 2 - 30, cy - h / 2 - 8, badge_text, P1 if badge_text == "P1" else P2, fs=BADGE_FS)
-
-
-def arrow(
-    x1: float,
-    y1: float,
-    x2: float,
-    y2: float,
-    label: str | None = None,
-    *,
-    fs: float = 6.3,
-    ls: str = "-",
-    color: str = "#666666",
-    lw: float = 1.45,
-    rad: float = 0.0,
-) -> None:
-    """Arrow with an optional white-background label."""
-    CONNECTORS.append((label or "", (x1, y1), (x2, y2)))
-    ax.annotate(
-        "",
-        xy=(x2, y2),
-        xytext=(x1, y1),
-        arrowprops=dict(
-            arrowstyle="-|>",
-            color=color,
-            lw=lw,
-            linestyle=ls,
-            shrinkA=1.5,
-            shrinkB=2.0,
-            connectionstyle=f"arc3,rad={rad}",
-        ),
-        zorder=2,
-    )
-    if label:
-        ax.text(
-            (x1 + x2) / 2,
-            (y1 + y2) / 2,
-            label,
-            fontsize=scaled_font_size(fs, LABEL_MIN_FS),
-            color="#333333" if ls == "-" else "#777777",
-            ha="center",
-            va="center",
-            bbox=dict(boxstyle="round,pad=0.16", fc="white", ec="none", alpha=0.88),
-            zorder=6,
-        )
-
-
-def route_arrow(
-    points: list[tuple[float, float]],
-    label: str | None = None,
-    *,
-    label_xy: tuple[float, float] | None = None,
-    fs: float = 6.3,
-    ls: str = "-",
-    color: str = "#666666",
-    lw: float = 1.45,
-) -> None:
-    """Polyline connector; only the final segment has an arrowhead."""
-    if len(points) < 2:
-        raise ValueError("route_arrow needs at least two points")
-    for p1, p2 in zip(points[:-1], points[1:]):
-        CONNECTORS.append((label or "", p1, p2))
-    for (x1, y1), (x2, y2) in zip(points[:-2], points[1:-1]):
-        ax.plot([x1, x2], [y1, y2], color=color, lw=lw, ls=ls, zorder=2)
-    x1, y1 = points[-2]
-    x2, y2 = points[-1]
-    ax.annotate(
-        "",
-        xy=(x2, y2),
-        xytext=(x1, y1),
-        arrowprops=dict(arrowstyle="-|>", color=color, lw=lw, linestyle=ls, shrinkA=1.5, shrinkB=2.0),
-        zorder=2,
-    )
-    if label:
-        lx, ly = label_xy if label_xy is not None else ((points[0][0] + points[-1][0]) / 2, (points[0][1] + points[-1][1]) / 2)
-        ax.text(
-            lx,
-            ly,
-            label,
-            fontsize=scaled_font_size(fs, LABEL_MIN_FS),
-            color="#333333" if ls == "-" else "#777777",
-            ha="center",
-            va="center",
-            bbox=dict(boxstyle="round,pad=0.16", fc="white", ec="none", alpha=0.88),
-            zorder=6,
-        )
-
-
-def side_panel(x: float, y: float, w: float, h: float, title: str, lines: list[str]) -> None:
-    """Explanatory panel with left-aligned bullets."""
+def container(x, y, w, h, title, color, *, dashed=False, fill_alpha=0.12):
+    fc = matplotlib.colors.to_rgba(color[0], fill_alpha)
     ax.add_patch(
         FancyBboxPatch(
-            (x, y),
-            w,
-            h,
+            (x, y), w, h,
+            boxstyle="round,pad=0.5,rounding_size=8.0",
+            fc=fc, ec=color[1], lw=2.0,
+            ls="--" if dashed else "-", zorder=0.4,
+        )
+    )
+    ax.text(
+        x + w / 2, y + 22, title,
+        ha="center", va="center", fontsize=13.5, fontweight="bold", color=color[1],
+        bbox=dict(boxstyle="round,pad=0.2", fc="white", ec=color[1], lw=1.0, alpha=0.95),
+        zorder=2.5,
+    )
+
+
+def side_panel(x, y, w, h, title, lines, color=GRAY):
+    ax.add_patch(
+        FancyBboxPatch(
+            (x, y), w, h,
             boxstyle="round,pad=0.35,rounding_size=4.0",
-            fc="#FAFAFA",
-            ec=GRAY[1],
-            lw=1.5,
-            zorder=1,
+            fc="#FAFAFA", ec=color[1], lw=1.5, zorder=1,
         )
     )
-    ax.text(x + w / 2, y + 30, title, ha="center", va="center", fontsize=PANEL_TITLE_FS, fontweight="bold", zorder=2)
-    yy = y + 68
+    ax.text(x + w / 2, y + 24, title, ha="center", va="center",
+            fontsize=PANEL_TITLE_FS, fontweight="bold", color=color[1], zorder=2)
+    yy = y + 54
     for line in lines:
-        ax.text(x + 18, yy, line, ha="left", va="top", fontsize=PANEL_BODY_FS, color="#222222", linespacing=1.2, zorder=2)
-        yy += 48
-    BOXES.append((f"panel:{title}", x + w / 2, y + h / 2, w, h))
+        ax.text(x + 14, yy, line, ha="left", va="top",
+                fontsize=PANEL_BODY_FS, color="#222222", linespacing=1.25, zorder=2)
+        yy += 32
 
 
-def identity_container(x: float, y: float, w: float, h: float, title: str) -> None:
-    """Large non-semantic grouping container for the person-identity provider cluster."""
-    ax.add_patch(
-        FancyBboxPatch(
-            (x, y),
-            w,
-            h,
-            boxstyle="round,pad=0.6,rounding_size=10.0",
-            fc=(0.92, 0.84, 0.96, 0.16),
-            ec=PURPLE[1],
-            lw=2.4,
-            ls="-",
-            zorder=0.4,
+def arrow(x1, y1, x2, y2, label=None, *, fs=6.0, ls="-", color="#666666", lw=1.45):
+    ax.annotate(
+        "", xy=(x2, y2), xytext=(x1, y1),
+        arrowprops=dict(arrowstyle="-|>", color=color, lw=lw, linestyle=ls,
+                        shrinkA=1.5, shrinkB=2.0),
+        zorder=2,
+    )
+    if label:
+        ax.text(
+            (x1 + x2) / 2, (y1 + y2) / 2, label,
+            fontsize=scaled(fs, LABEL_MIN),
+            color="#333333" if ls == "-" else "#777777",
+            ha="center", va="center",
+            bbox=dict(boxstyle="round,pad=0.12", fc="white", ec="none", alpha=0.9),
+            zorder=6,
         )
-    )
-    ax.text(
-        x + w / 2,
-        y + 28,
-        title,
-        ha="center",
-        va="center",
-        fontsize=17.0,
-        fontweight="bold",
-        color=PURPLE[1],
-        bbox=dict(boxstyle="round,pad=0.24", fc="white", ec=PURPLE[1], lw=1.0, alpha=0.92),
-        zorder=2.6,
-    )
 
 
-def scene_lane_container(x: float, y: float, w: float, h: float, title: str) -> None:
-    """Mixed-status scene provider lane container."""
-    ax.add_patch(
-        FancyBboxPatch(
-            (x, y),
-            w,
-            h,
-            boxstyle="round,pad=0.6,rounding_size=10.0",
-            fc=(0.90, 0.96, 0.90, 0.18),
-            ec=GREEN[1],
-            lw=2.2,
-            ls="-",
-            zorder=0.35,
-        )
-    )
-    ax.text(
-        x + w / 2,
-        y + 28,
-        title,
-        ha="center",
-        va="center",
-        fontsize=16.2,
-        fontweight="bold",
-        color=GREEN[1],
-        bbox=dict(boxstyle="round,pad=0.24", fc="white", ec=GREEN[1], lw=1.0, alpha=0.94),
-        zorder=2.6,
-    )
+def legend_swatch(x, y, color, label, ls="-"):
+    ax.add_patch(Rectangle((x, y - 8), 26, 16, fc=color[0], ec=color[1], lw=1.3, ls=ls, zorder=5))
+    ax.text(x + 34, y, label, ha="left", va="center", fontsize=LEGEND_FS, color="#333", zorder=5)
 
 
-# Title / legend
+# =============================================================================
+# 标题
+# =============================================================================
+CX = XMAX / 2
+MAIN_W = 780
+
+ax.text(CX, 28, "事件监控台 · PoC 架构（已实现能力）",
+        ha="center", va="center", fontsize=TITLE_FS, fontweight="bold")
 ax.text(
-    XMAX / 2,
-    35,
-    "Phase 4 · 身份感知 · 多帧事件理解 logic flow（运行时主链路 → 事件报告）",
-    ha="center",
-    va="center",
-    fontsize=TITLE_FS,
-    fontweight="bold",
+    CX, 60,
+    "样片/上传 → 同步分析 → 抽帧检测跟踪 → 切事件段 → 认人融合 → 选关键帧 → 场景文字/物体 → 打包给大模型 → 页面展示",
+    ha="center", va="center", fontsize=SUB_FS, color="#444",
 )
 ax.text(
-    XMAX / 2,
-    68,
-    "蓝=输入/选帧  绿=本地CV  紫=人物身份  橙=事件窗/关键帧  红=多模态LLM  青=事件报告  | 实线=已实现  虚线灰=预留未实现(P1/P2)",
-    ha="center",
-    va="center",
-    fontsize=LEGEND_FS,
-    color="#444444",
+    CX, 88,
+    "绿标=默认开启　琥珀标=已实现但默认关闭（设置里可开）　灰区=规划未做　说明用语面向答辩，不用代码变量名",
+    ha="center", va="center", fontsize=SUB_FS - 0.5, color="#666",
 )
 
-GCX = XMAX / 2
-CX = 900
-MAIN_W = 760
+legend_swatch(160, 120, GREEN, "默认开启")
+legend_swatch(360, 120, AMBER, "默认关闭（可开）")
+legend_swatch(620, 120, TEAL, "接口 / 页面输出")
+legend_swatch(900, 120, RED, "大模型（Azure）")
+legend_swatch(1180, 120, MUTED, "规划未做", ls="--")
 
-# ---------------- 1. Input and local CV spine ----------------
-rbox(GCX, 130, MAIN_W, 62, "① 输入：视频流 / 视频文件\n本地把视频当“流”逐帧处理", BLUE, 8.1, name="S1")
-rbox(
-    GCX,
-    215,
-    MAIN_W,
-    64,
-    "② 选帧①定时密采样 extract_frames(fps=2)\n抽成时序帧；后面只把关键帧喂给LLM",
-    ORANGE,
-    7.2,
-    badge_text="选帧①",
-    name="S2",
-)
-rbox(
-    GCX,
-    320,
-    MAIN_W,
-    74,
-    "③ 便宜第一遍·逐帧本地CV：YOLO检测 + BoT-SORT+ReID / ByteTrack → 稳定 track_id\n只判占用/轨迹/清晰度指纹（喂给⑥分窗）；重活(人脸/步态)推迟到分窗后",
-    GREEN,
-    7.2,
-    name="S3",
-)
-rbox(
-    GCX,
-    435,
-    MAIN_W,
-    64,
-    "④ 语义信号抽取层\n从检测/跟踪/身份结果生成结构化事件信号，不靠 ffmpeg 像素场景切换",
-    GREEN,
-    7.4,
-    name="S4",
-)
-arrow(GCX, 153, GCX, 181)
-arrow(GCX, 247, GCX, 283)
-arrow(GCX, 357, GCX, 403)
-# ④ → ⑤ 流式分窗（前置：先用便宜的 YOLO 占用切窗，重活 LANE A 只在窗内跑）→ 再分到 LANE A / LANE D
-arrow(GCX, 467, GCX, 486)
-diamond(GCX, 524, 320, 74, "⑤ 流式分窗\n_split_windows", ORANGE, 6.6, badge_text="窗=1次LLM", name="S5win")
-rbox(GCX - 455, 524, 300, 52, "关窗A：活动结束\n连续 quiet 秒无人", ORANGE, 5.5, name="S5a")
-rbox(GCX + 430, 524, 260, 56, "关窗B：时长封顶\n防长事件欠采样", ORANGE, 5.5, name="S5b")
-arrow(GCX - 160, 524, GCX - 305, 524)
-arrow(GCX + 160, 524, GCX + 300, 524)
-ax.plot([GCX, GCX], [561, 578], color="#666666", lw=1.45, zorder=2)
-CONNECTORS.append(("provider split trunk", (GCX, 561), (GCX, 578)))
-route_arrow([(GCX, 578), (CX, 578), (CX, 650)], "person lane · track门控", label_xy=(1000, 560), fs=6.1)
-route_arrow([(GCX, 578), (2055, 578), (2055, 662)], "scene lane", label_xy=(1625, 560), fs=6.1, color=GREEN[1], lw=1.25)
+# =============================================================================
+# 1. 入口与设置
+# =============================================================================
+rbox(280, 195, 340, 88,
+     "选择样片 或 上传视频\n支持常见视频格式\n事件监控台首页入口",
+     BLUE, 6.0, badge_text="默认开启", badge_color=GREEN, name="IN")
+rbox(700, 195, 300, 88,
+     "分析关注点（可选）\n用户用一句话说明重点\n会写进大模型提示词",
+     BLUE, 5.9, badge_text="可选", badge_color=AMBER, name="FOCUS")
+rbox(1100, 195, 300, 88,
+     "仅本地分析\n先不调用大模型\n需要时再补做理解",
+     BLUE, 5.9, badge_text="默认关闭", badge_color=AMBER, name="DRY")
+rbox(1480, 195, 240, 88,
+     "同时只跑一路分析\n避免显存/算力打架",
+     TEAL, 5.9, badge_text="已实现", name="LOCK")
 
-# ---------------- 2. Person identity cluster ----------------
-identity_container(100, 600, 1600, 980, "LANE A — 人物身份 provider（分窗后·按 track·门控通过才跑，不逐帧；太短/太低质 track 整条跳过）")
-rbox(
-    430,
-    740,
-    380,
-    96,
-    "A1 人脸 face.py（每 track 最佳帧）\nassess_quality 分级：模糊(拉普拉斯+关键点置信度+可插拔深度FIQA)\n+角度(yaw/pitch，低头更严)；InsightFace/AdaFace",
-    PURPLE,
-    5.4,
-    name="A1",
-)
-rbox(
-    900,
-    740,
-    310,
-    78,
-    "A2 人形 ReID（每 track 最佳帧）\nOSNet 512d → 主体记忆库 gallery",
-    PURPLE,
-    6.3,
-    name="A2",
-)
-rbox(
-    1370,
-    750,
-    360,
-    88,
-    "A3 步态 gait.py\nSkeletonGait++ + GREW 权重；分窗后只在活动窗帧采序列；无脸/背身兜底",
-    PURPLE,
-    6.2,
-    name="A3",
-)
+rbox(CX, 330, 1480, 100,
+     "本次分析参数（只对这一次生效，不写进配置文件）\n"
+     "开关：人形识别 / 人脸 / 步态 / 场景文字 / 物体\n"
+     "可选模型：跟踪器、人脸模型、人脸清晰化、人形特征模型\n"
+     "其它：抽帧频率、每段最多关键帧数、单段最长秒数、同人合并阈值",
+     BLUE, 5.5, badge_text="已实现", name="SET")
 
-arrow(CX - 120, 650, 430, 698)
-arrow(CX, 650, 900, 698)
-arrow(CX + 120, 650, 1370, 708, color=PURPLE[1], lw=1.55)
+rbox(CX, 460, 1480, 88,
+     "同步分析接口（一次请求跑完整段视频）\n"
+     "主接口：提交视频并返回完整结果　｜　可先本地分析，再补做大模型理解\n"
+     "另有：样片列表、可用模型列表、健康检查",
+     TEAL, 5.6, badge_text="默认开启", badge_color=GREEN, name="API")
 
-# A1: face quality fork + deployed blurry-face arsenal.
-diamond(430, 870, 190, 82, "人脸质量?\n角度yaw/pitch·模糊", ORANGE, 6.4, name="A1Q")
-arrow(430, 779, 430, 826)
-rbox(300, 955, 220, 58, "清晰(clear)\n入人脸库 / 满权重", PURPLE, 6.0, name="A1clear")
-rbox(560, 955, 230, 58, "糊/侧/低质(marginal/poor)\n降权；只查不建", PURPLE, 6.0, name="A1blur")
-arrow(385, 856, 300, 926, "clear", fs=5.5)
-arrow(475, 856, 560, 926, "marginal/poor", fs=5.5)
-rbox(
-    560,
-    1075,
-    270,
-    74,
-    "低质脸增强/降级策略\n糊脸触发GFP-GAN(非极端侧脸)；软性连续降权\nAdaFace/3D-68 可开关",
-    PURPLE,
-    5.0,
-    badge_text="已接入",
-    badge_color=GREEN,
-    name="FaceEnhance",
-)
-rbox(
-    430,
-    1160,
-    430,
-    72,
-    "人脸 gallery\n清晰脸建档/高置信命中；糊脸防污染",
-    PURPLE,
-    5.9,
-    name="FaceGallery",
-)
-arrow(300, 984, 365, 1127, "入库", fs=5.3, color=PURPLE[1], lw=1.1)
-arrow(560, 984, 560, 1038, "增强/降权", fs=5.3, color=PURPLE[1], lw=1.1)
-arrow(560, 1112, 495, 1127, "查库", fs=5.3, color=PURPLE[1], lw=1.1)
+arrow(280, 239, 420, 280)
+arrow(700, 239, 700, 280)
+arrow(1100, 239, 980, 280)
+arrow(1480, 239, 1320, 280)
+arrow(CX, 380, CX, 416)
+arrow(CX, 504, CX, 540)
 
-# A2: body ReID decision and session stitching.
-diamond(900, 870, 190, 82, "gallery\n裁决", ORANGE, 6.6, name="A2Q")
-arrow(900, 779, 900, 826)
-rbox(800, 955, 205, 58, "hit/new\n命中复用 / 新建档", PURPLE, 6.0, name="HitNew")
-rbox(1040, 955, 205, 58, "grey 灰区\n待会话内裁决", PURPLE, 6.0, name="Grey")
-arrow(865, 856, 800, 926, "hit/new", fs=5.5)
-arrow(935, 856, 1040, 926, "grey", fs=5.5)
-rbox(
-    1040,
-    1085,
-    300,
-    68,
-    "灰区/低质轨迹缝合 _stitch_orphans\n时间不重叠才可并；本地subject用高阈值防误并",
-    PURPLE,
-    5.7,
-    name="Stitch",
-)
-arrow(1040, 984, 1040, 1048)
+# =============================================================================
+# 2. 密采样主链：抽帧 → 检测跟踪 → 事件信号 → 切段
+# =============================================================================
+rbox(CX, 590, MAIN_W, 82,
+     "① 按固定帧率抽帧（默认约每秒 2 帧）\n把整段视频变成有序图片序列，供后续跟踪与认人\n（另有智能抽帧函数，但未接入本主流程）",
+     ORANGE, 5.7, badge_text="默认开启", badge_color=GREEN, name="FPS")
+rbox(CX, 710, MAIN_W, 86,
+     "② 行人检测 + 多目标跟踪\n检测人/物，并跨帧保持同一个跟踪编号\n可选跟踪算法；默认带外观辅助，遮挡交叉更稳",
+     GREEN, 5.6, badge_text="默认开启", name="MOT")
+rbox(CX, 830, MAIN_W, 82,
+     "③ 生成语义事件信号\n例如：新人出现、人离开、人数变化、新物体出现、认出熟人\n这些信号用来切时间段、挑关键帧，不是直接当最终报告",
+     GREEN, 5.5, badge_text="默认开启", name="EVT")
+rbox(CX, 950, MAIN_W, 92,
+     "④ 切成若干「事件时间段」\n规则一：画面连续一段时间没人/没活动 → 结束本段\n规则二：单段太长（默认约 30 秒）→ 强制截断，避免一段塞太多内容\n全程都安静时：整段视频仍作为一段，方便描述空场景",
+     ORANGE, 5.4, badge_text="默认开启", badge_color=GREEN, name="WIN")
 
-# A3: gait gallery.
-rbox(
-    1370,
-    955,
-    300,
-    68,
-    "步态 gallery\n姿态+剪影序列 → gait subject",
-    PURPLE,
-    5.8,
-    name="GaitGallery",
-)
-arrow(1370, 794, 1370, 918, "步态序列", fs=5.3, color=PURPLE[1], lw=1.1)
+arrow(CX, 631, CX, 667)
+arrow(CX, 753, CX, 789)
+arrow(CX, 871, CX, 904)
+arrow(CX, 996, CX, 1035)
 
-# Cross-route merge and identity confidence.
-rbox(
-    CX,
-    1305,
-    1120,
-    118,
-    "跨 track 三路合并 _merge_tracks_cross_route\n"
-    "输入：每条 track 的 body_sid / clear_face_sid / gait_sid\n"
-    "并查集：union(ti,tj) if 任一路 route_id 相同；canonical=已有body subject最小值，否则新建\n"
-    "输出：统一 subject_id + merge_routes / merge_agree",
-    PURPLE,
-    5.2,
-    badge_text="已实现",
-    badge_color=GREEN,
-    name="CrossRouteMerge",
-)
-rbox(
-    CX,
-    1435,
-    1120,
-    88,
-    "身份置信汇聚 score_identity_confidence\n"
-    "confidence=Σ(score×weight)/Σweight+agree_bonus；人脸权重=软性连续 0.5×(0.3+0.7×质量分)\n"
-    "输出 fused{confidence,resolved,primary,sources}，给 LLM 解释身份可靠性",
-    PURPLE,
-    5.6,
-    badge_text="已实现",
-    badge_color=GREEN,
-    name="AConv",
-)
-route_arrow([(430, 1196), (430, 1225), (560, 1225), (560, 1243)], "clear face id", label_xy=(505, 1216), fs=5.1, color=PURPLE[1], lw=1.1)
-route_arrow([(800, 984), (800, 1135), (760, 1135), (760, 1243)], "body id", label_xy=(745, 1115), fs=5.1, color=PURPLE[1], lw=1.1)
-route_arrow([(1040, 1119), (1040, 1178), (980, 1178), (980, 1243)], "stitched/body", label_xy=(1060, 1170), fs=5.1, color=PURPLE[1], lw=1.1)
-route_arrow([(1370, 988), (1370, 1225), (1240, 1225), (1240, 1243)], "gait id", label_xy=(1395, 1095), fs=5.1, color=PURPLE[1], lw=1.1)
-arrow(CX, 1364, CX, 1389, "统一 subject_id", fs=5.4, color=PURPLE[1], lw=1.25)
+# =============================================================================
+# 3. 认人（密采样/轨迹级，不是关键帧级）
+# =============================================================================
+container(50, 1050, 1700, 430,
+          "⑤ 人物身份识别（在跟踪轨迹上做；人脸/人形各选自己的最佳帧；步态用时间段内序列）",
+          PURPLE)
 
-# ---------------- Scene-level provider lane ----------------
-scene_lane_container(1775, 600, 560, 640, "LANE D — 场景级 provider（OCR + 物体/包裹，已接入）")
-rbox(
-    2055,
-    705,
-    500,
-    106,
-    "物体/包裹检测\n复用 tracker.track_objects 全类别 → 收 OBJECT_CLASSES 非人目标(bag/suitcase/车)\nCOCO 无快递箱类→近似；品牌靠 OCR+LLM 看图",
-    GREEN,
-    4.95,
-    badge_text="已实现",
-    badge_color=GREEN,
-    name="D1Object",
-)
-rbox(
-    1885,
-    910,
-    280,
-    112,
-    "OCR 场景文字\napp/ocr.py\nRapidOCR/PaddleOCR\ntext + bbox",
-    GREEN,
-    5.0,
-    badge_text="已实现",
-    badge_color=GREEN,
-    name="D2OCR",
-)
-rbox(
-    2225,
-    910,
-    280,
-    112,
-    "物体轨迹\nobject_tracks 跨帧\nframe#@ts + 方向\nOBJECT_MIN_FRAMES",
-    GREEN,
-    4.8,
-    badge_text="已实现",
-    badge_color=GREEN,
-    name="D3Track",
-)
-rbox(
-    2055,
-    1168,
-    500,
-    96,
-    "场景级 scene_context + object_context\nOCR scene_context + 物体 object_context（frame#@ts 对齐人物 grounding）\n不进 subject_id / gallery / fusion；并列喂 LLM",
-    GREEN,
-    4.75,
-    badge_text="已实现",
-    badge_color=GREEN,
-    name="DOut",
-)
-arrow(2225, 758, 2225, 854, "object boxes", fs=4.8, color=GREEN[1], lw=1.25)
-arrow(1885, 966, 1950, 1120, "scene_context", fs=4.8, color=GREEN[1], lw=1.25)
-arrow(2225, 966, 2160, 1120, "object_context", fs=4.8, color=GREEN[1], lw=1.25)
-route_arrow(
-    [(2055, 1216), (2055, 1660), (GCX, 1660)],
-    "scene/object signals",
-    label_xy=(1905, 1640),
-    fs=5.0,
-    color=GREEN[1],
-    lw=1.25,
-)
+rbox(300, 1160, 400, 118,
+     "人形特征识别\n每条轨迹选「身体最清晰」的一帧\n提特征并查询/登记身份库\n可选多种特征模型（默认 OSNet 路线）",
+     PURPLE, 5.3, badge_text="默认开启", badge_color=GREEN, name="BODY")
+rbox(780, 1160, 400, 118,
+     "人脸识别\n另选「脸最合适」的候选帧（不复用身体帧）\n默认 ArcFace，可切 AdaFace\n可选人脸清晰化；侧脸几何线索可开",
+     PURPLE, 5.3, badge_text="默认关闭", badge_color=AMBER, name="FACE")
+rbox(1260, 1160, 400, 118,
+     "步态识别\n不是单帧，而是时间段内的走路序列\n用姿态 + 剪影提步态特征\n无脸/背身时作补充身份信号",
+     PURPLE, 5.3, badge_text="默认关闭", badge_color=AMBER, name="GAIT")
 
-# ---------------- 3. Event windows, LLM, report ----------------
-rbox(
-    GCX,
-    1740,
-    MAIN_W,
-    66,
-    "⑥ 统一结构化事件信号总线\nperson: new_track/track_left/count_change/identity_hit\nOCR + 物体信号：选帧后加入 LLM",
-    ORANGE,
-    5.75,
-    name="S5",
-)
-route_arrow([(CX, 1479), (CX, 1660), (GCX, 1660)], "person signals", label_xy=(1045, 1640), fs=5.2, color=PURPLE[1], lw=1.15)
-arrow(GCX, 1660, GCX, 1707)   # 各 provider 信号汇聚 → ⑥ 信号总线
-# 分窗已前置到 LANE A 之前；信号总线汇聚各 provider 事件后，逐窗做选帧②
-arrow(GCX, 1773, GCX, 1863, "逐窗处理")
+rbox(400, 1360, 520, 100,
+     "本次分析身份库（仅本次有效）\n同一次分析里记住见过的人\n多人脸/多角度可记多条特征\n分析结束即清空，不跨视频长期存",
+     PURPLE, 5.4, badge_text="默认开启", badge_color=GREEN, name="FAISS")
+rbox(1100, 1360, 560, 100,
+     "身份汇总到「同一个人」\n同视频轨迹断裂可尝试缝合\n人脸/人形/步态任一路对上可合并\n输出统一身份编号 + 可信度说明",
+     PURPLE, 5.3, badge_text="默认开启", badge_color=GREEN, name="FUSE")
 
-rbox(
-    GCX,
-    1900,
-    MAIN_W,
-    74,
-    "⑦ 选帧②事件驱动关键帧 select_keyframes（供 LLM 叙述；身份已在 LANE A 用每track最佳帧认完）\n事件帧必留 + 每 track 最佳帧 + 相邻去重；保时序并限制关键帧数量",
-    ORANGE,
-    6.4,
-    badge_text="选帧②",
-    name="S7",
-)
+arrow(300, 1219, 400, 1310, color=PURPLE[1], lw=1.2)
+arrow(780, 1219, 700, 1310, color=PURPLE[1], lw=1.2)
+arrow(1260, 1219, 1260, 1310, color=PURPLE[1], lw=1.2)
+arrow(400, 1410, 700, 1495, color=PURPLE[1], lw=1.15)
+arrow(1100, 1410, 980, 1495, color=PURPLE[1], lw=1.15)
+arrow(CX, 1035, CX, 1080)
 
-rbox(
-    GCX,
-    2030,
-    MAIN_W,
-    75,
-    "⑧ 多 provider grounding 打包\n人物：identity_context + bbox/center/trajectory\nOCR/场景：scene_context + object_context(物体+轨迹)；并列喂 LLM",
-    PURPLE,
-    5.55,
-    name="S8",
-)
-arrow(GCX, 1937, GCX, 1993)
+# =============================================================================
+# 4. 选关键帧 → 场景旁路 → 打包 → 大模型
+# =============================================================================
+rbox(CX, 1560, MAIN_W + 40, 88,
+     "⑥ 为每个事件时间段挑选关键帧（准备给大模型看的图）\n优先保留有事件的帧、每人轨迹代表帧，并去掉过于相似的相邻帧\n目的：少给大模型几张图，而不是丢掉前面的跟踪/认人结果",
+     ORANGE, 5.4, badge_text="默认开启", badge_color=GREEN, name="KF")
 
-rbox(
-    GCX,
-    2160,
-    MAIN_W,
-    92,
-    "⑨ understand_event 多模态 LLM 跨帧事件理解\n关键帧(图) + 身份上下文(文本) + scene_context(OCR) + object_context(物体/轨迹)\n+ bbox/trajectory grounding → JSON{events, summary, alert_level, notification}",
-    RED,
-    6.2,
-    name="S9",
-)
-arrow(GCX, 2067, GCX, 2114)
-rbox(
-    GCX,
-    2320,
-    900,
-    110,
-    "输出：事件报告（Web /event-monitor + JSON）\n事件窗时间线：告警等级、概述、逐条事件、关键帧缩略图、身份卡\n跨窗整段总结 summarize_event_windows：把多窗串成连贯 story",
-    TEAL,
-    6.1,
-    badge_text="已实现",
-    badge_color=GREEN,
-    name="Report",
-)
-arrow(GCX, 2206, GCX, 2265)
+container(50, 1675, 1700, 220,
+          "⑦ 场景信息（在关键帧上补齐；不参与「是不是同一个人」的融合）", GREEN, fill_alpha=0.10)
 
-# Small visual anchors to reinforce implemented vs reserved path semantics.
-ax.plot([640, 800], [2450, 2450], color="#666666", lw=1.6)
-ax.text(815, 2450, "实线=已接入端到端路径", va="center", fontsize=ANCHOR_FS, color="#333333")
-ax.plot([1120, 1280], [2450, 2450], color=RESERVED[1], lw=1.4, ls="--")
-ax.text(1295, 2450, "虚线灰=预留未实现（P1/P2）", va="center", fontsize=ANCHOR_FS, color="#555555")
+rbox(300, 1785, 400, 100,
+     "场景文字识别\n只对上面选出的关键帧读字\n如时间戳、车牌、运单号等\n结果作为场景说明，不代表某个人",
+     GREEN, 5.3, badge_text="默认关闭", badge_color=AMBER, name="OCR")
+rbox(780, 1785, 400, 100,
+     "物体/包裹说明\n汇总本段出现的非人物体轨迹\n如行李、车辆等位置变化\n与人物时间线对齐，供大模型引用",
+     GREEN, 5.3, badge_text="默认关闭", badge_color=AMBER, name="OBJ")
+rbox(1260, 1785, 400, 100,
+     "人物位置与走动方向\n关键帧上的框、中心点、走向\n页面可叠加显示\n并写成文字位置说明",
+     GREEN, 5.3, badge_text="默认开启", badge_color=GREEN, name="SPATIAL")
+
+rbox(CX, 1985, MAIN_W + 80, 92,
+     "⑧ 打成结构化结果包（每一事件时间段一份）\n内容包括：时间范围、关键帧、已融合的人物身份、位置说明、\n场景文字、物体说明 → 再交给大模型做事件叙述",
+     TEAL, 5.4, badge_text="默认开启", badge_color=GREEN, name="PACK")
+
+rbox(CX - 300, 2135, 560, 100,
+     "⑨ 大模型逐段理解\n看关键帧图片 + 读身份/场景文字\n输出本段发生了什么、告警等级等",
+     RED, 5.5, badge_text="默认开启", badge_color=GREEN, name="LLM")
+rbox(CX + 320, 2135, 520, 100,
+     "⑩ 整段故事串联\n把多段结果收成完整叙述\n总览、时间线要点、通知文案",
+     RED, 5.5, badge_text="默认开启", badge_color=GREEN, name="OVERALL")
+
+arrow(CX, 1495, CX, 1516)
+arrow(CX, 1604, CX, 1675)
+arrow(300, 1835, 520, 1939, color=GREEN[1], lw=1.1)
+arrow(780, 1835, 780, 1939, color=GREEN[1], lw=1.1)
+arrow(1260, 1835, 1040, 1939, color=GREEN[1], lw=1.1)
+arrow(CX, 2031, CX - 300, 2085)
+arrow(CX, 2031, CX + 320, 2085)
+
+# =============================================================================
+# 5. 页面输出
+# =============================================================================
+container(50, 2260, 1700, 150, "11. 事件监控台展示", TEAL, fill_alpha=0.10)
+rbox(280, 2350, 320, 88,
+     "原始结果下载\n完整 JSON\n含配置与各阶段耗时",
+     TEAL, 5.5, badge_text="默认开启", badge_color=GREEN, name="JSON")
+rbox(680, 2350, 320, 88,
+     "人物身份卡片\n头像、各路命中情况\n融合可信度",
+     TEAL, 5.5, badge_text="默认开启", badge_color=GREEN, name="CARD")
+rbox(1080, 2350, 320, 88,
+     "事件时间线\n关键帧预览\n可看位置框叠加",
+     TEAL, 5.5, badge_text="默认开启", badge_color=GREEN, name="TL")
+rbox(1460, 2350, 240, 88,
+     "进度与耗时\n配置摘要\n补做大模型按钮",
+     TEAL, 5.5, badge_text="默认开启", badge_color=GREEN, name="TOOLS")
+
+arrow(CX - 300, 2185, 400, 2275)
+arrow(CX + 320, 2185, 1200, 2275)
+
+# =============================================================================
+# 底部说明
+# =============================================================================
+side_panel(60, 2445, 540, 100,
+           "部署相关（脚本已写）",
+           [
+               "• 单机 GPU 虚拟机一键脚本与镜像流水线",
+               "• 面向演示/小并发，不是大规模集群方案",
+           ], AMBER)
+side_panel(640, 2445, 540, 100,
+           "规划未做（图上不画进主路径）",
+           [
+               "• 实时摄像头流、消息推送、跨视频长期人库",
+               "• 集群自动扩缩与生产级高可用",
+           ], MUTED)
+side_panel(1220, 2445, 520, 100,
+           "读图时记住",
+           [
+               "• 跟踪/认人靠较密的帧；大模型只看少量关键帧",
+               "• 场景文字在选关键帧之后，不进「是不是同一人」",
+           ], GRAY)
+
+ax.text(CX, 2565,
+        "依据代码：事件分析主流程 · 监控台接口/页面 · 人形/人脸/步态/场景文字 · 关键帧与时间段切分 · 大模型报告",
+        ha="center", va="center", fontsize=10.2, color="#777")
 
 
 def _warn_overlaps() -> None:
-    """Print conservative box-overlap warnings for manual layout tuning."""
-    warnings: list[str] = []
+    warnings = []
     for i, (n1, x1, y1, w1, h1) in enumerate(BOXES):
-        for n2, x2, y2, w2, h2 in BOXES[i + 1 :]:
-            if abs(x1 - x2) < (w1 + w2) / 2 + 4.0 and abs(y1 - y2) < (h1 + h2) / 2 + 4.0:
+        for n2, x2, y2, w2, h2 in BOXES[i + 1:]:
+            if abs(x1 - x2) < (w1 + w2) / 2 + 4 and abs(y1 - y2) < (h1 + h2) / 2 + 4:
                 warnings.append(f"{n1} overlaps {n2}")
     if warnings:
         print("[layout-warning] " + "; ".join(warnings[:16]))
 
 
 def _warn_text_fit() -> None:
-    """Warn if enlarged node text exceeds its box bounds."""
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
-    warnings: list[str] = []
+    warnings = []
     pad = 8.0
     for name, text_objs, cx, cy, w, h in TEXT_AREAS:
         bboxes = [obj.get_window_extent(renderer=renderer) for obj in text_objs]
-        text_bbox = bboxes[0]
-        for bbox in bboxes[1:]:
-            text_bbox.x0 = min(text_bbox.x0, bbox.x0)
-            text_bbox.x1 = max(text_bbox.x1, bbox.x1)
-            text_bbox.y0 = min(text_bbox.y0, bbox.y0)
-            text_bbox.y1 = max(text_bbox.y1, bbox.y1)
+        tb = bboxes[0]
+        for b in bboxes[1:]:
+            tb.x0, tb.x1 = min(tb.x0, b.x0), max(tb.x1, b.x1)
+            tb.y0, tb.y1 = min(tb.y0, b.y0), max(tb.y1, b.y1)
         p0 = ax.transData.transform((cx - w / 2 + pad, cy - h / 2 + pad))
         p1 = ax.transData.transform((cx + w / 2 - pad, cy + h / 2 - pad))
         xmin, xmax = sorted((p0[0], p1[0]))
         ymin, ymax = sorted((p0[1], p1[1]))
-        if text_bbox.x0 < xmin or text_bbox.x1 > xmax or text_bbox.y0 < ymin or text_bbox.y1 > ymax:
+        if tb.x0 < xmin or tb.x1 > xmax or tb.y0 < ymin or tb.y1 > ymax:
             warnings.append(name)
     if warnings:
         print("[text-warning] text may exceed: " + ", ".join(warnings[:16]))
 
 
-def _point_in_rect(px: float, py: float, cx: float, cy: float, w: float, h: float, margin: float = 4.0) -> bool:
-    return (cx - w / 2 - margin) <= px <= (cx + w / 2 + margin) and (cy - h / 2 - margin) <= py <= (cy + h / 2 + margin)
-
-
-def _segment_intersects_rect(
-    p1: tuple[float, float], p2: tuple[float, float], cx: float, cy: float, w: float, h: float, margin: float = 2.0
-) -> bool:
-    """Liang-Barsky segment/axis-aligned-rectangle intersection test."""
-    x0, y0 = p1
-    x1, y1 = p2
-    xmin, xmax = cx - w / 2 - margin, cx + w / 2 + margin
-    ymin, ymax = cy - h / 2 - margin, cy + h / 2 + margin
-    dx, dy = x1 - x0, y1 - y0
-    p = [-dx, dx, -dy, dy]
-    q = [x0 - xmin, xmax - x0, y0 - ymin, ymax - y0]
-    u1, u2 = 0.0, 1.0
-    for pi, qi in zip(p, q):
-        if pi == 0:
-            if qi < 0:
-                return False
-            continue
-        ratio = qi / pi
-        if pi < 0:
-            if ratio > u2:
-                return False
-            if ratio > u1:
-                u1 = ratio
-        else:
-            if ratio < u1:
-                return False
-            if ratio < u2:
-                u2 = ratio
-    return u1 <= u2
-
-
-def _warn_connector_crossings() -> None:
-    """Warn if a connector segment passes through a box other than its endpoint box."""
-    warnings: list[str] = []
-    for label, p1, p2 in CONNECTORS:
-        for name, cx, cy, w, h in BOXES:
-            if _point_in_rect(*p1, cx, cy, w, h) or _point_in_rect(*p2, cx, cy, w, h):
-                continue
-            if _segment_intersects_rect(p1, p2, cx, cy, w, h):
-                warnings.append(f"connector {label or p1} crosses {name}")
-                break
-    if warnings:
-        print("[route-warning] " + "; ".join(warnings[:16]))
-
-
 def main() -> None:
     _warn_text_fit()
     _warn_overlaps()
-    _warn_connector_crossings()
     root = Path(__file__).resolve().parents[1]
-    svg_out = root / "docs" / "phase4-logic-flow.svg"
-    png_out = root / "docs" / "phase4-logic-flow.png"
-    svg_out.parent.mkdir(parents=True, exist_ok=True)
-    # SVG is the canonical vector diagram; PNG is a convenience preview.
-    # Keep the explicit compact canvas so preview dimensions stay deterministic.
-    plt.savefig(svg_out, format="svg", facecolor="white")
-    plt.savefig(png_out, dpi=110, facecolor="white")
-    print(svg_out)
-    print(png_out)
+    docs = root / "docs"
+    docs.mkdir(parents=True, exist_ok=True)
+    poc_svg = docs / "poc-architecture.svg"
+    poc_png = docs / "poc-architecture.png"
+    legacy_svg = docs / "phase4-logic-flow.svg"
+    legacy_png = docs / "phase4-logic-flow.png"
+    plt.savefig(poc_svg, format="svg", facecolor="white")
+    plt.savefig(poc_png, dpi=120, facecolor="white")
+    plt.savefig(legacy_svg, format="svg", facecolor="white")
+    plt.savefig(legacy_png, dpi=120, facecolor="white")
+    print(poc_svg)
+    print(poc_png)
+    print(legacy_svg)
+    print(legacy_png)
 
 
 if __name__ == "__main__":

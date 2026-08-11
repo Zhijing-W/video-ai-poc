@@ -74,7 +74,7 @@
 
 ## 文档与实验
 
-- Phase 4 流程图：`docs/phase4-logic-flow.*`
+- PoC 架构图（代码证据对齐）：`docs/poc-architecture.*`（`docs/phase4-logic-flow.*` 为兼容别名）
 - 身份和人脸质量：`docs/face-quality-and-identity-fusion.md`
 - 云部署：`docs/cloud-deploy/`、`docs/AZURE_DEPLOY.md`
 - 糊脸与身份实验：`experiment/face_blur_ablation/`
