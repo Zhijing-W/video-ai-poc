@@ -44,6 +44,7 @@ from .identity.evidence_selection import (
     ensure_body_fallback,
     face_candidate_proxy,
     public_evidence,
+    update_body_candidates,
     update_face_candidates,
 )
 from .identity.face_attachment import attach_faces
@@ -563,6 +564,20 @@ def _finish_session(
                     "crop": crop,
                 }
             if crop is not None:
+                t["body_candidates"] = update_body_candidates(
+                    t["body_candidates"],
+                    {
+                        "track_id": tid,
+                        "frame_index": i,
+                        "timestamp": timestamp,
+                        "person_bbox": list(box),
+                        "selection_score": q,
+                        "quality": dict(qa or {}),
+                        "crop": crop.copy(),
+                    },
+                    top_k=settings.enrollment_evidence_frames,
+                    min_gap_frames=settings.body_enrollment_min_gap_frames,
+                )
                 proxy_score = face_candidate_proxy(
                     crop,
                     person_bbox=box,
@@ -821,6 +836,7 @@ def _finish_session(
                     "score": gres.get("score"),
                     "subject_id": gres.get("subject_id"),
                     "decision": gres.get("decision"),
+                    "candidates": gres.get("candidates") or [],
                     "frames": len(pose_seq),
                 }
                 if gres.get("subject_id") is not None:

@@ -110,10 +110,44 @@ def test_realesrgan_returns_model_output_size_and_new_image():
 
 
 @pytest.mark.parametrize(
-    ("module", "name"),
-    [(codeformer, "codeformer"), (realesrgan, "realesrgan_x2plus")],
+    ("module", "name", "expected_metadata"),
+    [
+        (
+            codeformer,
+            "codeformer",
+            {
+                "display_name": "CodeFormer",
+                "accepts_options": True,
+                "options": (
+                    {
+                        "name": "fidelity",
+                        "label": "Fidelity",
+                        "type": "number",
+                        "default": 0.7,
+                        "min": 0.0,
+                        "max": 1.0,
+                        "step": 0.05,
+                        "help": (
+                            "1.0优先保留身份；降低可增强视觉修复，"
+                            "但可能改变身份纹理。"
+                        ),
+                    },
+                ),
+            },
+        ),
+        (
+            realesrgan,
+            "realesrgan_x2plus",
+            {"display_name": "Real-ESRGAN x2plus"},
+        ),
+    ],
 )
-def test_registration_is_lazy_and_uses_registry_contract(monkeypatch, module, name):
+def test_registration_is_lazy_and_uses_registry_contract(
+    monkeypatch,
+    module,
+    name,
+    expected_metadata,
+):
     calls = []
     settings = _settings()
 
@@ -133,7 +167,7 @@ def test_registration_is_lazy_and_uses_registry_contract(monkeypatch, module, na
     assert args[0] == name
     assert callable(args[1])
     assert callable(args[2])
-    assert kwargs == {"replace": True}
+    assert kwargs == {"replace": True, **expected_metadata}
     assert args[1]() is not None
     assert calls == [settings]
 

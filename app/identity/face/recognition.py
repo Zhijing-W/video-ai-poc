@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from typing import Any
 
 import numpy as np
 from PIL import Image
@@ -49,6 +50,7 @@ def attach_identity(
     *,
     use_sr: bool,
     superres_backend: str,
+    superres_options: Mapping[str, Any] | None,
     with_identity: bool,
     rec_backend: str,
     enhance_fn: Callable,
@@ -65,7 +67,11 @@ def attach_identity(
         "eligibility",
         "direct" if quality.get("can_match") else "unusable",
     )
-    identity_input = aligned_bgr if eligibility == "direct" else None
+    identity_input = (
+        aligned_bgr
+        if eligibility in {"direct", "recoverable"}
+        else None
+    )
     match_source = "original" if identity_input is not None else "none"
     quality["enhanced"] = False
 
@@ -81,6 +87,7 @@ def attach_identity(
             aligned_rgb,
             aligned=True,
             backend=superres_backend,
+            options=superres_options,
         )
         backend_error = superres_error_fn(superres_backend)
         if backend_error:

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -106,9 +107,12 @@ class SessionGallery:
         这层对应客户线上 OpenSearch top-k 检索。后续 decision policy 只消费候选，不关心底层是
         FAISS 还是 OpenSearch，便于替换持久化/远端检索后端。
         """
-        k = settings.reid_decision_top_k if top_k is None else top_k
+        k = settings.gallery_candidate_top_k if top_k is None else top_k
+        if k < 1:
+            raise ValueError("top_k must be at least 1")
         v = self._prepare(vec)
-        rows = self._search_rows(v, k)
+        row_limit = k * max(1, settings.reid_max_shots)
+        rows = self._search_rows(v, row_limit)
         grouped: dict[int, dict] = {}
         for row in rows:
             sid = row["subject_id"]
@@ -122,11 +126,21 @@ class SessionGallery:
             if row["score"] > item["score"]:
                 item["score"] = row["score"]
                 item["best_row_id"] = row["row_id"]
-        subjects = sorted(grouped.values(), key=lambda x: (x["score"], x["votes"]), reverse=True)
+        subjects = sorted(
+            grouped.values(),
+            key=lambda x: (x["score"], x["votes"]),
+            reverse=True,
+        )[:k]
+        selected_subjects = {item["subject_id"] for item in subjects}
+        rows = [
+            row for row in rows
+            if row["subject_id"] in selected_subjects
+        ]
         return {
             "vector": v,
             "rows": rows,
             "subjects": subjects,
+            "candidate_depth": k,
             "gallery_size": len(self._subjects),
             "negative_cache_hit": self._neg_hit(v),
         }
@@ -186,6 +200,7 @@ class SessionGallery:
             "score": round(best_score, 4),
             "runner_up_score": round(runner_score, 4) if runner_score is not None else None,
             "gallery_size": candidates.get("gallery_size", len(self._subjects)),
+            "candidate_depth": candidates.get("candidate_depth", 1),
             "negative_cache_hit": candidates.get("negative_cache_hit", False),
             "candidates": [
                 {
@@ -435,9 +450,6 @@ class SessionGallery:
             res["enrolled"] = True
             res["label"] = subj.label
             res["shots"] = subj.shots
-            # 新主体登记后，从负缓存里清掉与它相近的旧"否定"记录（已不再是 negative）。
-            self._neg_cache = [nv for nv in self._neg_cache
-                               if float(np.dot(v[0], nv)) < settings.reid_neg_cache_thresh]
             return res
 
         # grey，或 new 但不自动登记：不写库。把查询向量记入负缓存（确认当前不属于任何已知主体）。
@@ -445,6 +457,166 @@ class SessionGallery:
             self._push_negative(v)
         res["enrolled"] = False
         return res
+
+    def identify_many_or_enroll(
+        self,
+        observations: Sequence[tuple[np.ndarray, dict | None]],
+        *,
+        required_observations: int,
+        consistency_thresh: float,
+        label: str | None = None,
+        attributes: list[str] | None = None,
+        auto_enroll: bool = True,
+        top_k: int | None = None,
+        hit_thresh: float | None = None,
+        new_thresh: float | None = None,
+        quality_gate: Callable[
+            [dict | None],
+            tuple[bool, str | None],
+        ] | None = None,
+        low_quality_hit_thresh: float | None = None,
+    ) -> dict:
+        """Use multiple queries only to gate new enrollment.
+
+        The first observation remains the canonical query and determines hit,
+        grey, or new. Supporting observations never promote another candidate.
+        A new subject is enrolled only when enough quality-valid observations
+        are mutually consistent and every one remains outside the known gallery.
+        """
+        if not observations:
+            raise ValueError("at least one enrollment observation is required")
+        if required_observations < 1:
+            raise ValueError("required_observations must be at least 1")
+        if not 0.0 <= consistency_thresh <= 1.0:
+            raise ValueError("consistency_thresh must be in [0, 1]")
+
+        gate = quality_gate or quality_ok
+        prepared = []
+        for vector, quality in observations:
+            normalized = self._prepare(vector)
+            accepted, reason = gate(quality)
+            prepared.append(
+                {
+                    "vector": normalized,
+                    "quality": quality,
+                    "quality_ok": accepted,
+                    "quality_reason": reason,
+                }
+            )
+
+        primary = prepared[0]
+        candidates = self.search_candidates(
+            primary["vector"][0],
+            top_k=top_k,
+        )
+        result = self.decide_identity(
+            candidates,
+            hit_thresh=hit_thresh,
+            new_thresh=new_thresh,
+        )
+        result["quality_ok"] = primary["quality_ok"]
+        result["quality_reason"] = primary["quality_reason"]
+        accepted = [item for item in prepared if item["quality_ok"]]
+        enrollment = {
+            "required": required_observations,
+            "observed": len(prepared),
+            "quality_accepted": len(accepted),
+            "consistency_threshold": round(consistency_thresh, 4),
+            "minimum_similarity": None,
+            "blocked_reason": None,
+        }
+        result["enrollment_evidence"] = enrollment
+
+        if result["decision"] == "hit":
+            low_quality_threshold = (
+                settings.reid_low_quality_hit_thresh
+                if low_quality_hit_thresh is None
+                else low_quality_hit_thresh
+            )
+            if (
+                not primary["quality_ok"]
+                and float(result.get("score") or 0.0)
+                < low_quality_threshold
+            ):
+                result["decision"] = "grey"
+                result["subject_id"] = None
+                result["low_quality_hit_rejected"] = True
+                result["enrolled"] = False
+                enrollment["blocked_reason"] = "primary_quality_rejected"
+                return result
+            subject = self._subjects[result["subject_id"]]
+            subject.hit_count += 1
+            subject.last_seen = time.time()
+            if (
+                primary["quality_ok"]
+                and subject.shots < settings.reid_max_shots
+            ):
+                self._add_shot(subject, primary["vector"])
+            result["enrolled"] = False
+            result["shots"] = subject.shots
+            return result
+
+        if result["decision"] != "new" or not auto_enroll:
+            result["enrolled"] = False
+            enrollment["blocked_reason"] = (
+                "auto_enroll_disabled"
+                if result["decision"] == "new"
+                else "primary_not_new"
+            )
+            return result
+
+        if not primary["quality_ok"]:
+            result["enrolled"] = False
+            enrollment["blocked_reason"] = "primary_quality_rejected"
+            return result
+        if len(accepted) < required_observations:
+            result["enrolled"] = False
+            enrollment["blocked_reason"] = "insufficient_observations"
+            return result
+
+        accepted = accepted[:required_observations]
+        decisions = [
+            self.decide_identity(
+                self.search_candidates(item["vector"][0], top_k=top_k),
+                hit_thresh=hit_thresh,
+                new_thresh=new_thresh,
+            )
+            for item in accepted
+        ]
+        if any(item["decision"] != "new" for item in decisions):
+            result["decision"] = "grey"
+            result["decision_reason"] = "multiframe_gallery_ambiguous"
+            result["subject_id"] = None
+            result["enrolled"] = False
+            enrollment["blocked_reason"] = "known_gallery_ambiguity"
+            return result
+
+        vectors = np.stack([item["vector"][0] for item in accepted])
+        similarities = vectors @ vectors.T
+        minimum_similarity = float(
+            similarities[np.triu_indices(len(vectors), k=1)].min()
+        ) if len(vectors) > 1 else 1.0
+        enrollment["minimum_similarity"] = round(minimum_similarity, 4)
+        if minimum_similarity < consistency_thresh:
+            result["decision"] = "grey"
+            result["decision_reason"] = "multiframe_query_inconsistent"
+            result["subject_id"] = None
+            result["enrolled"] = False
+            enrollment["blocked_reason"] = "query_inconsistent"
+            return result
+
+        subject = self._enroll_subject(
+            [item["vector"] for item in accepted],
+            label=label,
+            attributes=attributes,
+            now=time.time(),
+        )
+        result["subject_id"] = subject.subject_id
+        result["decision"] = "new"
+        result["enrolled"] = True
+        result["label"] = subject.label
+        result["shots"] = subject.shots
+        return result
 
     def _push_negative(self, v: np.ndarray) -> None:
         self._neg_cache.append(v[0].copy())

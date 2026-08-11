@@ -166,3 +166,133 @@ def test_concurrent_calls_load_registered_backend_once() -> None:
 
     assert load_count == 1
     assert all(isinstance(output, Image.Image) for output in outputs)
+
+
+def test_backend_owned_options_are_coerced_and_passed_to_enhancer() -> None:
+    received = []
+    super_resolution.register_backend(
+        "unit-options",
+        lambda: object(),
+        lambda model, image, aligned, options: (
+            received.append(options) or image.copy()
+        ),
+        display_name="Unit Options",
+        accepts_options=True,
+        options=(
+            {
+                "name": "strength",
+                "label": "Strength",
+                "type": "number",
+                "default": 0.5,
+                "min": 0.0,
+                "max": 1.0,
+            },
+        ),
+        replace=True,
+    )
+
+    output = super_resolution.enhance(
+        Image.new("RGB", (8, 8)),
+        backend="unit-options",
+        options={"strength": "0.8"},
+    )
+
+    assert isinstance(output, Image.Image)
+    assert received == [{"strength": 0.8}]
+    assert super_resolution.backend_metadata()["unit_options"] == {
+        "label": "Unit Options",
+        "parameters": [
+            {
+                "name": "strength",
+                "label": "Strength",
+                "type": "number",
+                "default": 0.5,
+                "min": 0.0,
+                "max": 1.0,
+            }
+        ],
+    }
+    with pytest.raises(ValueError, match="不支持参数"):
+        super_resolution.validate_backend_options(
+            "unit-options",
+            {"unknown": 1},
+        )
+
+
+def test_boolean_option_metadata_publishes_coerced_default() -> None:
+    super_resolution.register_backend(
+        "unit-boolean",
+        lambda: object(),
+        lambda model, image, aligned, options: image.copy(),
+        accepts_options=True,
+        options=(
+            {
+                "name": "preserve_identity",
+                "label": "Preserve identity",
+                "type": "boolean",
+                "default": "false",
+            },
+        ),
+        replace=True,
+    )
+
+    parameter = super_resolution.backend_metadata()["unit_boolean"][
+        "parameters"
+    ][0]
+
+    assert parameter["default"] is False
+    assert super_resolution.validate_backend_options(
+        "unit-boolean",
+    ) == {"preserve_identity": False}
+
+
+def test_external_entry_point_plugins_are_discovered_independently(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        super_resolution,
+        "_backends",
+        dict(super_resolution._backends),
+    )
+    monkeypatch.setattr(
+        super_resolution,
+        "_states",
+        dict(super_resolution._states),
+    )
+    monkeypatch.setattr(super_resolution, "_plugin_errors", {})
+
+    class EntryPoint:
+        def __init__(self, name, plugin):
+            self.name = name
+            self._plugin = plugin
+
+        def load(self):
+            if isinstance(self._plugin, Exception):
+                raise self._plugin
+            return self._plugin
+
+    def register_good(register_backend, settings):
+        del settings
+        register_backend(
+            "unit-entrypoint",
+            lambda: object(),
+            lambda model, image, aligned: image.copy(),
+            replace=True,
+        )
+
+    monkeypatch.setattr(
+        super_resolution,
+        "_external_plugin_entry_points",
+        lambda: (
+            EntryPoint("broken", RuntimeError("broken plugin")),
+            EntryPoint("healthy", register_good),
+        ),
+    )
+
+    super_resolution.discover_backends()
+
+    assert "unit_entrypoint" in super_resolution.available_backends()
+    assert "broken plugin" in (
+        super_resolution.plugin_errors().get("entrypoint:broken") or ""
+    )
+    assert "entrypoint:healthy" not in super_resolution.plugin_errors()

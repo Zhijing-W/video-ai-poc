@@ -20,10 +20,13 @@ from .identity.face.quality import deep_fiqa_score as _deep_fiqa_score
 from .identity.face.quality import superres_quality_ok as _superres_quality_ok
 from .identity.face.super_resolution import _ensure_superres as _ensure_superres_impl
 from .identity.face.super_resolution import available_backends as _available_superres_backends
+from .identity.face.super_resolution import backend_metadata as _superres_backend_metadata
 from .identity.face.super_resolution import enhance as _enhance_impl
+from .identity.face.super_resolution import plugin_errors as _superres_plugin_errors
 from .identity.face.super_resolution import register_backend as _register_superres_backend
 from .identity.face.super_resolution import superres_error as _superres_error_impl
 from .identity.face.super_resolution import validate_backend as _validate_superres_backend
+from .identity.face.super_resolution import validate_backend_options as _validate_superres_options
 
 _lock = _runtime._lock
 _state = _runtime._state
@@ -132,6 +135,7 @@ def detect(
     with_identity: bool = True,
     with_geometry: bool = True,
     superres_backend: str | None = None,
+    superres_options: dict | None = None,
 ) -> list[dict]:
     """Detect faces, assess quality, then optionally attach identity evidence."""
     if superres_backend is not None:
@@ -153,6 +157,12 @@ def detect(
     if use_sr:
         selected_superres = _validate_superres_backend(selected_superres)
         use_sr = selected_superres != "off"
+    selected_options = _validate_superres_options(
+        selected_superres,
+        settings.face_superres_options
+        if superres_options is None
+        else superres_options,
+    )
 
     output: list[dict] = []
     for candidate in candidates:
@@ -167,6 +177,7 @@ def detect(
             quality,
             use_sr=use_sr,
             superres_backend=selected_superres,
+            superres_options=selected_options,
             with_identity=with_identity,
         )
         item.pop("_kps_array", None)
@@ -183,6 +194,7 @@ def _attach_identity(
     *,
     use_sr: bool,
     superres_backend: str,
+    superres_options: dict | None,
     with_identity: bool,
 ) -> None:
     """Finalize one frozen face candidate without rerunning detection."""
@@ -192,6 +204,7 @@ def _attach_identity(
         quality,
         use_sr=use_sr,
         superres_backend=superres_backend,
+        superres_options=superres_options,
         with_identity=with_identity,
         rec_backend=settings.face_rec_backend,
         enhance_fn=enhance,
@@ -207,6 +220,7 @@ def finalize_identity(
     face: dict,
     enhance_blurry: bool | None = None,
     superres_backend: str | None = None,
+    superres_options: dict | None = None,
 ) -> dict:
     """Embed a previously detected face without rerunning SCRFD."""
     if superres_backend is not None:
@@ -240,12 +254,19 @@ def finalize_identity(
     if use_sr:
         selected_superres = _validate_superres_backend(selected_superres)
         use_sr = selected_superres != "off"
+    selected_options = _validate_superres_options(
+        selected_superres,
+        settings.face_superres_options
+        if superres_options is None
+        else superres_options,
+    )
     _attach_identity(
         item,
         aligned_bgr,
         quality,
         use_sr=use_sr,
         superres_backend=selected_superres,
+        superres_options=selected_options,
         with_identity=True,
     )
     item["quality"] = quality
@@ -286,8 +307,23 @@ def available_superres_backends() -> tuple[str, ...]:
     return _available_superres_backends()
 
 
+def superres_backend_metadata() -> dict[str, dict]:
+    return _superres_backend_metadata()
+
+
+def superres_plugin_errors() -> dict[str, str]:
+    return _superres_plugin_errors()
+
+
 def validate_superres_backend(backend: str | None = None) -> str:
     return _validate_superres_backend(backend)
+
+
+def validate_superres_options(
+    backend: str | None,
+    options: dict | None = None,
+) -> dict:
+    return _validate_superres_options(backend, options)
 
 
 def register_superres_backend(
@@ -295,12 +331,18 @@ def register_superres_backend(
     loader,
     enhancer,
     *,
+    display_name: str | None = None,
+    options=(),
+    accepts_options: bool = False,
     replace: bool = False,
 ) -> None:
     _register_superres_backend(
         name,
         loader,
         enhancer,
+        display_name=display_name,
+        options=options,
+        accepts_options=accepts_options,
         replace=replace,
     )
 
@@ -323,11 +365,13 @@ def enhance(
     *,
     aligned: bool = False,
     backend: str | None = None,
+    options: dict | None = None,
 ):
     return _enhance_impl(
         image,
         aligned=aligned,
         backend=backend,
+        options=options,
     )
 
 

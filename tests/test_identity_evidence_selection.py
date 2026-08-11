@@ -10,6 +10,7 @@ from app.identity import embedding_gallery, face_attachment
 from app.identity.evidence_selection import (
     body_quality_score,
     ensure_body_fallback,
+    update_body_candidates,
     update_face_candidates,
 )
 from app.video_processor import Frame
@@ -59,6 +60,31 @@ def test_face_candidates_remove_all_temporal_neighbors_of_stronger_bridge() -> N
     )
 
     assert [item["frame_index"] for item in selected] == [11]
+
+
+def test_body_queries_keep_five_quality_ranked_temporally_diverse_frames() -> None:
+    candidates = []
+    for frame_index, score in [
+        (0, 2.0),
+        (1, 9.0),
+        (3, 8.0),
+        (5, 7.0),
+        (7, 6.0),
+        (9, 5.0),
+        (11, 4.0),
+    ]:
+        candidates = update_body_candidates(
+            candidates,
+            {
+                "frame_index": frame_index,
+                "selection_score": score,
+                "quality": {"blur_var": score, "area": 20000},
+            },
+            top_k=5,
+            min_gap_frames=2,
+        )
+
+    assert [item["frame_index"] for item in candidates] == [1, 3, 5, 7, 9]
 
 
 def test_face_person_association_rejects_ambiguous_overlap(monkeypatch) -> None:
@@ -164,8 +190,9 @@ def test_attach_faces_selects_face_best_separately_from_body_best(
     )
 
     class FakeGallery:
-        def identify_or_enroll(self, *args, **kwargs):
-            assert args[1]["eligibility"] == "direct"
+        def identify_many_or_enroll(self, observations, **kwargs):
+            assert observations[0][1]["eligibility"] == "direct"
+            assert kwargs["required_observations"] in {1, 5}
             assert kwargs["quality_gate"] is face_attachment.face_gallery_quality_ok
             return {
                 "subject_id": 3,

@@ -11,7 +11,7 @@
 ```
 轨迹帧
  ├─ body-best                          人形质量最高帧
- └─ face Top-K候选                     上部ROI清晰度/尺度，默认K=3
+ └─ face Top-K候选                     上部ROI清晰度/尺度，默认K=5
     └─ face.detect()                    [face.py]
     ├─ SCRFD                           只检测bbox、5点关键点、det_score
     ├─ 5点对齐                         生成112×112人脸

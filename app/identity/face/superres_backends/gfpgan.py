@@ -106,6 +106,7 @@ def register(register_backend, settings) -> None:
         "gfpgan",
         lambda: _load(settings),
         _enhance,
+        display_name="GFP-GAN",
         replace=True,
     )
 

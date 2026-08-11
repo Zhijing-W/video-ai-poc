@@ -42,14 +42,19 @@ export function collectAnalysisRequest() {
   appendIfValue(formData, "analysis_model", getAnalysisModelValue());
   appendIfValue(formData, "face_rec_backend", $("faceRecBackend").value);
   appendIfValue(formData, "face_superres", $("faceSuperres").value);
-  if (isCodeFormerSelected()) {
-    appendIfValue(formData, "face_codeformer_fidelity", $("faceCodeformerFidelity").value);
+  const superresOptions = collectSuperresOptions();
+  if (Object.keys(superresOptions).length) {
+    formData.append("face_superres_options", JSON.stringify(superresOptions));
   }
   appendIfValue(formData, "reid_backend", $("reidBackend").value);
   appendIfValue(formData, "track_backend", $("trackBackend").value);
   formData.append("face_3d_cue", $("face3d").checked ? "true" : "false");
   formData.append("reid_consistency_enabled", $("reidConsistency").checked ? "true" : "false");
-  appendIfValue(formData, "reid_decision_top_k", $("reidTopK").value);
+  appendIfValue(
+    formData,
+    "enrollment_evidence_frames",
+    $("enrollmentEvidenceFrames").value
+  );
   appendIfValue(formData, "reid_vote_score_thresh", $("reidVoteThresh").value);
   appendIfValue(formData, "reid_consistency_ratio", $("reidConsistencyRatio").value);
   appendIfValue(formData, "reid_top1_margin", $("reidTop1Margin").value);
@@ -382,13 +387,56 @@ export function renderLlmModels(catalog = {}) {
 
 function isCodeFormerSelected() {
   const select = $("faceSuperres");
-  return select.value === "codeformer"
-    || (!select.value && select.dataset.defaultBackend === "codeformer");
+  return select.value || select.dataset.defaultBackend || "off";
 }
 
-function updateCodeFormerFidelityVisibility() {
-  const field = $("faceCodeformerFidelityField");
-  if (field) field.hidden = !isCodeFormerSelected();
+function optionInput(parameter) {
+  const input = document.createElement(
+    parameter.type === "select" ? "select" : "input"
+  );
+  input.className = "em-input";
+  input.dataset.superresOption = parameter.name;
+  if (parameter.type === "select") {
+    (parameter.choices || []).forEach((choice) => {
+      input.add(new Option(choice.label || choice.value, choice.value));
+    });
+  } else {
+    input.type = parameter.type === "boolean"
+      ? "checkbox"
+      : ["number", "integer"].includes(parameter.type)
+        ? "number"
+        : "text";
+    ["min", "max", "step"].forEach((key) => {
+      if (parameter[key] != null) input[key] = String(parameter[key]);
+    });
+  }
+  if (parameter.type === "boolean") input.checked = Boolean(parameter.default);
+  else if (parameter.default != null) input.value = String(parameter.default);
+  return input;
+}
+
+function renderSuperresOptions() {
+  const container = $("faceSuperresOptions");
+  if (!container) return;
+  const select = $("faceSuperres");
+  const metadata = JSON.parse(select.dataset.backendMetadata || "{}");
+  const parameters = metadata[selectedSuperresBackend()]?.parameters || [];
+  container.replaceChildren();
+  parameters.forEach((parameter) => {
+    const wrapper = document.createElement("div");
+    const label = document.createElement("label");
+    label.className = "em-label";
+    label.style.marginTop = "8px";
+    label.textContent = parameter.label || parameter.name;
+    wrapper.append(label, optionInput(parameter));
+    if (parameter.help) {
+      const hint = document.createElement("div");
+      hint.className = "em-hint";
+      hint.textContent = parameter.help;
+      wrapper.append(hint);
+    }
+    container.append(wrapper);
+  });
 }
 
 export function renderSuperresBackends(catalog = {}) {
@@ -404,6 +452,7 @@ export function renderSuperresBackends(catalog = {}) {
   };
   const defaultBackend = catalog.default || "off";
   select.dataset.defaultBackend = defaultBackend;
+  select.dataset.backendMetadata = JSON.stringify(metadata);
   select.replaceChildren();
   const defaultLabel = uiLocale() === "en"
     ? `${labels[defaultBackend] || defaultBackend} (default)`
@@ -459,8 +508,8 @@ export function renderReidBackends(catalog = {}) {
 
 export function wireSuperresSettings() {
   const select = $("faceSuperres");
-  if (select) select.addEventListener("change", updateCodeFormerFidelityVisibility);
-  updateCodeFormerFidelityVisibility();
+  if (select) select.addEventListener("change", renderSuperresOptions);
+  renderSuperresOptions();
 }
 
 export function openSettings() {

@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -214,7 +215,29 @@ class Settings:
     reid_hit_thresh: float = float(_get("REID_HIT_THRESH", "0.6"))     # ≥ 此分 → 认出已知主体
     reid_new_thresh: float = float(_get("REID_NEW_THRESH", "0.4"))     # < 此分 → 判为新主体（开放集登记）
     reid_low_quality_hit_thresh: float = float(_get("REID_LOW_QUALITY_HIT_THRESH", "0.88"))  # 低质 crop 复用已有主体的更高门槛
-    reid_decision_top_k: int = int(_get("REID_DECISION_TOP_K", "30"))  # 检索候选数，用于 top-k 一致性判断
+    # Gallery始终以Top-1+阈值裁决；旧REID_DECISION_TOP_K仅兼容迁移为候选深度。
+    gallery_candidate_top_k: int = int(
+        _get(
+            "GALLERY_CANDIDATE_TOP_K",
+            _get("REID_DECISION_TOP_K", "5"),
+        )
+    )
+    # 新主体可独立要求多帧Query证据，不复用Gallery候选深度。
+    enrollment_evidence_frames: int = int(
+        _get("ENROLLMENT_EVIDENCE_FRAMES", "5")
+    )
+    body_enrollment_min_gap_frames: int = int(
+        _get(
+            "BODY_ENROLLMENT_MIN_GAP_FRAMES",
+            _get("REID_QUERY_MIN_GAP_FRAMES", "2"),
+        )
+    )
+    body_enrollment_consistency_thresh: float = float(
+        _get(
+            "BODY_ENROLLMENT_CONSISTENCY_THRESH",
+            _get("REID_QUERY_CONSISTENCY_THRESH", "0.82"),
+        )
+    )
     reid_consistency_enabled: bool = _get("REID_CONSISTENCY_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
     reid_vote_score_thresh: float = float(_get("REID_VOTE_SCORE_THRESH", "0.55"))  # 高相似候选才参与投票
     reid_consistency_ratio: float = float(_get("REID_CONSISTENCY_RATIO", "0.5"))   # top subject 票占比下限

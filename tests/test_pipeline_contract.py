@@ -6,6 +6,8 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 
+import numpy as np
+
 from app import event_analysis_pipeline as pipeline
 from app.ocr import format_scene_context
 from app.pipeline.object_context import format_object_context
