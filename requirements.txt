@@ -59,7 +59,7 @@ gdown>=5.2,<6
 insightface
 onnxruntime
 
-# Phase 4 · Step 27b：攻"人脸模糊"的进阶武器（可插拔，默认关闭，显式选择才运行）。
+# Phase 4 · Step 27b：攻"人脸模糊"的进阶武器（可插拔，默认开，测试可关）。
 # gfpgan：人脸超分（识别前把糊脸拉清），首次自动下 ~330MB GFPGANv1.3 权重。
 #   注意：其依赖 basicsr 引用了新版 torchvision 已删除的 functional_tensor —— super_resolution 模块内置
 #   运行时 monkeypatch（_patch_basicsr）兜底，无需手改 venv。

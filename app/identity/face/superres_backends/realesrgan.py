@@ -72,7 +72,6 @@ def register(register_backend, settings) -> None:
         "realesrgan_x2plus",
         lambda: _load(settings),
         _enhance,
-        display_name="Real-ESRGAN x2plus",
         replace=True,
     )
 

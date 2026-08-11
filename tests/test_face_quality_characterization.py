@@ -204,7 +204,7 @@ def test_face_detect_can_freeze_quality_without_identity(monkeypatch) -> None:
     assert "embedding" not in result[0]
 
 
-def test_recoverable_face_uses_original_without_superres(monkeypatch) -> None:
+def test_recoverable_face_requires_successful_superres_before_embedding(monkeypatch) -> None:
     _prepare_detect_test(monkeypatch)
     monkeypatch.setattr(
         face,
@@ -222,7 +222,7 @@ def test_recoverable_face_uses_original_without_superres(monkeypatch) -> None:
     monkeypatch.setattr(
         face,
         "enhance",
-        lambda image, aligned=False, backend=None, options=None: Image.fromarray(
+        lambda image, aligned=False, backend=None: Image.fromarray(
             np.full((112, 112, 3), 180, dtype=np.uint8)
         ),
     )
@@ -248,9 +248,9 @@ def test_recoverable_face_uses_original_without_superres(monkeypatch) -> None:
         restored[0]["superres_fiqa_diagnostic"]
         == "fiqa_below_poor_threshold"
     )
-    assert blocked[0]["match_ready"] is True
-    assert blocked[0]["match_source"] == "original"
-    assert len(calls) == 2
+    assert blocked[0]["match_ready"] is False
+    assert blocked[0]["match_source"] == "none"
+    assert len(calls) == 1
 
 
 def test_finalize_identity_uses_explicit_registered_superres_backend(monkeypatch) -> None:

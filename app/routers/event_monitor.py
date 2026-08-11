@@ -121,18 +121,17 @@ def gallery_presentation_archive() -> FileResponse:
 
 @router.get("/superres-backends")
 def list_superres_backends() -> dict:
-    metadata = {
-        "off": {
-            "label": "关闭",
-            "parameters": [],
-        },
-        **face_mod.superres_backend_metadata(),
-    }
     return {
         "default": _STARTUP_FACE_SUPERRES,
         "backends": ["off", *face_mod.available_superres_backends()],
-        "metadata": metadata,
-        "plugin_errors": face_mod.superres_plugin_errors(),
+        "metadata": {
+            "codeformer": {
+                "requires_fidelity": True,
+                "fidelity_default": _STARTUP_CODEFORMER_FIDELITY,
+                "fidelity_min": 0.0,
+                "fidelity_max": 1.0,
+            },
+        },
     }
 
 
@@ -285,7 +284,6 @@ async def understand(
     # ---- 本次请求覆盖的可插拔开关（设置面板传来；留空=用默认，仅本次生效不持久）----
     face_rec_backend: str | None = Form(None),   # arcface | adaface
     face_superres: str | None = Form(None),      # off | registered backend
-    face_superres_options: str | None = Form(None),  # JSON object from plugin schema
     face_codeformer_fidelity: float | None = Form(None),
     face_3d_cue: bool | None = Form(None),
     reid_backend: str | None = Form(None),       # auto | registered backend
@@ -315,11 +313,6 @@ async def understand(
         raise HTTPException(400, "tracking_fps 必须在 [1, 30] 范围内")
     if effective_tracking_fps < fps:
         raise HTTPException(400, "tracking_fps 不能低于语义 fps")
-    if (
-        enrollment_evidence_frames is not None
-        and not 1 <= enrollment_evidence_frames <= 5
-    ):
-        raise HTTPException(400, "enrollment_evidence_frames 必须在 [1, 5] 范围内")
     if (
         face_codeformer_fidelity is not None
         and not 0.0 <= face_codeformer_fidelity <= 1.0
@@ -378,44 +371,17 @@ async def understand(
 
     async with _RUN_LOCK:
         selected_face_superres = explicit_face_superres
-        if selected_face_superres is None:
+        if selected_face_superres is None and with_face:
             try:
                 selected_face_superres = face_mod.validate_superres_backend(
                     settings.face_superres
                 )
             except ValueError as exc:
                 raise HTTPException(400, str(exc)) from exc
-        if face_codeformer_fidelity is not None:
-            existing = raw_superres_options.get("fidelity")
-            if existing is not None:
-                try:
-                    same_fidelity = (
-                        float(existing) == face_codeformer_fidelity
-                    )
-                except (TypeError, ValueError):
-                    same_fidelity = False
-                if not same_fidelity:
-                    raise HTTPException(
-                        400,
-                        "CodeFormer fidelity不能同时提交两个不同值",
-                    )
-            raw_superres_options["fidelity"] = face_codeformer_fidelity
-        try:
-            selected_superres_options = face_mod.validate_superres_options(
-                selected_face_superres,
-                raw_superres_options,
-            )
-        except ValueError as exc:
-            raise HTTPException(400, str(exc)) from exc
         overrides = {
             "face_rec_backend": (face_rec_backend or None),
             "face_superres": selected_face_superres,
-            "face_superres_options": selected_superres_options,
-            "face_codeformer_fidelity": (
-                selected_superres_options.get("fidelity")
-                if selected_face_superres == "codeformer"
-                else None
-            ),
+            "face_codeformer_fidelity": face_codeformer_fidelity,
             "face_3d_cue": face_3d_cue,
             "reid_backend": selected_reid_backend,
             "reid_decision_top_k": reid_decision_top_k,
@@ -438,16 +404,10 @@ async def understand(
                     "with_objects": with_objects,
                     "face_rec_backend": settings.face_rec_backend,
                     "face_superres": settings.face_superres,
-                    "face_superres_options": dict(
-                        settings.face_superres_options
-                    ),
                     "face_codeformer_fidelity": settings.face_codeformer_fidelity,
                     "face_3d_cue": settings.face_3d_cue,
                     "reid_backend": settings.reid_backend,
-                    "gallery_candidate_top_k": settings.gallery_candidate_top_k,
-                    "enrollment_evidence_frames": (
-                        settings.enrollment_evidence_frames
-                    ),
+                    "reid_decision_top_k": settings.reid_decision_top_k,
                     "reid_consistency_enabled": settings.reid_consistency_enabled,
                     "reid_vote_score_thresh": settings.reid_vote_score_thresh,
                     "reid_consistency_ratio": settings.reid_consistency_ratio,

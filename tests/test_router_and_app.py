@@ -410,23 +410,12 @@ def test_superres_backend_catalog_and_unknown_request_validation() -> None:
         "codeformer",
         "realesrgan_x2plus",
     } <= set(catalog_body["backends"])
-    assert catalog_body["metadata"]["codeformer"]["label"] == "CodeFormer"
-    assert catalog_body["metadata"]["codeformer"]["parameters"] == [
-        {
-            "name": "fidelity",
-            "label": "Fidelity",
-            "type": "number",
-            "default": 1.0,
-            "min": 0.0,
-            "max": 1.0,
-            "step": 0.05,
-            "help": (
-                "1.0优先保留身份；降低可增强视觉修复，"
-                "但可能改变身份纹理。"
-            ),
-        }
-    ]
-    assert catalog_body["plugin_errors"] == {}
+    assert catalog_body["metadata"]["codeformer"] == {
+        "requires_fidelity": True,
+        "fidelity_default": 1.0,
+        "fidelity_min": 0.0,
+        "fidelity_max": 1.0,
+    }
     assert invalid.status_code == 400
     assert "未知人脸超分后端" in invalid.json()["detail"]
 
@@ -586,19 +575,7 @@ def test_router_accepts_registered_superres_backend(monkeypatch) -> None:
     face.register_superres_backend(
         "unit-router",
         lambda: object(),
-        lambda model, image, aligned, options: image.copy(),
-        display_name="Unit Router",
-        accepts_options=True,
-        options=(
-            {
-                "name": "strength",
-                "label": "Strength",
-                "type": "number",
-                "default": 0.5,
-                "min": 0.0,
-                "max": 1.0,
-            },
-        ),
+        lambda model, image, aligned: image.copy(),
         replace=True,
     )
 
@@ -631,15 +608,13 @@ def test_router_accepts_registered_superres_backend(monkeypatch) -> None:
         data={
             "dry_run": "true",
             "face_superres": "unit-router",
-            "face_superres_options": json.dumps({"strength": 0.85}),
+            "face_codeformer_fidelity": "0.85",
         },
     )
 
     assert response.status_code == 200
     assert response.json()["config_used"]["face_superres"] == "unit_router"
-    assert response.json()["config_used"]["face_superres_options"] == {
-        "strength": 0.85
-    }
+    assert response.json()["config_used"]["face_codeformer_fidelity"] == 0.85
     assert calls
     shutil.rmtree(
         event_monitor.OUT_DIR / response.json()["run_id"],

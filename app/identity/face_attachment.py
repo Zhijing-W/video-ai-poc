@@ -30,7 +30,6 @@ def _empty_face_record(reason: str, *, error: str | None = None) -> dict:
         "matched": False,
         "face_subject_id": None,
         "match_score": None,
-        "candidates": [],
         "quality_detail": quality,
     }
     if error:
@@ -40,12 +39,7 @@ def _empty_face_record(reason: str, *, error: str | None = None) -> dict:
 
 def _legacy_candidates(tid: int, track: dict, frames: list) -> list[dict]:
     if track.get("face_candidates"):
-        return [
-            dict(item)
-            for item in track["face_candidates"][
-                : settings.enrollment_evidence_frames
-            ]
-        ]
+        return [dict(item) for item in track["face_candidates"]]
     frame_index = int(track.get("best_idx", 0))
     return [
         {
@@ -99,60 +93,6 @@ def _track_consistency(
         round(score, 4),
         "passed" if score >= settings.face_track_consistency_thresh else "failed",
     )
-
-
-def _supporting_face_observations(
-    options: list[dict],
-    selected: dict,
-    frames: list,
-    track: dict,
-    body_embedding: np.ndarray | None,
-    *,
-    limit: int,
-) -> tuple[list[tuple[np.ndarray, dict]], list[dict]]:
-    observations = []
-    errors = []
-    for option in sorted(options, key=face_evidence_rank, reverse=True):
-        if option is selected:
-            continue
-        quality = dict((option.get("_face") or {}).get("quality") or {})
-        if not (
-            quality.get("eligibility") == "direct"
-            and quality.get("category") == "clear"
-            and quality.get("can_enroll")
-        ):
-            continue
-        try:
-            frame_index = int(option["frame_index"])
-            image = Image.open(frames[frame_index].local_path).convert("RGB")
-            consistent, _, _ = _track_consistency(
-                option,
-                track,
-                body_embedding,
-                image,
-            )
-            if not consistent:
-                continue
-            finalized = face_mod.finalize_identity(image, option["_face"])
-            embedding = finalized.get("embedding")
-            if not finalized.get("match_ready") or embedding is None:
-                continue
-            observations.append(
-                (
-                    np.asarray(embedding, dtype=np.float32).reshape(-1),
-                    dict(finalized.get("quality") or quality),
-                )
-            )
-            if len(observations) >= limit:
-                break
-        except Exception as exc:
-            errors.append(
-                {
-                    "frame_index": int(option.get("frame_index", -1)),
-                    "error": f"{type(exc).__name__}: {exc}",
-                }
-            )
-    return observations, errors
 
 
 def attach_faces(
@@ -292,6 +232,7 @@ def attach_faces(
         selected["track_consistency_status"] = consistency_status
         track["face_best"] = selected
         frozen_face = selected["_face"]
+        frozen_face = selected["_face"]
         if not consistent:
             rec = {
                 **_empty_face_record("track_consistency_failed"),
@@ -389,7 +330,6 @@ def attach_faces(
                 )
                 rec["face_subject_id"] = result.get("subject_id")
                 rec["match_score"] = result.get("score")
-                rec["candidates"] = result.get("candidates") or []
                 rec["matched"] = result.get("decision") == "hit"
                 rec["enrolled"] = result.get("enrolled")
                 rec["gallery_quality_ok"] = result.get("quality_ok")

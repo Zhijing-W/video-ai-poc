@@ -51,20 +51,23 @@ def face_candidate_proxy(
     return sharpness * scale * max(0.0, min(1.0, detection_confidence)) * clipping_penalty
 
 
-def _update_temporal_candidates(
+def update_face_candidates(
     candidates: list[dict],
     candidate: dict,
     *,
     top_k: int,
     min_gap_frames: int,
-    rank_key,
 ) -> list[dict]:
+    """Keep a temporally diverse, score-ranked bounded candidate set."""
     if top_k <= 0:
         return []
     gap = max(1, min_gap_frames)
     ordered = sorted(
         [*(dict(item) for item in candidates), dict(candidate)],
-        key=rank_key,
+        key=lambda item: (
+            float(item.get("proxy_score") or 0.0),
+            -int(item["frame_index"]),
+        ),
         reverse=True,
     )
     selected = []
@@ -79,47 +82,6 @@ def _update_temporal_candidates(
         if len(selected) >= top_k:
             break
     return selected
-
-
-def update_face_candidates(
-    candidates: list[dict],
-    candidate: dict,
-    *,
-    top_k: int,
-    min_gap_frames: int,
-) -> list[dict]:
-    """Keep a temporally diverse, score-ranked bounded face candidate set."""
-    return _update_temporal_candidates(
-        candidates,
-        candidate,
-        top_k=top_k,
-        min_gap_frames=min_gap_frames,
-        rank_key=lambda item: (
-            float(item.get("proxy_score") or 0.0),
-            -int(item["frame_index"]),
-        ),
-    )
-
-
-def update_body_candidates(
-    candidates: list[dict],
-    candidate: dict,
-    *,
-    top_k: int,
-    min_gap_frames: int,
-) -> list[dict]:
-    """Keep quality-ranked body queries separated in time."""
-    return _update_temporal_candidates(
-        candidates,
-        candidate,
-        top_k=top_k,
-        min_gap_frames=min_gap_frames,
-        rank_key=lambda item: (
-            float(item.get("selection_score") or 0.0),
-            body_quality_score(item.get("quality") or {}),
-            -int(item["frame_index"]),
-        ),
-    )
 
 
 def ensure_body_fallback(candidates: list[dict], body_best: dict | None, *, top_k: int) -> list[dict]:
@@ -189,6 +151,5 @@ __all__ = [
     "face_candidate_proxy",
     "face_evidence_rank",
     "public_evidence",
-    "update_body_candidates",
     "update_face_candidates",
 ]

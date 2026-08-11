@@ -71,14 +71,10 @@ def _enhance(
     loaded: LoadedCodeFormer,
     image: Image.Image,
     aligned: bool,
-    options: dict[str, Any] | None = None,
 ) -> Image.Image:
     if not aligned:
         raise ValueError("CodeFormer requires an already aligned face crop")
-    options = options or {}
-    fidelity = validate_fidelity(
-        options.get("fidelity", loaded.settings.face_codeformer_fidelity)
-    )
+    fidelity = validate_fidelity(loaded.settings.face_codeformer_fidelity)
     tensor = preprocess(loaded.torch, image).to(loaded.device)
     with loaded.torch.inference_mode():
         output = loaded.descriptor.model(
@@ -95,23 +91,6 @@ def register(register_backend, settings) -> None:
         "codeformer",
         lambda: _load(settings),
         _enhance,
-        display_name="CodeFormer",
-        accepts_options=True,
-        options=(
-            {
-                "name": "fidelity",
-                "label": "Fidelity",
-                "type": "number",
-                "default": settings.face_codeformer_fidelity,
-                "min": 0.0,
-                "max": 1.0,
-                "step": 0.05,
-                "help": (
-                    "1.0优先保留身份；降低可增强视觉修复，"
-                    "但可能改变身份纹理。"
-                ),
-            },
-        ),
         replace=True,
     )
 

@@ -194,29 +194,16 @@ Copy `.env.example` to `.env`. Important settings include:
 | `OCR_ENABLED` | Enable scene-level OCR |
 | `OBJECT_DETECT` | Enable object/package context |
 
-The web settings panel sends its current values with every run. The server applies
-them only for that request and then restores `.env` defaults. The browser keeps the
-selected controls for later runs on the same page, so the same override is submitted
-again until the user changes it or reloads the page.
-
-Gallery retrieval depth and enrollment evidence are independent. The best query
-frame always supplies the Top-1 identity and must pass the normal similarity
-threshold. Additional query frames can only block a new enrollment: each one must
-pass quality checks, remain outside the known Gallery, and agree with the primary
-query. Gait already uses a multi-frame sequence and keeps its existing
-sequence-level enrollment path.
+The web settings panel can override selected options for one run without permanently modifying `.env`.
 
 Super-resolution dispatch lives in
 `app/identity/face/super_resolution.py`; it owns only the light registry and
 dispatch. GFP-GAN, CodeFormer, and Real-ESRGAN adapters live under
 `app/identity/face/superres_backends/` and lazily import model libraries only
-when selected. To add a bundled algorithm, add an adapter module exposing
-`register(register_backend, settings)`; the package is scanned automatically,
-so no central import needs editing. Third-party packages can publish the same
-callable through the `event_monitor.superres_backends` Python entry-point group.
-Each plugin owns its display name and optional parameter schema. The API returns
-that metadata from `/api/event-monitor/superres-backends`, and the UI creates
-the corresponding controls without backend-specific JavaScript.
+when selected. To add another algorithm, create an adapter module exposing
+`register(register_backend, settings)`, register a lazy loader/enhancer pair,
+and import/call that module with the other built-ins. The API and UI discover
+registered names through `/api/event-monitor/superres-backends`.
 CodeFormer is integrated for research/non-commercial evaluation under S-Lab
 License 1.0; commercial deployment requires separate permission. The complete
 notice is in `licenses/CodeFormer-S-Lab-License-1.0.txt`.
