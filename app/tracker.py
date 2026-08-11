@@ -13,8 +13,8 @@
 同一会话的帧串行更新（不同会话可并行）。换视频/重新开始时调用 `reset_tracker`。
 
 ByteTrack 工作机制（一句话）：用卡尔曼滤波预测每条轨迹下一帧位置，再用 IoU 做匹配。
-BoT-SORT 在此基础上加入全局运动补偿；`botsort_reid` 再接入本项目 `app.body_reid` 的外观特征，
-用于多人交叉/遮挡时降低 ID switch。
+BoT-SORT 在此基础上加入全局运动补偿；`botsort_reid` 使用独立的 Tracker 专用 OSNet
+外观特征（不复用最终身份 Body ReID 后端），用于多人交叉/遮挡时降低 ID switch。
 """
 from __future__ import annotations
 

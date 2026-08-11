@@ -23,6 +23,25 @@ def test_gait_summary_uses_effective_pipeline_state() -> None:
     assert 't("results.config_gait", { state: on(withGait) })' in source
 
 
+def test_tracker_settings_expose_independent_osnet_backend() -> None:
+    template = (ROOT / "templates" / "event-monitor.html").read_text(
+        encoding="utf-8"
+    )
+    english = build_page_bundle("en")["messages"]["settings"]
+    chinese = build_page_bundle("zh-CN")["messages"]["settings"]
+
+    assert (
+        '<option value="botsort_reid">'
+        "{{ ui.settings.tracker_botsort_reid }}</option>"
+    ) in template
+    assert "motion association only" in english["tracker_default"]
+    assert "tracker-only OSNet" in english["tracker_botsort_reid"]
+    assert "does not reuse the identity Body ReID backend" in english["tracker_hint"]
+    assert "仅运动关联" in chinese["tracker_default"]
+    assert "Tracker 专用 OSNet" in chinese["tracker_botsort_reid"]
+    assert "不会复用身份识别的 Body ReID 后端" in chinese["tracker_hint"]
+
+
 def test_post_analysis_ai_actions_are_separate_and_run_scoped() -> None:
     template = (ROOT / "templates" / "event-monitor.html").read_text(encoding="utf-8")
     results_css = (
