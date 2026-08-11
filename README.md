@@ -4,7 +4,7 @@ Turns surveillance videos into event timelines, alerts, and structured reports t
 
 [English](#english) | [中文](#中文)
 
-![Event Monitor PoC architecture](docs/poc-architecture.png)
+[![Event Monitor PoC architecture](docs/poc-architecture.svg)](docs/poc-architecture.svg)
 
 ---
 
