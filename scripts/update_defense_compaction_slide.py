@@ -17,8 +17,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 EXPECTED_JSON_CHARS = 8_636
-EXPECTED_TSV_CHARS = 3_835
-EXPECTED_REDUCTION = "55.6%"
+EXPECTED_TSV_CHARS = 3_878
+EXPECTED_REDUCTION = "55.1%"
 DRAWING_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 PACKAGE_NS = "http://schemas.openxmlformats.org/package/2006/content-types"
 PRESENTATION_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
@@ -193,6 +193,10 @@ def _rewrite_deck(deck: Path, before: bytes, after: bytes) -> None:
     )
     body_new = (
         "在覆盖 6 个事件窗、约 5 分钟时间轴的代表性自动化测试中，LLM 证据序列化从 8,636 个字符"
+        "的压缩 JSON 降至 3,878 个字符的紧凑表格化证据，减少 55.1%。"
+    )
+    body_previous = (
+        "在覆盖 6 个事件窗、约 5 分钟时间轴的代表性自动化测试中，LLM 证据序列化从 8,636 个字符"
         "的压缩 JSON 降至 3,835 个字符的紧凑表格化证据，减少 55.6%。"
     )
     pivot_notes = (
@@ -206,8 +210,17 @@ def _rewrite_deck(deck: Path, before: bytes, after: bytes) -> None:
         package["ppt/slides/slide8.xml"] = _replace_text(
             package["ppt/slides/slide8.xml"], body_old, body_new
         )
+    elif body_previous.encode("utf-8") in package["ppt/slides/slide8.xml"]:
+        package["ppt/slides/slide8.xml"] = _replace_text(
+            package["ppt/slides/slide8.xml"], body_previous, body_new
+        )
     elif package["ppt/slides/slide8.xml"].count(body_new.encode("utf-8")) != 1:
         raise RuntimeError("Expected the existing or revised evidence-compaction wording")
+    package["ppt/slides/slide8.xml"] = (
+        package["ppt/slides/slide8.xml"]
+        .replace(b"3,835", b"3,878")
+        .replace(b"55.6%", b"55.1%")
+    )
     package["ppt/notesSlides/notesSlide8.xml"] = _replace_notes_text(
         package["ppt/notesSlides/notesSlide8.xml"], pivot_notes
     )
@@ -262,7 +275,7 @@ def main() -> None:
     _draw_terminal(
         after_path,
         title="Exact serializer output · compact TSV",
-        chip="3,835 chars",
+        chip="3,878 chars",
         chip_fill="#00c8d9",
         lines=_actual_tsv_excerpt(prompt),
     )
