@@ -166,3 +166,55 @@ def test_concurrent_calls_load_registered_backend_once() -> None:
 
     assert load_count == 1
     assert all(isinstance(output, Image.Image) for output in outputs)
+
+
+def test_external_entry_point_plugins_are_discovered_independently(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        super_resolution,
+        "_backends",
+        dict(super_resolution._backends),
+    )
+    monkeypatch.setattr(
+        super_resolution,
+        "_states",
+        dict(super_resolution._states),
+    )
+    monkeypatch.setattr(super_resolution, "_plugin_errors", {})
+
+    class EntryPoint:
+        def __init__(self, name, plugin):
+            self.name = name
+            self._plugin = plugin
+
+        def load(self):
+            if isinstance(self._plugin, Exception):
+                raise self._plugin
+            return self._plugin
+
+    def register_good(register_backend, backend_settings):
+        del backend_settings
+        register_backend(
+            "unit-entrypoint",
+            lambda: object(),
+            lambda model, image, aligned: image.copy(),
+            replace=True,
+        )
+
+    monkeypatch.setattr(
+        super_resolution,
+        "_external_plugin_entry_points",
+        lambda: (
+            EntryPoint("broken", RuntimeError("broken plugin")),
+            EntryPoint("healthy", register_good),
+        ),
+    )
+
+    super_resolution.discover_backends()
+
+    assert "unit_entrypoint" in super_resolution.available_backends()
+    assert "broken plugin" in (
+        super_resolution.plugin_errors().get("entrypoint:broken") or ""
+    )
+    assert "entrypoint:healthy" not in super_resolution.plugin_errors()

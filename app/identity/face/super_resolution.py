@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import importlib
+import importlib.metadata
+import pkgutil
 import threading
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -7,11 +10,11 @@ from typing import Any, Callable
 from PIL import Image
 
 from ...config import settings
-from .superres_backends import codeformer, gfpgan, realesrgan
 
 
 BackendLoader = Callable[[], Any]
 BackendEnhancer = Callable[[Any, Image.Image, bool], Image.Image | None]
+_PLUGIN_ENTRY_POINT_GROUP = "event_monitor.superres_backends"
 
 
 @dataclass(frozen=True)
@@ -33,6 +36,7 @@ class _BackendState:
 _registry_lock = threading.RLock()
 _backends: dict[str, SuperResolutionBackend] = {}
 _states: dict[str, _BackendState] = {}
+_plugin_errors: dict[str, str] = {}
 _DISABLED_BACKENDS = {"", "off", "none", "disabled"}
 _ALIASES = {"gfp_gan": "gfpgan"}
 
@@ -76,6 +80,11 @@ def register_backend(
 def available_backends() -> tuple[str, ...]:
     with _registry_lock:
         return tuple(sorted(_backends))
+
+
+def plugin_errors() -> dict[str, str]:
+    with _registry_lock:
+        return dict(_plugin_errors)
 
 
 def validate_backend(value: str | None = None) -> str:
@@ -176,17 +185,87 @@ def enhance(
         return image
 
 
-_make_gfpgan_deterministic = gfpgan._make_gfpgan_deterministic
-gfpgan.register(register_backend, settings)
-codeformer.register(register_backend, settings)
-realesrgan.register(register_backend, settings)
+def _register_plugin(plugin: Any, source: str) -> None:
+    register = getattr(plugin, "register", None)
+    if register is None and callable(plugin):
+        register = plugin
+    if not callable(register):
+        raise TypeError(
+            f"{source} must expose register(register_backend, settings)"
+        )
+    register(register_backend, settings)
+
+
+def _builtin_plugin_names() -> list[str]:
+    package = importlib.import_module(f"{__package__}.superres_backends")
+    prefix = f"{package.__name__}."
+    return [
+        info.name
+        for info in sorted(
+            pkgutil.iter_modules(package.__path__, prefix),
+            key=lambda item: item.name,
+        )
+        if not info.name.rsplit(".", 1)[-1].startswith("_")
+    ]
+
+
+def _external_plugin_entry_points():
+    discovered = importlib.metadata.entry_points()
+    if hasattr(discovered, "select"):
+        return tuple(discovered.select(group=_PLUGIN_ENTRY_POINT_GROUP))
+    return tuple(discovered.get(_PLUGIN_ENTRY_POINT_GROUP, ()))
+
+
+def discover_backends() -> None:
+    """Discover bundled adapters and installed Python entry-point plugins."""
+    try:
+        builtin_names = _builtin_plugin_names()
+    except Exception as exc:  # noqa: BLE001
+        with _registry_lock:
+            _plugin_errors["builtins"] = f"{type(exc).__name__}: {exc}"
+        builtin_names = []
+    for module_name in builtin_names:
+        try:
+            _register_plugin(importlib.import_module(module_name), module_name)
+            with _registry_lock:
+                _plugin_errors.pop(module_name, None)
+        except Exception as exc:  # noqa: BLE001
+            with _registry_lock:
+                _plugin_errors[module_name] = f"{type(exc).__name__}: {exc}"
+
+    try:
+        entry_points = _external_plugin_entry_points()
+    except Exception as exc:  # noqa: BLE001
+        with _registry_lock:
+            _plugin_errors["entrypoints"] = f"{type(exc).__name__}: {exc}"
+        entry_points = ()
+    for entry_point in entry_points:
+        source = f"entrypoint:{entry_point.name}"
+        try:
+            _register_plugin(entry_point.load(), source)
+            with _registry_lock:
+                _plugin_errors.pop(source, None)
+        except Exception as exc:  # noqa: BLE001
+            with _registry_lock:
+                _plugin_errors[source] = f"{type(exc).__name__}: {exc}"
+
+
+discover_backends()
+
+
+def _make_gfpgan_deterministic(restorer):
+    from .superres_backends.gfpgan import _make_gfpgan_deterministic as wrap
+
+    return wrap(restorer)
 
 
 __all__ = [
     "SuperResolutionBackend",
     "_ensure_superres",
     "available_backends",
+    "discover_backends",
     "enhance",
+    "plugin_errors",
     "register_backend",
     "reset_backend",
     "superres_error",

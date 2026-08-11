@@ -381,7 +381,7 @@ Rank-5 结果也没有改变方案排序：原图为 60.3%，Real-ESRGAN 全量�
 - `超分实验/实验设计.md`：最终 Gallery、Query、A/B/C 矩阵与审计约束；
 - `results/runs/mevid_e2e_e27_i25_20260710_081808.json`：早期多模态实验原始结果；
 - `results/runs/mevid_face_b3_train50_r5_test27_20260713_090421.json`：早期 ArcFace/AdaFace 与 GFPGAN 触发结果；
-- `paper/GFPGAN适用性报告.tex`：质量分桶、FIQA 诊断和 GFPGAN 正式结果；
+- `paper/gfpgan_applicability_report.tex`：质量分桶、FIQA 诊断和 GFPGAN 正式结果；
 - `paper/多超分算法适用性报告.tex`：三种超分后端、全量结果、诊断和产品建议；
 - 正式多超分归档中的 `per_sample_long.csv`、运行摘要、manifest 和审计文件；
 - 2026 年 7 月 7 日至 7 月 23 日间的相关实验会话记录，包括最初方案设计、VM 正式运行、Gallery/Query 排查、FIQA 讨论和结果恢复。
