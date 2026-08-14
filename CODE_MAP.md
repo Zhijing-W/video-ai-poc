@@ -1,6 +1,9 @@
 # Event Monitor 代码地图
 
 > 当前默认开发范围。旧版位于独立的 `feature/monitor-v1` 分支。
+>
+> **维护者入口：**先阅读 [`docs/POC_HANDOFF.md`](docs/POC_HANDOFF.md)，其中包含
+> 当前产品基线、默认策略、修改清单、验证入口、分支整合和 Azure 退役状态。
 
 ## 入口
 
@@ -49,6 +52,7 @@
 | 端到端编排兼容入口 | `app/event_analysis_pipeline.py` |
 | 事件会话与分窗/grounding | `app/pipeline/session.py`、`app/pipeline/windowing.py`、`app/pipeline/spatial_context.py`、`app/pipeline/object_context.py` |
 | 检测与跟踪 | `app/detector.py`、`app/tracker.py` |
+| Tracker 专用外观关联 | `app/tracker.py` 的 `_AppReIDEncoder`；仅供 `botsort_reid` 用轻量 OSNet 维持 `track_id`，不承担最终身份判断 |
 | 人形身份与 gallery | `app/body_reid.py`、`app/identity/embedding_gallery.py`、`app/body_gallery.py` |
 | 身份证据选帧/归并 | `app/identity/evidence_selection.py`、`app/identity/face_attachment.py`、`app/identity/resolution.py` |
 | 人脸兼容入口与编排 | `app/face.py`（保留旧导入、monkeypatch seam、detect/finalize编排） |
@@ -65,6 +69,10 @@
 | OpenAI 客户端与事件报告 | `app/openai_client.py`、`app/llm_client.py`、`app/services/event_reporter.py`、`app/services/event_understanding.py` |
 | 时间线与设置前端 | `static/js/event-monitor/`、`static/css/event-monitor.css`、`static/css/event-monitor/` |
 | 行为保护测试 | `tests/` |
+
+Tracker 专用 OSNet 和最终身份 Body ReID 是两条独立路径：前者只帮助 MOT 在相邻帧遮挡/
+交叉时关联轨迹；后者按 `REID_BACKEND` 选择 DIFFER、CLIP-ReID 等后端，并与命名 Gallery
+做跨轨迹/跨镜头身份匹配。不要复用彼此的默认值、指标或配置入口。
 
 新增超分算法时，在 `app/identity/face/superres_backends/` 增加只暴露
 `register(register_backend, settings)` 的适配器；注册时仅提供 loader/enhancer，
