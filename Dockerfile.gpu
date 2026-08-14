@@ -1,13 +1,12 @@
-# Lightweight application layer. The workflow supplies a dependency image whose
-# tag is derived from Dockerfile.gpu.base and requirements.txt.
+# Lightweight application layer built on the currently validated GPU image.
+# The build supplies GPU_BASE_IMAGE so CUDA and model dependencies are reused.
 ARG GPU_BASE_IMAGE
 FROM ${GPU_BASE_IMAGE}
 
 USER root
 WORKDIR /app
 
-# Delete source inherited when the dependency image was bootstrapped from an
-# existing application image, so removed files cannot survive a deployment.
+# Prevent removed source files from surviving when the base came from an older app.
 RUN rm -rf /app/app /app/templates /app/static /app/experiment /app/licenses
 
 COPY --chown=appuser:appuser app        ./app
@@ -18,11 +17,16 @@ COPY --chown=appuser:appuser licenses   ./licenses
 
 USER appuser
 
-ENV MODEL_ROOT=/models
+ENV MODEL_ROOT=/models \
+    OUTPUT_DIR=/results \
+    YOLO_MODEL=/models/detection/yolo/yolov8m.pt \
+    POSE_MODEL=/models/detection/yolo/yolov8n-pose.pt \
+    GAIT_SEG_MODEL=/models/detection/yolo/yolov8m-seg.pt \
+    REID_BACKEND=differ
 
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
-  CMD curl -fsS http://localhost:${PORT}/docs > /dev/null || exit 1
+  CMD curl -fsS http://localhost:${PORT}/health > /dev/null || exit 1
 
 CMD ["sh", "-c", "gunicorn app.main:app -k uvicorn.workers.UvicornWorker -b 0.0.0.0:${PORT} --workers 1 --timeout 300"]

@@ -8,10 +8,15 @@ from typing import Sequence
 
 
 def seconds_to_timestamp(seconds: float) -> str:
-    seconds = int(round(seconds))
-    hours, remainder = divmod(seconds, 3600)
+    total_ms = max(0, int(round(float(seconds) * 1000)))
+    whole_seconds, milliseconds = divmod(total_ms, 1000)
+    hours, remainder = divmod(whole_seconds, 3600)
     minutes, secs = divmod(remainder, 60)
-    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    base = f"{hours:02d}:{minutes:02d}:{secs:02d}"
+    if milliseconds == 0:
+        return base
+    fraction = f"{milliseconds:03d}".rstrip("0")
+    return f"{base}.{fraction}"
 
 
 def image_to_data_uri(path: str | Path) -> str:

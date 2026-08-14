@@ -118,7 +118,7 @@
 - [ ] `pwsh infra\deploy.ps1 -Subscription 260e353b-... -Region southeastasia -Prefix videopoc`（20 分钟）
 - [ ] `pwsh infra\upload-models.ps1` + `upload-datasets.ps1`（15 分钟）
 - [ ] `pwsh infra\add-gpu-pool.ps1 -RG videopoc-rg -Cluster <aks>`（5 分钟，默认 Standard_NC4as_T4_v3 Spot）
-- [ ] `az acr build -f Dockerfile.gpu` + `helm upgrade --set gpu.enabled=true`（10 分钟）
+- [ ] 触发 `Build GPU image` 工作流 + `helm upgrade --set gpu.enabled=true`（10 分钟）
 - [ ] 验证 `kubectl exec ... nvidia-smi` 看到 T4；跑一张糊脸对比 CPU vs GPU 速度
 
 **详细步骤见 `docs/GPU_QUOTA_STATUS.md` 第 3 节**。

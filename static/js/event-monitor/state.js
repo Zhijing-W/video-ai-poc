@@ -11,6 +11,7 @@ const initialProgressState = () => ({
 const state = {
   lastPayload: null,
   keyframes: [],
+  promptArtifact: null,
   progress: initialProgressState(),
 };
 
@@ -23,6 +24,17 @@ export function setLastPayload(payload) {
 
 export function clearLastPayload() {
   state.lastPayload = null;
+}
+
+export const getPromptArtifact = () => state.promptArtifact;
+
+export function setPromptArtifact(format, content) {
+  state.promptArtifact = { format, content };
+  return state.promptArtifact;
+}
+
+export function clearPromptArtifact() {
+  state.promptArtifact = null;
 }
 
 export function resetKeyframeRegistry() {

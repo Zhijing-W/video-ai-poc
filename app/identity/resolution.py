@@ -14,6 +14,7 @@ def person_record(tid: int, t: dict, ident: dict, win_idx: list[int], img_w: int
         "source_track_ids": [tid],
         "box": box,
         "subject_id": ident.get("subject_id"),
+        "db_identity": ident.get("db_identity"),
         "decision": ident.get("decision"),
         "reused": ident.get("reused", False),
         "trajectory": [list(c) for c in centers],
@@ -82,6 +83,7 @@ def group_people(
             "source_track_ids": sorted(tids),
             "box": rep_box,
             "subject_id": identities[rep].get("subject_id"),
+            "db_identity": next((identities[t].get("db_identity") for t in tids if identities[t].get("db_identity")), None),
             "decision": "local_stitched" if local_subject else ("conflict_split" if conflict_split else "hit"),
             "reused": False if (local_subject or conflict_split) else True,
             "trajectory": [list(c) for (_, c) in merged_centers],
@@ -122,11 +124,22 @@ def stitch_orphans(
     # 各主体的成员向量（来自已分配 subject_id 的 track）
     members: dict[int, list[np.ndarray]] = {}
     member_tids: dict[int, list[int]] = {}
+    member_labels: dict[int, str] = {}
     for tid, idn in identities.items():
+        if (
+            not idn.get("db_identity")
+            and not (
+                settings.identity_merge_unnamed_tracks
+                or settings.identity_auto_enroll_unknown
+            )
+        ):
+            continue
         sid = idn.get("subject_id")
         if sid is not None and tid in track_emb:
             members.setdefault(sid, []).append(track_emb[tid])
             member_tids.setdefault(sid, []).append(tid)
+            if idn.get("db_identity"):
+                member_labels[sid] = str(idn["db_identity"])
     reps: dict[int, np.ndarray] = {sid: _norm(np.mean(vs, axis=0)) for sid, vs in members.items()}
 
     # 孤立 track：按首次出现时间顺序缝合
@@ -137,7 +150,15 @@ def stitch_orphans(
     for tid in orphans:
         v = _norm(track_emb[tid])
         best_sid, best_sim = None, -1.0
-        hit_thresh = thresh if identities[tid].get("quality_ok") else max(thresh, settings.event_local_stitch_thresh)
+        base_thresh = max(thresh, settings.reid_hit_thresh)
+        hit_thresh = (
+            base_thresh
+            if identities[tid].get("quality_ok")
+            else max(
+                base_thresh,
+                settings.reid_low_quality_hit_thresh,
+            )
+        )
         for sid, rep in reps.items():
             if any(_overlap(tid, mt) for mt in member_tids.get(sid, [])):
                 continue
@@ -147,6 +168,7 @@ def stitch_orphans(
         if best_sid is not None and best_sim >= hit_thresh:
             idn = identities[tid]
             idn["subject_id"] = best_sid
+            idn["db_identity"] = member_labels.get(best_sid)
             idn["decision"] = "stitched"
             idn["reused"] = True
             idn["stitch_score"] = round(best_sim, 4)
@@ -166,6 +188,19 @@ def stitch_orphans(
     clusters: list[dict] = []
     for tid in remaining:
         v = _norm(track_emb[tid])
+        if not (
+            settings.identity_merge_unnamed_tracks
+            or settings.identity_auto_enroll_unknown
+        ):
+            clusters.append(
+                {
+                    "tids": [tid],
+                    "vecs": [track_emb[tid]],
+                    "scores": [],
+                    "rep": v,
+                }
+            )
+            continue
         best_cluster, best_sim = None, -1.0
         for cluster in clusters:
             if any(_overlap(tid, mt) for mt in cluster["tids"]):
@@ -177,9 +212,18 @@ def stitch_orphans(
             best_cluster["tids"].append(tid)
             best_cluster["vecs"].append(track_emb[tid])
             best_cluster["scores"].append(best_sim)
-            best_cluster["rep"] = _norm(np.mean(best_cluster["vecs"], axis=0))
+            best_cluster["rep"] = _norm(
+                np.mean(best_cluster["vecs"], axis=0)
+            )
         else:
-            clusters.append({"tids": [tid], "vecs": [track_emb[tid]], "scores": [], "rep": v})
+            clusters.append(
+                {
+                    "tids": [tid],
+                    "vecs": [track_emb[tid]],
+                    "scores": [],
+                    "rep": v,
+                }
+            )
 
     existing = [idn.get("subject_id") for idn in identities.values() if idn.get("subject_id") is not None]
     next_sid = (max(existing) + 1) if existing else 1
@@ -200,6 +244,97 @@ def stitch_orphans(
                 if idn.get("score") is None:
                     idn["score"] = best_sim
 
+
+def stitch_to_named_subjects(
+    tracks: dict[int, dict],
+    identities: dict[int, dict],
+    track_emb: dict[int, np.ndarray],
+    thresh: float,
+) -> None:
+    """Absorb unnamed fragments only into already trusted named subjects."""
+
+    def _norm(value: np.ndarray) -> np.ndarray:
+        norm = float(np.linalg.norm(value))
+        return value / norm if norm > 0 else value
+
+    def _overlap(a: int, b: int) -> bool:
+        return not (
+            tracks[a]["last"] < tracks[b]["first"]
+            or tracks[b]["last"] < tracks[a]["first"]
+        )
+
+    named_members: dict[int, list[int]] = {}
+    named_vectors: dict[int, list[np.ndarray]] = {}
+    labels: dict[int, str] = {}
+    for tid, identity in identities.items():
+        subject_id = identity.get("subject_id")
+        label = identity.get("db_identity")
+        if (
+            subject_id is None
+            or not label
+            or tid not in track_emb
+        ):
+            continue
+        subject_id = int(subject_id)
+        named_members.setdefault(subject_id, []).append(tid)
+        named_vectors.setdefault(subject_id, []).append(track_emb[tid])
+        labels[subject_id] = str(label)
+    representatives = {
+        subject_id: _norm(np.mean(vectors, axis=0))
+        for subject_id, vectors in named_vectors.items()
+    }
+    if not representatives:
+        return
+
+    normal_threshold = max(float(thresh), settings.reid_hit_thresh)
+    candidates = [
+        tid
+        for tid, identity in identities.items()
+        if (
+            not identity.get("db_identity")
+            and tid in track_emb
+        )
+    ]
+    candidates.sort(key=lambda tid: tracks[tid]["first"])
+    for tid in candidates:
+        identity = identities[tid]
+        vector = _norm(track_emb[tid])
+        best_subject = None
+        best_score = -1.0
+        for subject_id, representative in representatives.items():
+            if any(
+                _overlap(tid, member)
+                for member in named_members[subject_id]
+            ):
+                continue
+            score = float(np.dot(vector, representative))
+            if score > best_score:
+                best_subject = subject_id
+                best_score = score
+        threshold = (
+            normal_threshold
+            if identity.get("quality_ok") is True
+            else max(
+                normal_threshold,
+                settings.reid_low_quality_hit_thresh,
+            )
+        )
+        if best_subject is None or best_score < threshold:
+            continue
+        identity["subject_id"] = best_subject
+        identity["db_identity"] = labels[best_subject]
+        identity["decision"] = "stitched_named"
+        identity["reused"] = True
+        identity["local_subject"] = False
+        identity["cross_track_merged"] = True
+        identity["stitch_score"] = round(best_score, 4)
+        named_members[best_subject].append(tid)
+        named_vectors[best_subject].append(track_emb[tid])
+        representatives[best_subject] = _norm(
+            np.mean(named_vectors[best_subject], axis=0)
+        )
+
+
 def split_subject_time_conflicts(tracks: dict[int, dict], identities: dict[int, dict]) -> None:
     """拆开不可能属于同一人的 subject：同一 subject 下的 track 时间重叠则必须分成不同主体。
 
@@ -209,6 +344,30 @@ def split_subject_time_conflicts(tracks: dict[int, dict], identities: dict[int, 
     """
     def _overlap(a: int, b: int) -> bool:
         return not (tracks[a]["last"] < tracks[b]["first"] or tracks[b]["last"] < tracks[a]["first"])
+
+    def _cluster_rank(cluster: list[int]) -> tuple[float, float, int]:
+        best_fused = max(
+            (
+                float((identities[tid].get("fused") or {}).get("confidence") or 0.0)
+                for tid in cluster
+            ),
+            default=0.0,
+        )
+        best_route = max(
+            (
+                max(
+                    float(identities[tid].get("score") or 0.0),
+                    float((identities[tid].get("face") or {}).get("match_score") or 0.0),
+                )
+                for tid in cluster
+            ),
+            default=0.0,
+        )
+        observations = sum(
+            int(identities[tid].get("track_observations") or 0)
+            for tid in cluster
+        )
+        return best_fused, best_route, observations
 
     by_subject: dict[int, list[int]] = {}
     for tid, ident in identities.items():
@@ -234,18 +393,48 @@ def split_subject_time_conflicts(tracks: dict[int, dict], identities: dict[int, 
                 clusters.append([tid])
         if len(clusters) <= 1:
             continue
+        primary = max(clusters, key=_cluster_rank)
+        clusters = [primary, *(cluster for cluster in clusters if cluster is not primary)]
 
         for idx, cluster in enumerate(clusters):
-            target_sid = sid if idx == 0 else next_sid
-            if idx > 0:
+            rejected_named_cluster = (
+                idx > 0
+                and any(
+                    identities[tid].get("db_identity")
+                    for tid in cluster
+                )
+            )
+            assignments = (
+                [([tid], next_sid + offset) for offset, tid in enumerate(cluster)]
+                if rejected_named_cluster
+                else [(cluster, sid if idx == 0 else next_sid)]
+            )
+            if rejected_named_cluster:
+                next_sid += len(cluster)
+            elif idx > 0:
                 next_sid += 1
-            for tid in cluster:
-                ident = identities[tid]
-                ident["subject_id"] = target_sid
-                ident["subject_conflict_split"] = True
-                ident["reused"] = False
-                if ident.get("decision") == "hit":
-                    ident["decision"] = "conflict_split"
+            for assigned_tracks, target_sid in assignments:
+                for tid in assigned_tracks:
+                    ident = identities[tid]
+                    ident["subject_id"] = target_sid
+                    ident["subject_conflict_split"] = True
+                    ident["reused"] = False
+                    if ident.get("decision") == "hit":
+                        ident["decision"] = "conflict_split"
+                    if idx > 0 and ident.get("db_identity"):
+                        ident["known_identity_rejected"] = "temporal_overlap"
+                        ident["db_identity"] = None
+                        ident["route_subject"] = None
+                        ident["route_subject_ids"] = {}
+                        face = ident.get("face")
+                        if isinstance(face, dict):
+                            face["db_identity"] = None
+                            face["matched"] = False
+                            face["match_ready"] = False
+                            face["match_score"] = None
+                            face["face_subject_id"] = None
+                            face["route_subject"] = None
+                            face["conflict_rejected"] = True
 
 def merge_tracks_cross_route(identities: dict[int, dict]) -> None:
     """跨 track 三路合并：人脸库 / 人形库 / 步态库 **任一路**认出同一人 → 并成一个 subject。
@@ -302,9 +491,29 @@ def merge_tracks_cross_route(identities: dict[int, dict]) -> None:
     # 三路分别按库编号分组 → 组内两两并；记录每条 track 触发合并用到了哪几路
     routes = ("body", "face", "gait")
     route_of_edge: dict[frozenset, set] = {}
+    label_buckets: dict[str, list[int]] = {}
+    for tid in tids:
+        label = identities[tid].get("db_identity")
+        if label:
+            label_buckets.setdefault(str(label), []).append(tid)
+    for members in label_buckets.values():
+        if len(members) < 2:
+            continue
+        base = members[0]
+        for other in members[1:]:
+            union(base, other)
+
     for route in routes:
         buckets: dict = {}
         for t in tids:
+            if (
+                not identities[t].get("db_identity")
+                and not (
+                    settings.identity_merge_unnamed_tracks
+                    or settings.identity_auto_enroll_unknown
+                )
+            ):
+                continue
             gid = _route_id(identities[t], route)
             if gid is not None:
                 buckets.setdefault(gid, []).append(t)
@@ -377,4 +586,11 @@ def merge_tracks_cross_route(identities: dict[int, dict]) -> None:
             route_subject_ids["gait"] = canonical
         idn["route_subject_ids"] = route_subject_ids
 
-__all__ = ["person_record", "group_people", "stitch_orphans", "split_subject_time_conflicts", "merge_tracks_cross_route"]
+__all__ = [
+    "person_record",
+    "group_people",
+    "stitch_orphans",
+    "stitch_to_named_subjects",
+    "split_subject_time_conflicts",
+    "merge_tracks_cross_route",
+]

@@ -39,6 +39,21 @@ def _is_true(value: str) -> bool:
     return value.strip().lower() == "true"
 
 
+def _save_figure(fig: plt.Figure, path: Path, *, pad_inches: float) -> None:
+    fig.savefig(
+        path,
+        format=path.suffix.removeprefix("."),
+        bbox_inches="tight",
+        pad_inches=pad_inches,
+    )
+    if path.suffix == ".svg":
+        text = path.read_text(encoding="utf-8")
+        path.write_text(
+            "\n".join(line.rstrip() for line in text.splitlines()) + "\n",
+            encoding="utf-8",
+        )
+
+
 def _save_rank_chart(rows: list[dict[str, str]], output_dir: Path) -> None:
     aligned_ids = {
         row["sample_id"]
@@ -60,19 +75,13 @@ def _save_rank_chart(rows: list[dict[str, str]], output_dir: Path) -> None:
     labels = list(ARMS)
     rank1 = [
         100
-        * sum(
-            _is_true(row["rank1_correct"])
-            for row in rows_by_arm[ARMS[label]].values()
-        )
+        * sum(_is_true(row["rank1_correct"]) for row in rows_by_arm[ARMS[label]].values())
         / denominator
         for label in labels
     ]
     rank5 = [
         100
-        * sum(
-            _is_true(row["rank5_correct"])
-            for row in rows_by_arm[ARMS[label]].values()
-        )
+        * sum(_is_true(row["rank5_correct"]) for row in rows_by_arm[ARMS[label]].values())
         / denominator
         for label in labels
     ]
@@ -97,9 +106,7 @@ def _save_rank_chart(rows: list[dict[str, str]], output_dir: Path) -> None:
         }
     )
     fig, axes = plt.subplots(2, 1, figsize=(6.4, 4.0), sharex=True)
-    for axis, values, title in zip(
-        axes, (rank1, rank5), ("Rank-1", "Rank-5")
-    ):
+    for axis, values, title in zip(axes, (rank1, rank5), ("Rank-1", "Rank-5")):
         positions = list(range(len(labels)))
         bars = axis.barh(
             positions,
@@ -135,14 +142,11 @@ def _save_rank_chart(rows: list[dict[str, str]], output_dir: Path) -> None:
                 fontsize=7.4,
             )
     axes[-1].set_xlabel("Correct queries among the 156 aligned queries (%)")
-    fig.subplots_adjust(
-        left=0.12, right=0.97, top=0.97, bottom=0.12, hspace=0.24
-    )
+    fig.subplots_adjust(left=0.12, right=0.97, top=0.97, bottom=0.12, hspace=0.24)
     for suffix in ("svg", "pdf"):
-        fig.savefig(
+        _save_figure(
+            fig,
             output_dir / f"all_aligned_rank1_rank5.{suffix}",
-            format=suffix,
-            bbox_inches="tight",
             pad_inches=0.02,
         )
     plt.close(fig)
@@ -257,10 +261,9 @@ def _save_qualitative_grid(
             linespacing=1.18,
         )
 
-        image_paths = [
-            _gallery_path(artifact_root, pid),
-            *_query_image_paths(artifact_root, sample_id),
-        ]
+        image_paths = [_gallery_path(artifact_root, pid), *_query_image_paths(
+            artifact_root, sample_id
+        )]
         for column_index, ((_, arm), image_path) in enumerate(
             zip(columns, image_paths), start=1
         ):
@@ -291,10 +294,9 @@ def _save_qualitative_grid(
 
     fig.subplots_adjust(left=0.012, right=0.995, top=0.95, bottom=0.025)
     for suffix in ("svg", "pdf"):
-        fig.savefig(
+        _save_figure(
+            fig,
             output_dir / f"qualitative_scores_grid.{suffix}",
-            format=suffix,
-            bbox_inches="tight",
             pad_inches=0.025,
         )
     plt.close(fig)

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -35,6 +35,30 @@ def _get(name: str, default: str | None = None, required: bool = False) -> str |
     return value
 
 
+def _first_env(*names: str) -> str | None:
+    for name in names:
+        value = _get(name)
+        if value:
+            return value
+    return None
+
+
+def _seconds_setting(
+    name: str,
+    legacy_frames_name: str,
+    default_seconds: float,
+    *,
+    legacy_reference_fps: float,
+) -> float:
+    value = _get(name)
+    if value is not None:
+        return float(value)
+    legacy_frames = _get(legacy_frames_name)
+    if legacy_frames is not None:
+        return float(legacy_frames) / legacy_reference_fps
+    return float(default_seconds)
+
+
 @dataclass
 class Settings:
     model_root: str = str(MODEL_ROOT)
@@ -42,7 +66,30 @@ class Settings:
     azure_openai_endpoint: str | None = _get("AZURE_OPENAI_ENDPOINT")
     azure_openai_api_key: str | None = _get("AZURE_OPENAI_API_KEY")
     azure_openai_deployment: str | None = _get("AZURE_OPENAI_DEPLOYMENT")
-    azure_openai_api_version: str = _get("AZURE_OPENAI_API_VERSION", "2024-10-21")
+    # GPT-5 Chat Completions needs the current API surface; it remains
+    # compatible with the existing GPT-4.1 and GPT-4o deployments.
+    azure_openai_api_version: str = _get("AZURE_OPENAI_API_VERSION", "2025-04-01-preview")
+    azure_openai_auth: str = _get("AZURE_OPENAI_AUTH", "auto").strip().lower()
+    azure_openai_managed_identity_client_id: str | None = _get(
+        "AZURE_OPENAI_MANAGED_IDENTITY_CLIENT_ID"
+    )
+    # ARM resource ID for discovery.  It is intentionally separate from the
+    # data-plane endpoint so deployment enumeration can use managed identity.
+    azure_openai_resource_id: str | None = _get("AZURE_OPENAI_RESOURCE_ID")
+    foundry_analysis_deployment: str | None = _first_env(
+        "FOUNDRY_ANALYSIS_DEPLOYMENT",
+        "EVENT_LLM_DEPLOYMENT",
+        "AZURE_OPENAI_DEPLOYMENT",
+    )
+    foundry_chat_deployment: str | None = _first_env(
+        "FOUNDRY_CHAT_DEPLOYMENT",
+        "FOUNDRY_ANALYSIS_DEPLOYMENT",
+        "AZURE_OPENAI_DEPLOYMENT",
+    )
+    foundry_analysis_model: str | None = _get(
+        "FOUNDRY_ANALYSIS_MODEL", "gpt-4.1"
+    )
+    foundry_chat_model: str | None = _get("FOUNDRY_CHAT_MODEL", "gpt-4.1-mini")
 
     frame_interval_seconds: int = int(_get("FRAME_INTERVAL_SECONDS", "5"))
     max_frames: int = int(_get("MAX_FRAMES", "8"))
@@ -64,9 +111,14 @@ class Settings:
 
     # 多目标跟踪 MOT（Phase 3 · Step 11 / Phase 4 升级）：可切换 ByteTrack / BoT-SORT / BoT-SORT+ReID。
     # 给每个目标分配跨帧稳定的 track_id，使"识别一次、整条轨迹复用"成为可能。
-    track_backend: str = _get("TRACK_BACKEND", "botsort_reid").strip().lower()  # bytetrack | botsort | botsort_reid
+    track_backend: str = _get("TRACK_BACKEND", "botsort").strip().lower()  # bytetrack | botsort | botsort_reid
     track_conf: float = float(_get("TRACK_CONF", "0.1"))            # 喂给跟踪器的低检测阈值（让 ByteTrack 用低分框做二次关联）
-    track_buffer: int = int(_get("TRACK_BUFFER", "30"))            # 轨迹丢失后保留的帧数（越大越抗短遮挡，但更易 ID 漂移）
+    track_buffer_seconds: float = _seconds_setting(
+        "TRACK_BUFFER_SECONDS",
+        "TRACK_BUFFER",
+        1.0,
+        legacy_reference_fps=30.0,
+    )
     track_high_thresh: float = float(_get("TRACK_HIGH_THRESH", "0.25"))   # 一段匹配高分阈值
     track_low_thresh: float = float(_get("TRACK_LOW_THRESH", "0.1"))      # 二段匹配低分阈值
     new_track_thresh: float = float(_get("NEW_TRACK_THRESH", "0.25"))     # 高于此分且无匹配才新建轨迹
@@ -75,6 +127,15 @@ class Settings:
     track_gmc_method: str = _get("TRACK_GMC_METHOD", "sparseOptFlow")  # BoT-SORT 全局运动补偿：sparseOptFlow|orb|sift|ecc|none
     track_proximity_thresh: float = float(_get("TRACK_PROXIMITY_THRESH", "0.5"))  # BoT-SORT ReID 先验 IoU 门
     track_appearance_thresh: float = float(_get("TRACK_APPEARANCE_THRESH", "0.8"))  # BoT-SORT ReID 外观相似门
+    track_reid_backend: str = _get(
+        "TRACK_REID_BACKEND",
+        "osnet",
+    ).strip().lower()
+    # CV/MOT 高频运行；语义 provider 和 LLM 仍使用请求里的低频采样预算。
+    event_tracking_fps: float = float(_get("EVENT_TRACKING_FPS", "15"))
+    event_tracking_max_frames: int = int(
+        _get("EVENT_TRACKING_MAX_FRAMES", "1800")
+    )
 
     # 细粒度感知（Phase 3 · Step 13）：YOLO-Pose 派生躯干区取色，修 Phase 2 颜色误判。
     # 仅在画面有人时跑；不可用/几何反常自动回落到写死比例 torso（不劣于原行为）。
@@ -87,8 +148,10 @@ class Settings:
     pose_kpt_conf: float = float(_get("POSE_KPT_CONF", "0.3")) # 单个关键点的可信阈值（低于则视为不可见）
 
     # 主体记忆 / ReID 向量库（Phase 3 · Step 14）：认过一次就记住、命中即复用、不调 LLM。
-    # backend: auto 自动择优（osnet→resnet50→coarse）；也可固定为某一档。
-    reid_backend: str = _get("REID_BACKEND", "auto")
+    # 冻结产品协议下采用精度优先的 DIFFER；auto 仍保留原有逐级回退行为。
+    reid_backend: str = field(
+        default_factory=lambda: _get("REID_BACKEND", "differ")
+    )
     reid_osnet_weights: str = _get(
         "REID_OSNET_WEIGHTS",
         _model_asset("reid", "osnet", "osnet_ain_x1_0_msmt17.pt"),
@@ -239,7 +302,12 @@ class Settings:
     )
     face_superres_min_size: int = face_superres_max_size  # deprecated compatibility alias
     face_candidate_top_k: int = int(_get("FACE_CANDIDATE_TOP_K", "3"))
-    face_candidate_min_gap_frames: int = int(_get("FACE_CANDIDATE_MIN_GAP_FRAMES", "2"))
+    face_candidate_min_gap_seconds: float = _seconds_setting(
+        "FACE_CANDIDATE_MIN_GAP_SECONDS",
+        "FACE_CANDIDATE_MIN_GAP_FRAMES",
+        0.5,
+        legacy_reference_fps=2.0,
+    )
     face_track_consistency_thresh: float = float(_get("FACE_TRACK_CONSISTENCY_THRESH", "0.82"))
     face_gfpgan_weights: str = _get(
         "FACE_GFPGAN_WEIGHTS",
@@ -276,21 +344,42 @@ class Settings:
     event_llm_max_tokens: int = int(_get("EVENT_LLM_MAX_TOKENS", "1500"))
     event_llm_max_retries: int = int(_get("EVENT_LLM_MAX_RETRIES", "5"))  # 429 限流时退避重试次数
     event_frame_detail: str = _get("EVENT_FRAME_DETAIL", "low")       # low 省 token / high 看细节
+    event_analysis_model: str = _get("EVENT_ANALYSIS_MODEL", "auto").strip().lower()
+    event_chat_model: str = _get("EVENT_CHAT_MODEL", "auto").strip().lower()
+    event_chat_max_tokens: int = int(_get("EVENT_CHAT_MAX_TOKENS", "900"))
+    event_chat_history_turns: int = int(_get("EVENT_CHAT_HISTORY_TURNS", "6"))
+    # Compact TSV prompt evidence is bounded independently from output tokens.
+    event_evidence_max_chars: int = int(_get("EVENT_EVIDENCE_MAX_CHARS", "48000"))
+    event_evidence_table_max_rows: int = int(_get("EVENT_EVIDENCE_TABLE_MAX_ROWS", "120"))
+    event_evidence_table_max_chars: int = int(_get("EVENT_EVIDENCE_TABLE_MAX_CHARS", "6000"))
 
     # 选帧②：事件驱动关键帧选择（Phase 4 · Step 25 / 3.3）——喂 LLM 前按"事件"砍图片数。
     keyframe_max: int = int(_get("KEYFRAME_MAX", "24"))            # 喂 LLM 的关键帧上限
     keyframe_context: int = int(_get("KEYFRAME_CONTEXT", "1"))     # 事件前后各留几帧上下文
     keyframe_dedup_diff: float = float(_get("KEYFRAME_DEDUP_DIFF", "0.06"))  # 低于此签名差异视为"太像"去重
+    event_motion_min_distance: float = float(
+        _get("EVENT_MOTION_MIN_DISTANCE", "0.08")
+    )
+    event_motion_interval_seconds: float = float(
+        _get("EVENT_MOTION_INTERVAL_SECONDS", "1.0")
+    )
 
     # 流式事件分窗（Phase 4 · Step 24）：窗 = 一次 LLM 调用。窗按"活动段 + 时长上限"切。
     # 时长上限是给"长连续事件"准备的：超过则冲刷开新窗，否则长事件被压成单窗、关键帧严重欠采样。
     event_window_max_seconds: float = float(_get("EVENT_WINDOW_MAX_SECONDS", "30"))
 
-    # Track 级门控（认人前先筛掉不值得认的 track，整条省下 reid/face/步态，并防垃圾 track 污染库）：
-    # 存活帧数 < 此值 视为检测抖动/昙花一现的假 track；最佳质量 < 此值 视为全程太糊/太小。
-    # 二者任一不达标 → 整条 track 跳过身份提取（仍保留在事件里，只是身份留空、不入库）。设 0 关闭对应门。
-    track_min_frames: int = int(_get("TRACK_MIN_FRAMES", "3"))       # 至少出现几帧才认人
-    track_min_quality: float = float(_get("TRACK_MIN_QUALITY", "0.0"))  # 最佳帧质量下限（0=不按质量筛）
+    # 已有库匹配允许单张高质量证据；自动创建新身份要求时间、观测数和质量同时达标。
+    track_enroll_min_seconds: float = float(
+        _get("TRACK_ENROLL_MIN_SECONDS", "0.5")
+    )
+    track_enroll_min_observations: int = int(
+        _get("TRACK_ENROLL_MIN_OBSERVATIONS", "2")
+    )
+    identity_auto_enroll_unknown: bool = _get(
+        "IDENTITY_AUTO_ENROLL_UNKNOWN",
+        "false",
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    track_min_quality: float = float(_get("TRACK_MIN_QUALITY", "0.0"))
 
     # 跨窗整段事件总结（Phase 4 · Step E）：所有窗逐窗理解完后，再纯文本把多窗串成一段连贯故事。
     # 便宜（仅文本一次调用）；dry-run 自动跳过。设 0/false 关闭。
@@ -302,7 +391,10 @@ class Settings:
     event_stitch_thresh: float = float(_get("EVENT_STITCH_THRESH", "0.45"))
     # 低质 track 无法入长期 gallery 时，只铸"本视频本地 subject"；人群远景里外观相似，阈值必须更保守。
     event_local_stitch_thresh: float = float(_get("EVENT_LOCAL_STITCH_THRESH", "0.82"))
-
+    identity_merge_unnamed_tracks: bool = _get(
+        "IDENTITY_MERGE_UNNAMED_TRACKS",
+        "false",
+    ).strip().lower() in {"1", "true", "yes", "on"}
     # 三路身份融合（Phase 4 · A 汇聚）：人脸 + 人形 ReID + 步态 按质量加权 → 一个统一身份置信度。
     # 质量自适应：清晰脸权重高、糊脸降权退人形/步态；多路一致再加成。设为各路的相对权重。
     identity_w_face: float = float(_get("IDENTITY_W_FACE", "0.5"))    # 人脸（清晰时最强）
@@ -335,6 +427,7 @@ class Settings:
         "GAIT_SEG_MODEL",
         _model_asset("detection", "yolo", "yolov8m-seg.pt"),
     )   # 剪影分割（ultralytics 实例分割）
+    gait_sample_fps: float = float(_get("GAIT_SAMPLE_FPS", "10"))
     gait_min_frames: int = int(_get("GAIT_MIN_FRAMES", "10"))        # 一条 track 至少几帧才算步态（帧太少不可靠）
     gait_device: str = _get("GAIT_DEVICE", "cpu")                    # 本地 cpu；上云改 cuda
 
@@ -366,6 +459,10 @@ class Settings:
     object_min_frames: int = int(_get("OBJECT_MIN_FRAMES", "2"))  # 窗内出现帧数 < 此值的物体丢弃（抗 1 帧误检/ID 跳变）
 
     def __post_init__(self) -> None:
+        if self.azure_openai_auth not in {"auto", "managed_identity", "api_key"}:
+            raise ValueError(
+                "AZURE_OPENAI_AUTH 必须为 auto、managed_identity 或 api_key"
+            )
         if not (
             0 < self.face_recoverable_min_size
             <= self.face_min_size
@@ -377,10 +474,32 @@ class Settings:
             )
         if self.face_candidate_top_k < 1:
             raise ValueError("FACE_CANDIDATE_TOP_K 必须至少为 1")
-        if self.face_candidate_min_gap_frames < 1:
-            raise ValueError("FACE_CANDIDATE_MIN_GAP_FRAMES 必须至少为 1")
+        if self.face_candidate_min_gap_seconds < 0:
+            raise ValueError("FACE_CANDIDATE_MIN_GAP_SECONDS 不能小于 0")
+        if not 1 <= self.event_tracking_fps <= 30:
+            raise ValueError("EVENT_TRACKING_FPS 必须在 [1, 30] 范围内")
+        if self.event_tracking_max_frames < 1:
+            raise ValueError("EVENT_TRACKING_MAX_FRAMES 必须至少为 1")
+        if self.track_buffer_seconds <= 0:
+            raise ValueError("TRACK_BUFFER_SECONDS 必须大于 0")
+        if self.track_reid_backend != "osnet":
+            raise ValueError("TRACK_REID_BACKEND 当前仅支持 osnet")
+        if self.track_enroll_min_seconds < 0:
+            raise ValueError("TRACK_ENROLL_MIN_SECONDS 不能小于 0")
+        if self.track_enroll_min_observations < 1:
+            raise ValueError("TRACK_ENROLL_MIN_OBSERVATIONS 必须至少为 1")
+        if self.event_motion_interval_seconds <= 0:
+            raise ValueError("EVENT_MOTION_INTERVAL_SECONDS 必须大于 0")
+        if not 1 <= self.gait_sample_fps <= 30:
+            raise ValueError("GAIT_SAMPLE_FPS 必须在 [1, 30] 范围内")
         if not 0.0 <= self.face_codeformer_fidelity <= 1.0:
             raise ValueError("FACE_CODEFORMER_FIDELITY 必须在 [0, 1] 范围内")
+        if self.event_evidence_max_chars < 4096:
+            raise ValueError("EVENT_EVIDENCE_MAX_CHARS 必须至少为 4096")
+        if self.event_evidence_table_max_rows < 1:
+            raise ValueError("EVENT_EVIDENCE_TABLE_MAX_ROWS 必须至少为 1")
+        if self.event_evidence_table_max_chars < 256:
+            raise ValueError("EVENT_EVIDENCE_TABLE_MAX_CHARS 必须至少为 256")
 
     def object_class_set(self) -> set[str]:
         return {c.strip() for c in self.object_classes.split(",") if c.strip()}
@@ -428,14 +547,14 @@ class Settings:
             name
             for name, value in {
                 "AZURE_OPENAI_ENDPOINT": self.azure_openai_endpoint,
-                "AZURE_OPENAI_API_KEY": self.azure_openai_api_key,
-                "AZURE_OPENAI_DEPLOYMENT": self.azure_openai_deployment,
             }.items()
             if not value
         ]
+        if self.azure_openai_auth == "api_key" and not self.azure_openai_api_key:
+            missing.append("AZURE_OPENAI_API_KEY")
         if missing:
             raise RuntimeError(
-                "Azure OpenAI 配置不完整，缺少："
+                "Microsoft Foundry 配置不完整，缺少："
                 + ", ".join(missing)
                 + "。请在 .env 中填写。"
             )

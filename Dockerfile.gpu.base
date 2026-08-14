@@ -19,8 +19,8 @@ RUN apt-get update \
       python3.11 python3.11-venv python3-pip \
       ffmpeg libgl1 libglib2.0-0 curl \
  && rm -rf /var/lib/apt/lists/* \
- && ln -sf /usr/bin/python3.11 /usr/local/bin/python \
- && ln -sf /usr/bin/python3.11 /usr/local/bin/python3
+ && ln -sf /usr/bin/python3 /usr/local/bin/python \
+ && ln -sf /usr/bin/python3 /usr/local/bin/python3
 
 WORKDIR /app
 
@@ -29,10 +29,10 @@ WORKDIR /app
 RUN rm -rf /app/app /app/templates /app/static /app/experiment /app/licenses
 
 COPY requirements.txt .
-RUN pip install --extra-index-url https://download.pytorch.org/whl/cu121 \
+RUN python3 -m pip install --extra-index-url https://download.pytorch.org/whl/cu121 \
       torch==2.3.1+cu121 torchvision==0.18.1+cu121 \
- && pip install -r requirements.txt \
- && pip install --force-reinstall onnxruntime-gpu
+ && python3 -m pip install -r requirements.txt \
+ && python3 -m pip install --force-reinstall onnxruntime-gpu
 
 RUN if ! id -u appuser >/dev/null 2>&1; then useradd -m -u 10001 appuser; fi \
  && mkdir -p /models /data /gallery /results /tmp/videos \
@@ -43,9 +43,9 @@ ENV MODEL_ROOT=/models \
     TORCH_HOME=/models/torch \
     HF_HOME=/models/hf \
     ULTRALYTICS_HOME=/models/ultralytics \
-    YOLO_MODEL=/models/yolov8m.pt \
-    POSE_MODEL=/models/yolov8n-pose.pt \
-    GAIT_SEG_MODEL=/models/yolov8m-seg.pt \
+    YOLO_MODEL=/models/detection/yolo/yolov8m.pt \
+    POSE_MODEL=/models/detection/yolo/yolov8n-pose.pt \
+    GAIT_SEG_MODEL=/models/detection/yolo/yolov8m-seg.pt \
     FACE_FIQA_BACKEND=cr_fiqa \
     FACE_FIQA_ROOT=/models/CR-FIQA/source \
     FACE_FIQA_WEIGHTS=/models/CR-FIQA/32572backbone.pth \

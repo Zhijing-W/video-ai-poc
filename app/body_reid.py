@@ -1,10 +1,14 @@
 """Pluggable body ReID feature extraction."""
 from __future__ import annotations
 
-import threading
 from collections.abc import Callable
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
+from math import ceil
 from pathlib import Path
+import threading
+import time
 from typing import Any
 
 import numpy as np
@@ -48,6 +52,106 @@ _ALIASES = {
     "color": "coarse",
 }
 _AUTO_ORDER = ("osnet", "resnet50", "coarse")
+_P95_DEFINITION = "nearest-rank: sorted latency at ceil(0.95 * N), 1-indexed"
+_TIMING_SCOPE = (
+    "one crop: preprocessing, host-to-device transfer, model forward, "
+    "device-to-host transfer, output validation, and L2 normalization; "
+    "excludes model loading and gallery lookup"
+)
+
+
+def _aggregate_latencies(samples: list[float]) -> dict[str, int | float | None]:
+    count = len(samples)
+    if not count:
+        return {
+            "call_count": 0,
+            "total_ms": 0.0,
+            "mean_ms": None,
+            "p95_ms": None,
+        }
+    total = sum(samples)
+    ordered = sorted(samples)
+    return {
+        "call_count": count,
+        "total_ms": round(total, 3),
+        "mean_ms": round(total / count, 3),
+        "p95_ms": round(ordered[ceil(0.95 * count) - 1], 3),
+    }
+
+
+@dataclass
+class ReIdTelemetryCollector:
+    """Request/run-scoped Body ReID per-crop latency collector."""
+
+    _samples: dict[str, list[float]] = field(default_factory=dict)
+    _failed_calls: int = 0
+    _backend: str | None = None
+    _device: str | None = None
+    _lock: threading.Lock = field(default_factory=threading.Lock)
+
+    def record(
+        self,
+        elapsed_ms: float,
+        *,
+        backend: str,
+        device: str,
+        purpose: str,
+        failed: bool,
+    ) -> None:
+        with self._lock:
+            self._samples.setdefault(purpose, []).append(max(0.0, elapsed_ms))
+            self._failed_calls += int(failed)
+            self._backend = backend
+            self._device = device
+
+    def snapshot(
+        self,
+        *,
+        backend: str | None = None,
+        device: str | None = None,
+    ) -> dict[str, Any]:
+        with self._lock:
+            samples = {
+                purpose: list(values)
+                for purpose, values in self._samples.items()
+            }
+            failed_calls = self._failed_calls
+            effective_backend = backend or self._backend
+            effective_device = device or self._device
+        all_samples = [value for values in samples.values() for value in values]
+        return {
+            "backend": effective_backend,
+            "device": effective_device,
+            **_aggregate_latencies(all_samples),
+            "failed_call_count": failed_calls,
+            "p95_definition": _P95_DEFINITION,
+            "timing_scope": _TIMING_SCOPE,
+            "cuda_timing": (
+                "CUDA is synchronized before timing; current backends return host "
+                "NumPy arrays, so device work completes before the stop timestamp"
+            ),
+            "by_purpose": {
+                purpose: _aggregate_latencies(values)
+                for purpose, values in sorted(samples.items())
+            },
+        }
+
+
+_telemetry_collector: ContextVar[ReIdTelemetryCollector | None] = ContextVar(
+    "body_reid_telemetry_collector",
+    default=None,
+)
+
+
+@contextmanager
+def telemetry_context():
+    """Create an isolated collector for one analysis run."""
+    collector = ReIdTelemetryCollector()
+    token = _telemetry_collector.set(collector)
+    try:
+        yield collector
+    finally:
+        _telemetry_collector.reset(token)
 
 
 def _reid_cuda() -> bool:
@@ -153,19 +257,34 @@ def _load_osnet():
     # CUDA_VISIBLE_DEVICES 设成非法字符串 'cuda' 而污染整个进程的 CUDA。
     dev = torch.device("cuda:0") if _reid_cuda() else torch.device("cpu")
     backend = ReidAutoBackend(weights=weights, device=dev, half=False)
-    return {"backend": backend.model}
+    return {"backend": backend.model, "device": dev}
 
 
 def _embed_osnet(model, crop) -> np.ndarray:
     """对一张人像 crop 提 OSNet 512 维 ReID 指纹（boxmot 已做 L2 归一化）。"""
-    backend = model["backend"]
     bgr = np.asarray(crop.convert("RGB"))[:, :, ::-1]  # PIL RGB → BGR（boxmot/cv2 约定）
     height, width = bgr.shape[:2]
     box = np.asarray([[0, 0, width, height]], dtype=np.float32)
-    feats = backend.get_features(box, bgr)
-    feat = np.asarray(feats[0], dtype=np.float32).reshape(-1)
-    n = float(np.linalg.norm(feat))
-    return feat / n if n > 0 else feat
+    return _embed_osnet_boxes(model, bgr, box)[0]
+
+
+def _embed_osnet_boxes(
+    model,
+    bgr: np.ndarray,
+    boxes: np.ndarray,
+) -> np.ndarray:
+    """Batch OSNet embeddings for xyxy person boxes in one BGR frame."""
+    features = np.asarray(
+        model["backend"].get_features(
+            np.asarray(boxes, dtype=np.float32),
+            bgr,
+        ),
+        dtype=np.float32,
+    )
+    if features.ndim == 1:
+        features = features.reshape(1, -1)
+    norms = np.linalg.norm(features, axis=1, keepdims=True)
+    return features / np.maximum(norms, 1e-12)
 
 
 def _normalize_backend_name(value: str | None = None) -> str:
@@ -302,6 +421,33 @@ def active_backend() -> str:
     return _ensure_backend()
 
 
+def _state_device(name: str, state: _BackendState) -> str:
+    model = state.model
+    device = model.get("device") if isinstance(model, dict) else getattr(model, "device", None)
+    if device is None and isinstance(model, dict):
+        device = getattr(model.get("backend"), "device", None)
+    if device is not None:
+        return str(device)
+    if name == "coarse":
+        return "cpu"
+    return "cuda:0" if _reid_cuda() else "cpu"
+
+
+def active_device() -> str:
+    name = _ensure_backend()
+    return _state_device(name, _load_backend(name))
+
+
+def _synchronize_cuda_before_timing(state: _BackendState, device: str) -> None:
+    if not device.startswith("cuda"):
+        return
+    model = state.model
+    torch = model.get("torch") if isinstance(model, dict) else getattr(model, "torch", None)
+    if torch is None:
+        import torch
+    torch.cuda.synchronize(device)
+
+
 def reset_backend(value: str | None = None) -> None:
     """Release loaded model state so the next call uses current settings."""
     global _active_backend
@@ -323,26 +469,43 @@ def embed_dim() -> int:
     return int(_load_backend(name).dim)
 
 
-def embed(crop) -> np.ndarray:
+def embed(crop, *, purpose: str = "unspecified") -> np.ndarray:
     """对一张 PIL 裁图提归一化外观指纹向量（维度由当前 backend 决定）。"""
     name = _ensure_backend()
     with _registry_lock:
         backend = _backends[name]
     state = _load_backend(name)
-    value = np.asarray(
-        backend.embedder(state.model, crop),
-        dtype=np.float32,
-    ).reshape(-1)
-    if value.size != state.dim:
-        raise ValueError(
-            f"{name}返回{value.size}维向量，注册维度为{state.dim}"
-        )
-    if not np.all(np.isfinite(value)):
-        raise ValueError(f"{name}返回非有限embedding")
-    norm = float(np.linalg.norm(value))
-    if norm <= 0:
-        raise ValueError(f"{name}返回零向量")
-    return value / norm
+    collector = _telemetry_collector.get()
+    device = _state_device(name, state)
+    if collector is not None:
+        _synchronize_cuda_before_timing(state, device)
+    started = time.perf_counter()
+    failed = True
+    try:
+        value = np.asarray(
+            backend.embedder(state.model, crop),
+            dtype=np.float32,
+        ).reshape(-1)
+        if value.size != state.dim:
+            raise ValueError(
+                f"{name}返回{value.size}维向量，注册维度为{state.dim}"
+            )
+        if not np.all(np.isfinite(value)):
+            raise ValueError(f"{name}返回非有限embedding")
+        norm = float(np.linalg.norm(value))
+        if norm <= 0:
+            raise ValueError(f"{name}返回零向量")
+        failed = False
+        return value / norm
+    finally:
+        if collector is not None:
+            collector.record(
+                (time.perf_counter() - started) * 1000.0,
+                backend=name,
+                device=device,
+                purpose=str(purpose or "unspecified"),
+                failed=failed,
+            )
 
 
 def assess_quality(crop) -> dict:
@@ -394,7 +557,7 @@ register_backend(
     _embed_osnet,
     dim=512,
     label="OSNet-AIN MSMT17",
-    description="默认行人ReID后端，面向跨摄像头外观匹配。",
+    description="轻量行人ReID后端，适合延迟或资源敏感的跨摄像头外观匹配。",
 )
 
 from .identity.body_reid_backends import clipreid, differ, siglip2
@@ -406,12 +569,15 @@ differ.register(register_backend, settings)
 
 __all__ = [
     "active_backend",
+    "active_device",
     "assess_quality",
     "available_backends",
     "backend_metadata",
     "embed",
     "embed_dim",
+    "ReIdTelemetryCollector",
     "register_backend",
     "reset_backend",
+    "telemetry_context",
     "validate_backend",
 ]

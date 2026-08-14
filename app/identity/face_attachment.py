@@ -9,6 +9,7 @@ from ..core.config import settings
 from . import embedding_gallery as gallery_mod
 from .evidence_selection import face_evidence_rank, public_evidence
 from .face.quality import face_gallery_quality_ok, no_face_quality
+from .gallery_seed import GallerySeed, seed_face_gallery
 
 
 def _empty_face_record(reason: str, *, error: str | None = None) -> dict:
@@ -78,7 +79,10 @@ def _track_consistency(
     if crop is None:
         return False, None, "person_crop_unavailable"
     try:
-        candidate_embedding = np.asarray(reid_mod.embed(crop), dtype=np.float32).reshape(-1)
+        candidate_embedding = np.asarray(
+            reid_mod.embed(crop, purpose="face_consistency"),
+            dtype=np.float32,
+        ).reshape(-1)
         reference = np.asarray(body_embedding, dtype=np.float32).reshape(-1)
         denom = float(np.linalg.norm(candidate_embedding) * np.linalg.norm(reference))
         score = float(np.dot(candidate_embedding, reference) / denom) if denom > 0 else -1.0
@@ -99,17 +103,25 @@ def attach_faces(
     body_embeddings: dict[int, np.ndarray] | None = None,
     *,
     body_consistency_enabled: bool = True,
-) -> None:
+    gallery_seed: GallerySeed | None = None,
+) -> dict | None:
     """Select and finalize face evidence independently from body-best."""
     face_sess = f"{session_id}-face"
     gallery_mod.reset_gallery(face_sess)
+    seed_stats = (
+        seed_face_gallery(
+            gallery_seed,
+            face_sess,
+            face_module=face_mod,
+            gallery_module=gallery_mod,
+        )
+        if gallery_seed is not None
+        else None
+    )
     body_embeddings = body_embeddings or {}
 
     candidates_by_tid: dict[int, list[dict]] = {}
     for tid, track in tracks.items():
-        if identities.get(tid, {}).get("skipped"):
-            identities[tid]["face"] = _empty_face_record("track_skipped")
-            continue
         candidates_by_tid[tid] = _legacy_candidates(tid, track, frames)
 
     evaluated: dict[int, list[dict]] = {tid: [] for tid in candidates_by_tid}
@@ -126,7 +138,10 @@ def attach_faces(
         for frame_index, target_tids in sorted(by_frame.items()):
             if frame_index not in frame_cache:
                 try:
-                    image = Image.open(frames[frame_index].local_path).convert("RGB")
+                    with Image.open(
+                        frames[frame_index].local_path
+                    ) as source_image:
+                        image = source_image.convert("RGB")
                     faces = face_mod.detect(
                         image,
                         with_quality=True,
@@ -172,8 +187,6 @@ def attach_faces(
                 evaluated[tid].append(evidence)
 
     for tid, track in tracks.items():
-        if identities.get(tid, {}).get("skipped"):
-            continue
         options = evaluated.get(tid) or []
         if not options:
             error_rows = identities[tid].pop("face_candidate_errors", [])
@@ -189,7 +202,10 @@ def attach_faces(
         frame_index = int(selected["frame_index"])
         quality = dict((selected.get("_face") or {}).get("quality") or {})
         try:
-            image = Image.open(frames[frame_index].local_path).convert("RGB")
+            with Image.open(
+                frames[frame_index].local_path
+            ) as source_image:
+                image = source_image.convert("RGB")
         except Exception as exc:
             track["face_best"] = selected
             identities[tid]["face"] = {
@@ -289,13 +305,22 @@ def attach_faces(
         if match_ready:
             try:
                 face_vector = np.asarray(embedding, dtype=np.float32).reshape(-1)
-                can_enroll = bool(quality.get("can_enroll")) and finalized.get("match_source") == "original"
+                can_enroll = bool(
+                    quality.get("can_enroll")
+                    and finalized.get("match_source") == "original"
+                    and settings.identity_auto_enroll_unknown
+                    and identities[tid].get(
+                        "enrollment_eligible",
+                        True,
+                    )
+                )
                 result = gallery_mod.with_gallery_locked(
                     face_sess,
                     face_mod.FACE_DIM,
                     lambda gallery: gallery.identify_or_enroll(
                         face_vector,
                         quality,
+                        label=identities[tid].get("db_identity"),
                         auto_enroll=can_enroll,
                         hit_thresh=settings.face_hit_thresh,
                         new_thresh=settings.face_new_thresh,
@@ -308,6 +333,7 @@ def attach_faces(
                 rec["matched"] = result.get("decision") == "hit"
                 rec["enrolled"] = result.get("enrolled")
                 rec["gallery_quality_ok"] = result.get("quality_ok")
+                rec["db_identity"] = result.get("label")
                 if result.get("subject_id") is not None:
                     rec["route_subject"] = {
                         "route": "face",
@@ -316,6 +342,7 @@ def attach_faces(
             except Exception as exc:
                 rec["face_error"] = str(exc)
         identities[tid]["face"] = rec
+    return seed_stats
 
 
 __all__ = ["attach_faces"]

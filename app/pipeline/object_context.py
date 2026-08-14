@@ -39,26 +39,70 @@ def build_object_context(
     objs.sort(key=lambda o: (-o["frames_present"], o["first_frame"]))
     return objs
 
-def format_object_context(objs: list[dict]) -> str:
+def format_object_context(
+    objs: list[dict],
+    language: str | None = None,
+) -> str:
     """把窗内物体摘要格式化成注入 LLM 的 object_context（场景级；含包裹品牌/logo 提示）。"""
     if not objs:
         return ""
-    lines = ["【画面中的物体（YOLO 检测，场景级，非人物身份）】"]
-    for o in objs[:20]:
-        direction = o["direction"]
-        motion = ("基本静止" if direction in ("mostly_static", "unknown")
-                  else f"移动({direction})，疑似被搬动/取走/放下")
-        lines.append(
-            f"- {o['label_cn']}({o['label']}) track#{o['track_id']}："
-            f"frame#{o['first_frame']}@{o['first_ts']} → frame#{o['last_frame']}@{o['last_ts']}"
-            f"（共{o['frames_present']}帧）；{motion}"
+    english = (language or "").strip().lower().startswith("en")
+    lines = [
+        (
+            "[Objects in frame (YOLO detection; scene-level, not person identity)]"
+            if english
+            else "【画面中的物体（YOLO 检测，场景级，非人物身份）】"
         )
+    ]
+    for o in objs[:20]:
+        object_direction = o["direction"]
+        if english:
+            motion = (
+                "mostly stationary"
+                if object_direction in ("mostly_static", "unknown")
+                else f"moving ({object_direction}); may be carried, removed, or placed"
+            )
+            label = o["label"]
+            row = (
+                f"- {label} track#{o['track_id']}: "
+                f"frame#{o['first_frame']}@{o['first_ts']} → "
+                f"frame#{o['last_frame']}@{o['last_ts']} "
+                f"({o['frames_present']} frames); {motion}"
+            )
+        else:
+            motion = (
+                "基本静止"
+                if object_direction in ("mostly_static", "unknown")
+                else f"移动({object_direction})，疑似被搬动/取走/放下"
+            )
+            row = (
+                f"- {o['label_cn']}({o['label']}) track#{o['track_id']}："
+                f"frame#{o['first_frame']}@{o['first_ts']} → "
+                f"frame#{o['last_frame']}@{o['last_ts']}"
+                f"（共{o['frames_present']}帧）；{motion}"
+            )
+        lines.append(row)
     if len(objs) > 20:
-        lines.append(f"  ... 其余 {len(objs) - 20} 个物体省略")
+        omitted = len(objs) - 20
+        lines.append(
+            f"  ... {omitted} additional objects omitted"
+            if english
+            else f"  ... 其余 {omitted} 个物体省略"
+        )
     lines.append(
-        "说明：以上为画面中的**物体**（包裹/行李/车辆等场景线索，frame# 与人物 grounding 同坐标系），"
-        "用于理解放下、取走、搬运、到达、离开等事件；**若疑似快递/包裹，请结合关键帧画面识别其品牌或 "
-        "logo（如 Amazon / UPS / FedEx，OCR 读文字、你看图认 logo）**。请勿把物体当作人物身份。"
+        (
+            "Note: These are scene objects such as parcels, luggage, or vehicles. "
+            "Their frame# values share the coordinate timeline used for person "
+            "grounding and can support placed/removed/carried/arrival/departure "
+            "events. For likely parcels, inspect keyframes for a brand or logo such "
+            "as Amazon, UPS, or FedEx. Never treat an object as person identity."
+        )
+        if english
+        else (
+            "说明：以上为画面中的**物体**（包裹/行李/车辆等场景线索，frame# 与人物 grounding 同坐标系），"
+            "用于理解放下、取走、搬运、到达、离开等事件；**若疑似快递/包裹，请结合关键帧画面识别其品牌或 "
+            "logo（如 Amazon / UPS / FedEx，OCR 读文字、你看图认 logo）**。请勿把物体当作人物身份。"
+        )
     )
     return "\n".join(lines)
 

@@ -40,8 +40,11 @@ OUT_DIR = ROOT / "out" / "event_demo"
 def main() -> int:
     ap = argparse.ArgumentParser(description="身份感知·多帧事件理解 端到端 Demo")
     ap.add_argument("video", nargs="?", default=str(DEFAULT_VIDEO), help="输入视频路径")
-    ap.add_argument("--fps", type=float, default=2.0, help="选帧① 定时采样率（帧/秒），默认 2")
-    ap.add_argument("--max-frames", type=int, default=300, help="抽帧硬上限，默认 300")
+    ap.add_argument("--fps", type=float, default=2.0, help="语义/provider 采样率（帧/秒），默认 2")
+    ap.add_argument("--tracking-fps", type=float, default=None,
+                    help="CV/MOT 采样率；默认 EVENT_TRACKING_FPS")
+    ap.add_argument("--max-frames", type=int, default=300,
+                    help="按语义 fps 计算的视频覆盖上限，默认 300")
     ap.add_argument("--max-keyframes", type=int, default=None,
                     help="喂 LLM 的关键帧上限（默认 settings.keyframe_max=24）。低配额/撞 429 时调小，如 8")
     ap.add_argument("--max-window-seconds", type=float, default=None,
@@ -66,7 +69,8 @@ def main() -> int:
         return 1
 
     mode = "DRY-RUN（不调 LLM）" if args.dry_run else "FULL（真调 gpt-4o，消耗额度）"
-    print(f"[*] 视频：{video.name}   采样：{args.fps} fps   "
+    print(f"[*] 视频：{video.name}   语义：{args.fps} fps   "
+          f"CV/MOT：{args.tracking_fps or 'default'} fps   "
           f"人形：{'关' if args.no_body else '开'}   人脸：{'开' if args.face else '关'}   "
           f"步态：{'开' if args.gait else '关'}   "
           f"OCR：{'开' if args.ocr else '关'}   物体：{'开' if args.objects else '关'}   模式：{mode}")
@@ -75,7 +79,8 @@ def main() -> int:
     try:
         payload = analyze_event_stream(
             video, OUT_DIR,
-            fps=args.fps, max_frames=args.max_frames,
+            fps=args.fps, tracking_fps=args.tracking_fps,
+            max_frames=args.max_frames,
             run_llm=not args.dry_run, with_body=not args.no_body,
             with_face=args.face, with_gait=args.gait,
             with_ocr=args.ocr, with_objects=args.objects,

@@ -10,6 +10,7 @@ venv/
 # Runtime output
 out/
 tmp/
+.qa-slide8/
 gallery/
 *.log
 *.err

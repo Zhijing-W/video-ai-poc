@@ -35,14 +35,15 @@ def main() -> None:
     if not frames:
         print(f"没有帧：{frames_dir}")
         return
-    fps = 2.0  # 与前端那次一致（16s / 32帧）
+    fps = settings.event_tracking_fps
     sess = "diag"
     tracker_mod.reset_tracker(sess)
 
     print(f"backend={tracker_mod.active_backend()}  "
           f"match_thresh={settings.track_match_thresh} "
           f"appearance_thresh={settings.track_appearance_thresh} "
-          f"proximity={settings.track_proximity_thresh} buffer={settings.track_buffer} "
+          f"proximity={settings.track_proximity_thresh} "
+          f"buffer_seconds={settings.track_buffer_seconds} "
           f"conf={settings.track_conf} high={settings.track_high_thresh} low={settings.track_low_thresh}")
     print(f"帧数={len(frames)}\n")
 
@@ -52,7 +53,11 @@ def main() -> None:
     switch_frames: list[int] = []
     for i, fp in enumerate(frames):
         raw = fp.read_bytes()
-        res = tracker_mod.track_objects(raw, session_id=sess)
+        res = tracker_mod.track_objects(
+            raw,
+            session_id=sess,
+            frame_rate=fps,
+        )
         persons = [d for d in res["detections"]
                    if d.get("label") == "person" and d.get("track_id") is not None]
         ts = i / fps

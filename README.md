@@ -4,7 +4,7 @@ Turns surveillance videos into event timelines, alerts, and structured reports t
 
 [English](#english) | [中文](#中文)
 
-![Event Monitor logic flow](docs/phase4-logic-flow.png)
+[![Event Monitor PoC architecture](docs/poc-architecture.svg)](docs/poc-architecture.svg)
 
 ---
 
@@ -27,6 +27,12 @@ Video or future camera stream
 
 The traditional computer-vision pipeline determines **who is present and where**. The multimodal LLM focuses on **what happened**, using externally supplied identity and spatial context rather than re-identifying people itself.
 
+### Interface preview
+
+![Full-page English Event Monitor interface with video input, model routing, and initial event timeline workspace](docs/screenshots/event-monitor-en-full-page.png)
+
+Captured from the local English `/event-monitor` UI without using an Azure VM.
+
 ### Key capabilities
 
 - YOLO detection with ByteTrack or BoT-SORT tracking.
@@ -41,6 +47,36 @@ The traditional computer-vision pipeline determines **who is present and where**
 - Multimodal event reports and a text-only overall video summary.
 - Web timeline with keyframes, identity cards, alerts, and per-run settings.
 - Dry-run mode for validating the CV pipeline without calling the LLM.
+- Compact normalized evidence tables for LLM calls and run follow-up chat.
+
+### Compact LLM evidence protocol
+
+`result.json` remains the canonical JSON artifact. Immediately before a per-window
+report, dry-run completion, overall summary, or follow-up chat call, the service
+projects that JSON into deterministic `EM-EVIDENCE-TSV/1` tables. Each table has one
+header and uses subject IDs and window IDs as references, avoiding repeated JSON
+field names while preserving window/time, subjects, actions, spatial evidence, OCR,
+and object citations. Tabs, newlines, and Unicode are JSON-escaped inside cells.
+OCR and all other supplied evidence are explicitly untrusted, so embedded prompt
+injection text is never treated as an instruction. Image data URIs remain multimodal
+image inputs and are never copied into text prompts.
+
+After a run, **Download prompt** and **View prompt** offer two server-generated
+formats for that run only: **Canonical JSON** is the persisted source result, and
+**Compact table (TSV/CSV-style)** is the exact evidence-only TSV serializer used for
+LLM context. Trusted task instructions remain server-owned because they vary by LLM
+operation; they are not exported. The endpoint validates the run ID and format,
+reads only that run's `result.json`, and omits inline image data and secret-like
+fields. TSV downloads use the `.tsv` extension.
+
+`EVENT_EVIDENCE_MAX_CHARS` caps the complete projection; the
+`EVENT_EVIDENCE_TABLE_MAX_ROWS` and `EVENT_EVIDENCE_TABLE_MAX_CHARS` limits bound
+each nonessential table. When a long recording is trimmed, the `TRUNCATION` table
+reports the limits and omitted rows. Every window retains a time-range and summary
+citation before deterministic priority evidence (events, subjects, objects, OCR,
+and spatial data) is added. At the configured lower bound, this invariant uses the
+ultra-compact `WINDOW_MIN_UNTRUSTED` table; an impossibly small direct caller budget
+is rejected rather than claiming that dropped citations were preserved.
 
 ### Requirements
 
@@ -81,6 +117,8 @@ Linux/macOS users can replace `.\.venv\Scripts\python.exe` with `.venv/bin/pytho
 | `GET /api/event-monitor/samples` | List locally available sample videos |
 | `POST /api/event-monitor/understand` | Run the complete video-to-event pipeline |
 | `POST /api/event-monitor/complete` | Continue a dry run with the LLM without rerunning CV |
+| `GET /api/event-monitor/runs/{run_id}/prompt?format=json\|tsv` | Download/view a run-scoped canonical JSON or compact evidence artifact |
+| `GET /api/event-monitor/llm-models` | List active vision-capable Azure OpenAI deployments available to the UI |
 | `GET /api/event-monitor/reid-backends` | List registered body ReID backends |
 | `GET /api/event-monitor/superres-backends` | List registered face super-resolution backends |
 | `GET /health` | Service health |
@@ -126,6 +164,12 @@ data/
 ```
 
 The UI also accepts uploaded videos, so bundled sample data is not required. See [`data/README.md`](data/README.md).
+If `data/samples/` contains a local demo clip, it will show up in `/api/event-monitor/samples`.
+An optional `<video-stem>.gallery.json` sidecar can explicitly pre-seed named body
+and face references before video frames are processed. Asset paths are relative to
+the sidecar and must remain inside `data/samples/`; gallery images never enter
+tracking, event counts, or the timeline. Use references from the same licensed
+dataset and a different camera than the continuous analysis clip.
 
 ### Configuration
 
@@ -137,9 +181,16 @@ Copy `.env.example` to `.env`. Important settings include:
 | `AZURE_OPENAI_API_KEY` | API credential; never commit it |
 | `AZURE_OPENAI_DEPLOYMENT` | Vision-capable model deployment |
 | `DATA_DIR`, `OUTPUT_DIR`, `GALLERY_DIR` | Runtime storage locations |
-| `TRACK_BACKEND` | `bytetrack`, `botsort`, or `botsort_reid` |
+| `TRACK_BACKEND` | `botsort` (default), `bytetrack`, or the more expensive `botsort_reid` |
+| `TRACK_REID_BACKEND` | Lightweight tracker-only appearance encoder (`osnet`) |
+| `EVENT_TRACKING_FPS` | High-rate CV/MOT cadence, independent from semantic/LLM sampling |
+| `TRACK_BUFFER_SECONDS` | Time-based lost-track retention, converted to tracker frames at runtime |
+| `TRACK_ENROLL_MIN_SECONDS` | Minimum duration for auto-enrolling a new identity; known-gallery matching remains immediate |
+| `IDENTITY_AUTO_ENROLL_UNKNOWN` | Keep `false` so only pre-registered named identities persist; enabling it also restores unnamed reuse |
+| `IDENTITY_MERGE_UNNAMED_TRACKS` | Keep `false` to prefer fragmentation over false merges for unnamed people |
+| `GAIT_SAMPLE_FPS` | Temporal sampling rate for gait inside active event windows |
 | `MODEL_ROOT` | Shared model directory outside the Git checkout |
-| `REID_BACKEND` | `auto`, `osnet`, `resnet50`, `coarse`, `clipreid`, `siglip2`, or `differ` |
+| `REID_BACKEND` | Default `differ` (accuracy-first); may be `auto`, `osnet`, `resnet50`, `coarse`, `clipreid`, or `siglip2` |
 | `FACE_REC_BACKEND` | `arcface` or `adaface` |
 | `FACE_SUPERRES` | `off`, `gfpgan`, `codeformer`, or `realesrgan_x2plus` |
 | `FACE_CODEFORMER_FIDELITY` | CodeFormer identity fidelity in `[0,1]`; default `1.0` is identity-first |
@@ -168,6 +219,22 @@ under `app/identity/body_reid_backends/` and is registered with a lazy loader an
 embedder. CLIP-ReID, SigLIP2, and DIFFER are selectable through the same API/UI
 catalog; none of their official source trees or checkpoints is imported at process
 startup.
+Under the current frozen evaluation protocol, the product default is accuracy-first
+DIFFER for the GPU POC. CLIP-ReID remains the latency-sensitive option. Explicit API/UI,
+CLI-process environment, and `.env` selections continue to override the default;
+`auto` retains its OSNet-to-ResNet50-to-coarse fallback order.
+Each analysis result includes `body_reid_timing`: the effective backend/device,
+per-crop call count, cumulative/mean latency, and deterministic nearest-rank P95.
+The timer covers crop preprocessing through model forward, host result transfer,
+validation, and L2 normalization; it excludes model loading and gallery lookup.
+Tracking, final identity/gallery, and face-consistency call sites are attributed
+separately. These overlapping per-call totals are diagnostic and must not be added
+to the mutually exclusive `stage_timings`. DIFFER CPU and high-concurrency
+performance are not validated; operators should measure the target demo video on
+the target hardware (including the intended T4) before making a latency claim.
+The Event Monitor presents post-run `stage_timings` in a collapsed-by-default
+details panel. Its bars are relative to the longest measured stage (with a distinct
+marker for sub-1% nonzero stages), and are not live progress indicators.
 
 ### Project structure
 
@@ -219,7 +286,7 @@ Runnable code under `experiment/` is included in CPU/GPU images; experiment data
 
 ### Experiments and documentation
 
-- [`docs/phase4-logic-flow.svg`](docs/phase4-logic-flow.svg): runtime logic flow.
+- [`docs/poc-architecture.svg`](docs/poc-architecture.svg): code-evidence PoC architecture (`phase4-logic-flow.*` kept as alias).
 - [`docs/face-quality-and-identity-fusion.md`](docs/face-quality-and-identity-fusion.md): face quality and identity aggregation.
 - [`experiment/face_blur_ablation/`](experiment/face_blur_ablation/): face-quality and multimodal identity experiments.
 - Local-only papers and licensed datasets belong under `data/external/`.
@@ -270,6 +337,12 @@ Event Monitor 不再孤立地逐帧分析，而是把视频转换为带人物身
 - 带关键帧、身份卡、告警和设置面板的 Web 时间线。
 - 不调用 LLM 的 dry-run 链路检查。
 
+运行结束后的“下载 prompt”和“查看 prompt”均由服务端按 run 生成：**规范 JSON**
+是持久化的源结果，**紧凑表格（TSV/CSV 风格）**是送入 LLM 上下文时使用的精确、
+仅证据 TSV 序列化。可信任务指令会随具体 LLM 操作变化，故仍由服务端持有，不会导出。
+接口只读取已验证 run 的 `result.json`，并省略内联图片数据和疑似密钥字段；表格下载使用
+`.tsv` 扩展名。
+
 ### 环境要求
 
 - Windows 或 Linux。
@@ -309,6 +382,8 @@ Linux/macOS 将 `.\.venv\Scripts\python.exe` 替换为 `.venv/bin/python`。
 | `GET /api/event-monitor/samples` | 列出本地样片 |
 | `POST /api/event-monitor/understand` | 运行完整的视频事件理解流程 |
 | `POST /api/event-monitor/complete` | 在不重跑视觉链路的情况下继续完成 dry-run |
+| `GET /api/event-monitor/runs/{run_id}/prompt?format=json\|tsv` | 查看/下载指定 run 的规范 JSON 或紧凑证据表格 |
+| `GET /api/event-monitor/llm-models` | 列出 UI 可选择的、已启用且支持视觉输入的 Azure OpenAI deployment |
 | `GET /health` | 服务健康检查 |
 
 旧页面地址 `/eventmonitor` 会自动跳转到 `/event-monitor`。
@@ -371,7 +446,7 @@ python scripts\download_models.py --include-optional-yolo
 
 ### 实验与复现说明
 
-- Phase 4 主流程图：[`docs/phase4-logic-flow.svg`](docs/phase4-logic-flow.svg)。
+- PoC 架构图（代码证据对齐）：[`docs/poc-architecture.svg`](docs/poc-architecture.svg)（`phase4-logic-flow.*` 为兼容别名）。
 - 人脸质量与身份逻辑：[`docs/face-quality-and-identity-fusion.md`](docs/face-quality-and-identity-fusion.md)。
 - 糊脸和多模态身份实验：[`experiment/face_blur_ablation/`](experiment/face_blur_ablation/)。
 - 论文和受许可约束的数据仅保存在本地 `data/external/`。

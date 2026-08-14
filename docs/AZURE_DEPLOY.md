@@ -82,7 +82,9 @@ Move-Item ..\gfpgan_backup gfpgan -Force
 **必做**（否则 pod 会因为 /models 空而崩）：
 
 ```powershell
-# 模型权重（YOLO + insightface buffalo_l + GFPGAN，共 ~1.5GB，5-10 分钟）
+# 先在共享 MODEL_ROOT 准备默认 DIFFER 及其他 ReID 资产
+python scripts\download_models.py --reid
+# 上传模型权重（含精度优先默认 DIFFER）
 pwsh infra\upload-models.ps1 -Storage <storageAccountName>
 
 # 数据集（ChokePoint ~600MB + Market-1501 ~150MB，5-15 分钟看网速）
@@ -111,8 +113,8 @@ Start-Process "http://$ip/docs"           # FastAPI 自带 OpenAPI 面板
 Start-Process "http://$ip/event-monitor"   # 事件监控页
 ```
 
-**冒烟测试**：面板选样片视频 → 触发 `/api/event-monitor/understand` → 预期 30 秒内返回事件 JSON。
-CPU-only 情况下步态/超分较慢，10 秒视频约 20-60 秒。
+**冒烟测试**：面板选目标演示视频 → 触发 `/api/event-monitor/understand` → 确认返回事件 JSON。
+DIFFER 是精度优先的 GPU POC 默认后端；CLIP-ReID 是延迟敏感的显式替代项。CPU 和高并发性能尚未验证，不应预设耗时结论。请在目标演示视频和目标硬件（尤其实际 T4）上查看结果页的单 crop Body ReID 调用数、总耗时、均值和 P95，并与服务端阶段/总耗时一起判断瓶颈。
 
 ---
 
@@ -132,11 +134,16 @@ pwsh infra\add-gpu-pool.ps1 -RG videopoc-rg -Cluster <aksName>
 ### 5.2 build GPU 镜像
 
 ```powershell
-$ACR = az acr list -g videopoc-rg --query "[0].name" -o tsv
-az acr build --registry $ACR `
-    --image "video-poc-gpu:latest" `
-    --file Dockerfile.gpu .
+$BRANCH = git branch --show-current
+$TAG = git rev-parse HEAD
+gh workflow run "Build GPU image" --ref $BRANCH
+gh run watch
 ```
+
+GPU 应用镜像依赖由工作流根据 `Dockerfile.gpu.base` 和
+`requirements.txt` 的内容哈希解析，不能直接对 `Dockerfile.gpu` 执行
+缺少 `GPU_BASE_IMAGE` 的 `az acr build`。工作流完成后使用提交 SHA
+（`$TAG`）作为镜像标签；`main` 分支同时更新 `main` 标签。
 
 ### 5.3 打开 helm gpu 开关
 
@@ -144,7 +151,7 @@ az acr build --registry $ACR `
 helm upgrade video-poc charts\video-poc -n video-poc `
     --set gpu.enabled=true `
     --set gpu.image.repository=$ACR.azurecr.io/video-poc-gpu `
-    --set gpu.image.tag=latest `
+    --set gpu.image.tag=$TAG `
     --reuse-values
 ```
 

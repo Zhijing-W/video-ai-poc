@@ -1,3 +1,4 @@
+import { common, t } from "./i18n.js";
 import { esc, subjectHue } from "./utils.js";
 
 export function routeBadges(record) {
@@ -10,41 +11,90 @@ export function routeBadges(record) {
     const quality = face.quality || "?";
     const eligibility = face.eligibility || "?";
     const source = face.match_source || "none";
-    const frame = face.evidence && face.evidence.frame_index != null ? ` · frame ${face.evidence.frame_index}` : "";
+    const frame = face.evidence && face.evidence.frame_index != null
+      ? t("gallery.face_frame", { frame: face.evidence.frame_index })
+      : "";
     const good = face.matched || face.match_ready;
+    const score = face.match_score != null
+      ? t("gallery.face_score", { score: (+face.match_score).toFixed(2) })
+      : "";
     badges.push(
-      `<span class="em-rb ${good ? "hit" : "weak"}" title="人脸 · ${esc(eligibility)} · 质量${esc(quality)} · 来源${esc(source)}${frame}${face.match_score != null ? ` · 相似${(+face.match_score).toFixed(2)}` : ""}">脸</span>`
+      `<span class="em-rb ${good ? "hit" : "weak"}" title="${esc(t("gallery.face_title", {
+        eligibility,
+        quality,
+        source,
+        frame,
+        score,
+      }))}">${esc(t("gallery.face_badge"))}</span>`
     );
   } else {
-    badges.push('<span class="em-rb off" title="无脸 → 退人形/步态">脸</span>');
+    badges.push(`<span class="em-rb off" title="${esc(t("gallery.face_off_title"))}">${esc(t("gallery.face_badge"))}</span>`);
   }
 
   if (record.score != null) {
-    badges.push(`<span class="em-rb hit" title="人形 ReID 相似 ${(+record.score).toFixed(2)}">形</span>`);
+    badges.push(`<span class="em-rb hit" title="${esc(t("gallery.body_title", { score: (+record.score).toFixed(2) }))}">${esc(t("gallery.body_badge"))}</span>`);
   } else {
-    badges.push('<span class="em-rb off" title="无人形分">形</span>');
+    badges.push(`<span class="em-rb off" title="${esc(t("gallery.body_off_title"))}">${esc(t("gallery.body_badge"))}</span>`);
   }
 
   if (gait && gait.score != null) {
     badges.push(
-      `<span class="em-rb ${gait.decision === "hit" ? "hit" : "weak"}" title="步态 · ${esc(gait.decision || "")} · 相似 ${(+gait.score).toFixed(2)} · ${gait.frames || 0}帧">步</span>`
+      `<span class="em-rb ${gait.decision === "hit" ? "hit" : "weak"}" title="${esc(t("gallery.gait_title", {
+        decision: gait.decision || "",
+        score: (+gait.score).toFixed(2),
+        frames: gait.frames || 0,
+      }))}">${esc(t("gallery.gait_badge"))}</span>`
     );
   } else {
-    badges.push('<span class="em-rb off" title="步态未启用/帧不足">步</span>');
+    badges.push(`<span class="em-rb off" title="${esc(t("gallery.gait_off_title"))}">${esc(t("gallery.gait_badge"))}</span>`);
   }
 
   let confidence = "";
   if (fused && fused.confidence != null) {
     const level = fused.resolved ? "hit" : "weak";
-    const primaryCn = { face: "脸", body: "形", gait: "步" }[fused.primary] || "—";
     const multiSource = fused.multi_source ?? fused.agreed;
     const agreed = fused.agreed === true;
     confidence =
-      `<span class="em-conf ${level}" title="多路线身份置信 · 主导线索 ${esc(primaryCn)}${multiSource ? " · 多路线参与" : ""}${agreed ? " · canonical一致" : ""}">` +
-      `置信 ${(fused.confidence * 100).toFixed(0)}%${agreed ? " ✓" : ""}</span>`;
+      `<span class="em-conf ${level}" title="${esc(t("gallery.confidence_title", {
+        primary: { face: common("primary_face"), body: common("primary_body"), gait: common("primary_gait") }[fused.primary] || common("not_available"),
+        multi: multiSource ? t("gallery.confidence_multi") : "",
+        agreed: agreed ? t("gallery.confidence_agreed") : "",
+      }))}">` +
+      `${esc(t("gallery.confidence_label", {
+        score: (fused.confidence * 100).toFixed(0),
+        agreed_mark: agreed ? " ✓" : "",
+      }))}</span>`;
   }
 
   return `<span class="em-routes">${badges.join("")}${confidence}</span>`;
+}
+
+function decisionLabel(decision) {
+  const known = new Set(["hit", "new", "grey", "stitched", "conflict_split"]);
+  return t(`gallery.decision_${known.has(decision) ? decision : "unknown"}`);
+}
+
+function evidenceStatus(record, route) {
+  if (route === "face") {
+    const face = record.face;
+    return face && face.observed !== false && face.eligibility !== "none"
+      ? t("gallery.evidence_available")
+      : t("gallery.evidence_unavailable");
+  }
+  const gait = record.gait;
+  return gait && gait.score != null
+    ? t("gallery.evidence_available")
+    : t("gallery.evidence_unavailable");
+}
+
+function displayScore(value) {
+  return value != null && Number.isFinite(Number(value))
+    ? Number(value).toFixed(2)
+    : common("not_available");
+}
+
+function detailRow(label, value) {
+  return `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`;
 }
 
 export function renderSubjectGallery(data) {
@@ -58,16 +108,22 @@ export function renderSubjectGallery(data) {
       reused: false,
       local: false,
       split: false,
-      score: 0,
+      bestBodyScore: null,
       best: null,
       bestScore: -1,
+      decisions: new Set(),
     });
 
     group.tracks.push(trackId);
+    if (identity.decision) group.decisions.add(identity.decision);
     if (identity.reused) group.reused = true;
     if (identity.local_subject) group.local = true;
     if (identity.subject_conflict_split) group.split = true;
-    group.score = Math.max(group.score, identity.score || 0);
+    if (identity.score != null && Number.isFinite(Number(identity.score))) {
+      group.bestBodyScore = group.bestBodyScore === null
+        ? Number(identity.score)
+        : Math.max(group.bestBodyScore, Number(identity.score));
+    }
 
     const score = identity.score || 0;
     if (identity.thumb && score >= group.bestScore) {
@@ -81,30 +137,62 @@ export function renderSubjectGallery(data) {
   const cards = Object.entries(subjectMap).map(([subjectId, group]) => {
     const record = group.best || {};
     const hue = subjectHue(subjectId === "?" ? null : subjectId);
-    const title = subjectId === "?" ? "未入库 · 待定身份" : `主体 #${esc(subjectId)}`;
+    const name = record.db_identity || "";
+    const subjectTitle = subjectId === "?"
+      ? t("gallery.unknown_title")
+      : t("gallery.subject_title", { id: esc(subjectId) });
+    const title = name ? `${subjectTitle} · ${name}` : subjectTitle;
     const thumb = record.thumb
       ? `<img src="${record.thumb}" alt="${esc(title)}" loading="lazy"/>`
       : '<span class="em-avatar-ph">?</span>';
     const flags = [];
 
-    if (group.reused) flags.push('<span class="reused">♻ 回头客</span>');
-    if (group.local) flags.push("本地subject");
-    if (group.split) flags.push("时间冲突拆分");
+    if (group.reused) flags.push(`<span class="reused">${esc(t("gallery.return_visitor"))}</span>`);
+    if (group.local) flags.push(esc(t("gallery.local_subject")));
+    if (group.split) flags.push(esc(t("gallery.split_subject")));
+    const decisions = group.decisions.size
+      ? [...group.decisions].map(decisionLabel).join(", ")
+      : decisionLabel();
+    const fused = record.fused || {};
+    const primary = {
+      face: common("primary_face"),
+      body: common("primary_body"),
+      gait: common("primary_gait"),
+    }[fused.primary] || common("not_available");
+    const details = [
+      detailRow(t("gallery.track_ids"), group.tracks.join(", ")),
+      detailRow(t("gallery.decision"), decisions),
+      detailRow(t("gallery.reused"), t(group.reused ? "gallery.yes" : "gallery.no")),
+      detailRow(t("gallery.local"), t(group.local ? "gallery.yes" : "gallery.no")),
+      detailRow(t("gallery.conflict"), t(group.split ? "gallery.yes" : "gallery.no")),
+      detailRow(t("gallery.best_body_score"), displayScore(group.bestBodyScore)),
+      detailRow(t("gallery.face_evidence"), evidenceStatus(record, "face")),
+      detailRow(t("gallery.gait_evidence"), evidenceStatus(record, "gait")),
+    ];
+    if (fused.confidence != null && Number.isFinite(Number(fused.confidence))) {
+      details.push(detailRow(t("gallery.fused_confidence"), `${(Number(fused.confidence) * 100).toFixed(0)}%`));
+    }
+    if (fused.primary) details.push(detailRow(t("gallery.primary_route"), primary));
 
     return (
-      `<div class="em-subcard" style="--hue:${hue}">` +
+      `<details class="em-subcard" style="--hue:${hue}">` +
+      `<summary class="em-subcard-summary" aria-label="${esc(t("gallery.details_toggle", { subject: title }))}">` +
       `<div class="em-avatar">${thumb}</div>` +
       `<div class="em-subinfo">` +
       `<div class="em-subtitle">${esc(title)}</div>` +
-      `<div class="em-submeta">${group.tracks.length} 条轨迹${flags.length ? ` · ${flags.join(" · ")}` : ""}</div>` +
+      `<div class="em-submeta">${esc(t("gallery.tracks", { count: group.tracks.length }))}${flags.length ? ` · ${flags.join(" · ")}` : ""}</div>` +
       routeBadges(record) +
-      "</div></div>"
+      `</div></summary>` +
+      `<div class="em-subdetails"><div class="em-subdetails-title">${esc(t("gallery.details"))}</div>` +
+      `<dl class="em-subdetails-grid">${details.join("")}</dl></div></details>`
     );
   });
 
   if (!cards.length) return "";
   return (
-    `<div class="em-gallery-head">👥 身份画廊（本段共 ${cards.length} 个主体）</div>` +
-    `<div class="em-gallery">${cards.join("")}</div>`
+    `<section class="em-gallery-panel">` +
+    `<div class="em-gallery-head">${esc(t("gallery.head", { count: cards.length }))}</div>` +
+    `<div class="em-gallery">${cards.join("")}</div>` +
+    `</section>`
   );
 }

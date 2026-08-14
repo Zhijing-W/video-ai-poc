@@ -196,7 +196,7 @@ for _ in $(seq 1 72); do
   echo "Container state=$state health=$health"
 
   if [[ "$state" == "running" && "$health" == "healthy" ]] &&
-     curl --fail --silent --show-error http://127.0.0.1:8000/docs >/dev/null; then
+     curl --fail --silent --show-error http://127.0.0.1:8000/health >/dev/null; then
     healthy=1
     break
   fi

@@ -13,8 +13,8 @@
 同一会话的帧串行更新（不同会话可并行）。换视频/重新开始时调用 `reset_tracker`。
 
 ByteTrack 工作机制（一句话）：用卡尔曼滤波预测每条轨迹下一帧位置，再用 IoU 做匹配。
-BoT-SORT 在此基础上加入全局运动补偿；`botsort_reid` 再接入本项目 `app.body_reid` 的外观特征，
-用于多人交叉/遮挡时降低 ID switch。
+BoT-SORT 在此基础上加入全局运动补偿；`botsort_reid` 使用独立的 Tracker 专用 OSNet
+外观特征（不复用最终身份 Body ReID 后端），用于多人交叉/遮挡时降低 ID switch。
 """
 from __future__ import annotations
 
@@ -23,7 +23,6 @@ import time
 import types
 
 import numpy as np
-from PIL import Image
 
 from .config import settings
 from .detector import _predict
@@ -51,14 +50,25 @@ def _normalize_backend(value: str | None = None) -> str:
     return backend
 
 
-def _build_args(backend: str) -> types.SimpleNamespace:
+def _build_args(
+    backend: str,
+    frame_rate: float | None = None,
+) -> types.SimpleNamespace:
     """把 settings 里的 MOT 阈值打包成 Ultralytics tracker 需要的 args 命名空间。"""
+    effective_fps = float(
+        settings.event_tracking_fps
+        if frame_rate is None
+        else frame_rate
+    )
     return types.SimpleNamespace(
         tracker_type="bytetrack" if backend == "bytetrack" else "botsort",
         track_high_thresh=settings.track_high_thresh,
         track_low_thresh=settings.track_low_thresh,
         new_track_thresh=settings.new_track_thresh,
-        track_buffer=settings.track_buffer,
+        track_buffer=max(
+            1,
+            int(round(settings.track_buffer_seconds * effective_fps)),
+        ),
         match_thresh=settings.track_match_thresh,
         fuse_score=settings.track_fuse_score,
         gmc_method=settings.track_gmc_method,
@@ -70,50 +80,91 @@ def _build_args(backend: str) -> types.SimpleNamespace:
 
 
 class _AppReIDEncoder:
-    """Adapter: BoT-SORT expects encoder(img, xywh_dets); reuse this project's person ReID embedding."""
+    """BoT-SORT adapter backed by a lightweight, independent OSNet model."""
+
+    def __init__(self) -> None:
+        self._model = None
+        self._model_lock = threading.Lock()
+
+    def _ensure_model(self):
+        if self._model is None:
+            with self._model_lock:
+                if self._model is None:
+                    self._model = reid_mod._load_osnet()
+        return self._model
 
     def __call__(self, img: np.ndarray, dets: np.ndarray) -> list[np.ndarray]:
         arr = np.asarray(dets)
-        dim = reid_mod.embed_dim()
         if arr.size == 0:
             return []
-        feats: list[np.ndarray] = []
+        model = self._ensure_model()
         h, w = img.shape[:2]
-        for det in arr:
+        boxes = []
+        valid_indices = []
+        features = [
+            np.zeros(512, dtype=np.float32)
+            for _ in range(len(arr))
+        ]
+        for index, det in enumerate(arr):
             cx, cy, bw, bh = [float(v) for v in det[:4]]
             x1 = max(0, int(round(cx - bw / 2)))
             y1 = max(0, int(round(cy - bh / 2)))
             x2 = min(w, int(round(cx + bw / 2)))
             y2 = min(h, int(round(cy + bh / 2)))
             if x2 <= x1 or y2 <= y1:
-                feats.append(np.zeros(dim, dtype=np.float32))
                 continue
-            crop = Image.fromarray(img[y1:y2, x1:x2][:, :, ::-1])
-            feats.append(np.asarray(reid_mod.embed(crop), dtype=np.float32).reshape(-1))
-        return feats
+            boxes.append([x1, y1, x2, y2])
+            valid_indices.append(index)
+        if boxes:
+            batch = reid_mod._embed_osnet_boxes(
+                model,
+                img,
+                np.asarray(boxes, dtype=np.float32),
+            )
+            for index, feature in zip(valid_indices, batch):
+                features[index] = np.asarray(
+                    feature,
+                    dtype=np.float32,
+                ).reshape(-1)
+        return features
 
 
-def _build_tracker(backend: str):
+def _build_tracker(backend: str, frame_rate: float):
     if backend == "bytetrack":
         from ultralytics.trackers.byte_tracker import BYTETracker
 
-        return BYTETracker(_build_args(backend))
+        return BYTETracker(_build_args(backend, frame_rate))
 
     from ultralytics.trackers.bot_sort import BOTSORT
 
-    tracker = BOTSORT(_build_args(backend))
+    args = _build_args(backend, frame_rate)
+    wants_reid = backend == "botsort_reid"
+    if wants_reid:
+        args.with_reid = False
+    tracker = BOTSORT(args)
     if backend == "botsort_reid":
+        tracker.args.with_reid = True
+        tracker.args.model = "app_reid"
         tracker.encoder = _AppReIDEncoder()
     return tracker
 
 
-def _get_entry(session_id: str) -> dict:
+def _get_entry(session_id: str, frame_rate: float) -> dict:
     """懒加载：按 session 取（或新建）一个 tracker 实例及其专属锁。"""
     backend = _normalize_backend()
     with _registry_lock:
         entry = _trackers.get(session_id)
-        if entry is None or entry.get("backend") != backend:
-            entry = {"tracker": _build_tracker(backend), "backend": backend, "lock": threading.Lock()}
+        if (
+            entry is None
+            or entry.get("backend") != backend
+            or entry.get("frame_rate") != frame_rate
+        ):
+            entry = {
+                "tracker": _build_tracker(backend, frame_rate),
+                "backend": backend,
+                "frame_rate": frame_rate,
+                "lock": threading.Lock(),
+            }
             _trackers[session_id] = entry
         return entry
 
@@ -148,7 +199,10 @@ def active_backend() -> str:
 
 
 def track_objects(
-    image: str | bytes, session_id: str = "default", conf: float | None = None
+    image: str | bytes,
+    session_id: str = "default",
+    conf: float | None = None,
+    frame_rate: float | None = None,
 ) -> dict:
     """对一帧做"检测 + 多目标跟踪"，给每个目标补上跨帧稳定的 track_id。
 
@@ -167,7 +221,12 @@ def track_objects(
           counts: {label: 数量}
           active_tracks: 当前活跃轨迹数
     """
-    entry = _get_entry(session_id)
+    effective_fps = float(
+        settings.event_tracking_fps
+        if frame_rate is None
+        else frame_rate
+    )
+    entry = _get_entry(session_id, effective_fps)
     r, img_w, img_h, infer_ms = _predict(
         image, conf=settings.track_conf if conf is None else conf
     )
@@ -206,4 +265,5 @@ def track_objects(
         "detections": detections,
         "counts": counts,
         "active_tracks": len(detections),
+        "tracking_fps": effective_fps,
     }

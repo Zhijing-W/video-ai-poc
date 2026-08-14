@@ -114,6 +114,86 @@ def test_registered_backend_output_is_float32_l2_normalized():
         body_reid.reset_backend()
 
 
+def test_telemetry_uses_deterministic_nearest_rank_p95_and_zero_result():
+    collector = body_reid.ReIdTelemetryCollector()
+    for latency_ms in range(1, 21):
+        collector.record(
+            float(latency_ms),
+            backend="unit",
+            device="cpu",
+            purpose="tracking" if latency_ms <= 10 else "identity_gallery",
+            failed=False,
+        )
+
+    result = collector.snapshot()
+    assert result["backend"] == "unit"
+    assert result["device"] == "cpu"
+    assert result["call_count"] == 20
+    assert result["total_ms"] == 210.0
+    assert result["mean_ms"] == 10.5
+    assert result["p95_ms"] == 19.0
+    assert result["p95_definition"] == (
+        "nearest-rank: sorted latency at ceil(0.95 * N), 1-indexed"
+    )
+    assert result["by_purpose"]["tracking"]["call_count"] == 10
+    assert result["by_purpose"]["identity_gallery"]["total_ms"] == 155.0
+
+    zero = body_reid.ReIdTelemetryCollector().snapshot()
+    assert zero["call_count"] == 0
+    assert zero["total_ms"] == 0.0
+    assert zero["mean_ms"] is None
+    assert zero["p95_ms"] is None
+    assert zero["by_purpose"] == {}
+
+
+def test_telemetry_context_isolates_runs_and_embed_purpose():
+    loaded = SimpleNamespace(dim=3, device="cpu")
+    body_reid.register_backend(
+        "unit-telemetry",
+        lambda: loaded,
+        lambda model, image: [1.0, 0.0, 0.0],
+        dim=None,
+        replace=True,
+    )
+    body_reid.reset_backend()
+    try:
+        with settings.override(reid_backend="unit-telemetry"):
+            with body_reid.telemetry_context() as first:
+                body_reid.embed(_image(), purpose="tracking")
+                body_reid.embed(_image(), purpose="identity_gallery")
+            first_result = first.snapshot()
+
+            with body_reid.telemetry_context() as second:
+                second_result = second.snapshot(
+                    backend=body_reid.active_backend(),
+                    device=body_reid.active_device(),
+                )
+
+        assert first_result["call_count"] == 2
+        assert first_result["backend"] == "unit_telemetry"
+        assert first_result["device"] == "cpu"
+        assert first_result["by_purpose"]["tracking"]["call_count"] == 1
+        assert first_result["by_purpose"]["identity_gallery"]["call_count"] == 1
+        assert second_result["call_count"] == 0
+        assert second_result["backend"] == "unit_telemetry"
+        assert second_result["device"] == "cpu"
+
+        with pytest.raises(RuntimeError, match="failed run"):
+            with body_reid.telemetry_context() as failed:
+                failed.record(
+                    7.0,
+                    backend="unit_telemetry",
+                    device="cpu",
+                    purpose="tracking",
+                    failed=True,
+                )
+                raise RuntimeError("failed run")
+        with body_reid.telemetry_context() as after_failure:
+            assert after_failure.snapshot()["call_count"] == 0
+    finally:
+        body_reid.reset_backend()
+
+
 def test_clipreid_preprocessing_uses_official_shape_and_normalization():
     calls = []
 

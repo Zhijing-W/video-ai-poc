@@ -71,26 +71,86 @@
 .em-cfgchip .warn { color: var(--alert); }
 
 /* ---------- 身份画廊 ---------- */
-.em-gallery-head { font-size: .82rem; font-weight: 700; color: var(--fg); margin-bottom: 8px; }
+.em-gallery-panel { display: block; width: 100%; }
+.em-gallery-head {
+  display: block;
+  width: 100%;
+  font-size: .82rem;
+  font-weight: 700;
+  color: var(--fg);
+  margin-bottom: 8px;
+}
 .em-gallery {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+  width: 100%;
 }
 .em-subcard {
-  display: flex;
-  gap: 10px;
-  padding: 10px;
+  min-width: 0;
   border: 1px solid var(--line);
   border-left: 4px solid hsl(var(--hue) 70% 55%);
   border-radius: 10px;
   background: var(--panel);
   box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.em-subcard-summary {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 9px 10px;
+  cursor: pointer;
+  list-style: none;
+}
+.em-subcard-summary::-webkit-details-marker { display: none; }
+.em-subcard-summary::after {
+  content: "⌄";
+  grid-column: 2;
+  justify-self: end;
+  color: var(--muted);
+  font-size: .75rem;
+  line-height: 1;
+}
+.em-subcard[open] .em-subcard-summary::after { transform: rotate(180deg); }
+.em-subcard-summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.em-subdetails {
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--line);
+  background: var(--panel2);
+}
+.em-subdetails-title {
+  margin-bottom: 6px;
+  color: var(--fg);
+  font-size: .72rem;
+  font-weight: 700;
+}
+.em-subdetails-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+  margin: 0;
+}
+.em-subdetails-grid div { min-width: 0; }
+.em-subdetails-grid dt {
+  color: var(--muted);
+  font-size: .64rem;
+}
+.em-subdetails-grid dd {
+  margin: 1px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--fg);
+  font-size: .71rem;
+  font-weight: 600;
 }
 .em-avatar {
   flex: 0 0 auto;
-  width: 52px;
-  height: 68px;
+  width: 44px;
+  height: 58px;
   border-radius: 8px;
   overflow: hidden;
   background: var(--panel2);
@@ -196,4 +256,13 @@
   color: #eee;
   font-family: var(--mono);
   font-size: .8rem;
+}
+
+@media (max-width: 600px) {
+  .em-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 420px) {
+  .em-gallery { grid-template-columns: 1fr; }
+  .em-subdetails-grid { grid-template-columns: 1fr; }
 }

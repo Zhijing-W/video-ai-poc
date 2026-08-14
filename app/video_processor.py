@@ -25,6 +25,7 @@ class Frame:
     frame_id: str
     timestamp: str
     local_path: str
+    timestamp_seconds: float | None = None
 
 
 def _resolve_ffmpeg() -> str:
@@ -108,6 +109,7 @@ def extract_frames(
                 frame_id=p.stem,
                 timestamp=seconds_to_timestamp(i * step),
                 local_path=str(p),
+                timestamp_seconds=i * step,
             )
         )
     if not frames:
@@ -197,7 +199,14 @@ def extract_frames_smart(
             p.unlink(missing_ok=True)
             continue
         ts = times[idx] if idx < len(times) else idx * fallback
-        frames.append(Frame(frame_id=p.stem, timestamp=seconds_to_timestamp(ts), local_path=str(p)))
+        frames.append(
+            Frame(
+                frame_id=p.stem,
+                timestamp=seconds_to_timestamp(ts),
+                local_path=str(p),
+                timestamp_seconds=ts,
+            )
+        )
 
     if not frames:
         return extract_frames(video_path, out_dir, max_frames=cap, width=w)
