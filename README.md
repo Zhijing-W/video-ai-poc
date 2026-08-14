@@ -27,6 +27,12 @@ Video or future camera stream
 
 The traditional computer-vision pipeline determines **who is present and where**. The multimodal LLM focuses on **what happened**, using externally supplied identity and spatial context rather than re-identifying people itself.
 
+### Interface preview
+
+![Full-page English Event Monitor interface with video input, model routing, and initial event timeline workspace](docs/screenshots/event-monitor-en-full-page.png)
+
+Captured from the local English `/event-monitor` UI without using an Azure VM.
+
 ### Key capabilities
 
 - YOLO detection with ByteTrack or BoT-SORT tracking.
